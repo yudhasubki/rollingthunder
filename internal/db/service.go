@@ -2,12 +2,13 @@ package db
 
 import (
 	"context"
+	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 )
 
 type Service struct {
 	ctx    context.Context
-	driver Driver
+	driver database.Driver
 }
 
 func NewService() *Service {
@@ -73,8 +74,25 @@ func (s *Service) GetCollections(schema []string) response.BaseResponse[[]string
 	}
 }
 
+func (s *Service) GetCollectionStructures(schema, table string) response.BaseResponse[database.Structures] {
+	structures, err := s.driver.GetCollectionStructures(schema, table)
+	if err != nil {
+		return response.BaseResponse[database.Structures]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+		}
+	}
+
+	return response.BaseResponse[database.Structures]{
+		Data: structures,
+	}
+}
+
 func (s *Service) GetSchemas() response.BaseResponse[[]string] {
-	if d, ok := s.driver.(DriverWithSchema); ok {
+	if d, ok := s.driver.(database.DriverWithSchema); ok {
 		schemas, err := d.GetSchemas()
 		if err != nil {
 			return response.BaseResponse[[]string]{

@@ -3,7 +3,7 @@
   import { GetSchemas, GetCollections } from '$lib/wailsjs/go/db/Service';
 	import { LogInfo } from '$lib/wailsjs/runtime/runtime';
 
-  export let onTableClick: (table: string) => void;
+  export let onTableClick: (table: string, schema: string) => void;
 
   let schemas: string[] = [];
   let selectedSchema = 'public';
@@ -60,8 +60,8 @@
         <div
             tabindex="0"
             role="button"
-            on:click={() => onTableClick(table)}
-            on:keydown={(e) => e.key === 'Enter' && onTableClick(table)}
+            on:click={() => onTableClick(table, selectedSchema)}
+            on:keydown={(e) => e.key === 'Enter' && onTableClick(table, selectedSchema)}
             class="cursor-pointer hover:bg-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
         >
             {table}

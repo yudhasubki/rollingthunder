@@ -6,6 +6,10 @@ export function Connect(arg1) {
   return window['go']['db']['Service']['Connect'](arg1);
 }
 
+export function GetCollectionStructures(arg1, arg2) {
+  return window['go']['db']['Service']['GetCollectionStructures'](arg1, arg2);
+}
+
 export function GetCollections(arg1) {
   return window['go']['db']['Service']['GetCollections'](arg1);
 }
