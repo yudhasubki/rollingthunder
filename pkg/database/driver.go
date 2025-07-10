@@ -5,6 +5,7 @@ type Driver interface {
 	Close() error
 	GetCollections(schema ...string) ([]string, error)
 	GetCollectionStructures(schema, table string) (Structures, error)
+	GetIndices(schema, table string) (Indices, error)
 }
 
 type DriverWithSchema interface {

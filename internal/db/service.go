@@ -91,6 +91,23 @@ func (s *Service) GetCollectionStructures(schema, table string) response.BaseRes
 	}
 }
 
+func (s *Service) GetIndices(schema, table string) response.BaseResponse[database.Indices] {
+	indices, err := s.driver.GetIndices(schema, table)
+	if err != nil {
+		return response.BaseResponse[database.Indices]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+		}
+	}
+
+	return response.BaseResponse[database.Indices]{
+		Data: indices,
+	}
+}
+
 func (s *Service) GetSchemas() response.BaseResponse[[]string] {
 	if d, ok := s.driver.(database.DriverWithSchema); ok {
 		schemas, err := d.GetSchemas()

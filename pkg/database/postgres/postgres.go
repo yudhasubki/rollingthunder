@@ -80,6 +80,56 @@ func (p *Postgres) GetSchemas() ([]string, error) {
 	return schemas, err
 }
 
+func (p *Postgres) GetIndices(schema, table string) (database.Indices, error) {
+	const query = `
+	SELECT
+		i.relname AS index_name,
+		a.attname AS column_name,
+		ix.indisunique AS is_unique,
+		am.amname AS algorithm
+	FROM
+		pg_class t
+		JOIN pg_index ix ON t.oid = ix.indrelid
+		JOIN pg_class i ON i.oid = ix.indexrelid
+		JOIN pg_am am ON i.relam = am.oid
+		JOIN unnest(ix.indkey) WITH ORDINALITY AS cols(attnum, ord) ON TRUE
+		JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = cols.attnum
+	WHERE
+		t.oid = $1::regclass
+	ORDER BY
+		i.relname, cols.ord;
+	`
+
+	ref := fmt.Sprintf("%s.%s", schema, table)
+
+	var indices Indices
+	err := p.conn.Select(&indices, query, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	indexMap := map[string]*database.Index{}
+	for _, index := range indices {
+		idx, ok := indexMap[index.IndexName]
+		if !ok {
+			idx = &database.Index{
+				Name:      index.IndexName,
+				IsUnique:  index.IsUnique,
+				Algorithm: index.Algorithm,
+			}
+			indexMap[index.IndexName] = idx
+		}
+		idx.Columns = append(idx.Columns, index.ColumnName)
+	}
+
+	var result database.Indices
+	for _, idx := range indexMap {
+		result = append(result, *idx)
+	}
+
+	return result, nil
+}
+
 func (p *Postgres) GetForeignKey(schema, table string) (Constraints, error) {
 	constraintQuery := `
 		SELECT

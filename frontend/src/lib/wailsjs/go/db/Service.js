@@ -14,6 +14,10 @@ export function GetCollections(arg1) {
   return window['go']['db']['Service']['GetCollections'](arg1);
 }
 
+export function GetIndices(arg1, arg2) {
+  return window['go']['db']['Service']['GetIndices'](arg1, arg2);
+}
+
 export function GetSchemas() {
   return window['go']['db']['Service']['GetSchemas']();
 }
