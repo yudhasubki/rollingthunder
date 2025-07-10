@@ -38,7 +38,7 @@
   <h2 class="font-bold mb-2">📦 Tables</h2>
 
   {#if showSchemaDropdown}
-    <label class="block text-xs mb-1">Schema</label>
+    <label for="schema" class="block text-xs mb-1">Schema</label>
     <select
       bind:value={selectedSchema}
       on:change={loadTables}
@@ -56,11 +56,16 @@
 
   <ul class="text-sm space-y-1">
     {#each tables as table}
-      <li
-        class="cursor-pointer hover:bg-gray-200 p-1 rounded"
-        on:click={() => onTableClick(table)}
-      >
-        {table}
+      <li>
+        <div
+            tabindex="0"
+            role="button"
+            on:click={() => onTableClick(table)}
+            on:keydown={(e) => e.key === 'Enter' && onTableClick(table)}
+            class="cursor-pointer hover:bg-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+        >
+            {table}
+        </div>
       </li>
     {/each}
   </ul>

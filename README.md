@@ -1,3 +1,6 @@
+<div align="center">
+<a href="https://github.com/yudhasubki/rollingthunder/"><img src="build/appicon.png" width="120"/></a>
+</div>
 <h1 align="center">⚡ Rolling Thunder</h1>
 <div align="center">
 <strong>Rolling Thunder is a modern lightweight cross-platform database desktop manager available
