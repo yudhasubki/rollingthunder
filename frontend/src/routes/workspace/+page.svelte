@@ -1,17 +1,17 @@
-<script>
+<script lang="ts">
     import Sidebar from "$lib/components/Sidebar.svelte";
     import { GetCollectionStructures, GetIndices } from "$lib/wailsjs/go/db/Service"
-	import { database } from "$lib/wailsjs/go/models";
-	import { LogInfo } from "$lib/wailsjs/runtime/runtime";
+	import type { database } from "$lib/wailsjs/go/models";
+	import { LogError } from "$lib/wailsjs/runtime/runtime";
 
-    let selectedTable = '';
-    let selectedSchema = '';
-    let columns = [];
-    let indices = [];
+    let selectedTable: string = $state('');
+    let selectedSchema: string = $state('');
+    let columns: database.Structure[] = $state([]);
+    let indices: database.Index[] = $state([]);
 
-    function handleTableClick(table, schema) {
-        selectedTable = table;
+    function handleTableClick(schema: string, table: string) {
         selectedSchema = schema;
+        selectedTable = table;
 
         loadColumnsInfo()
         loadIndices()
@@ -21,8 +21,8 @@
         try {
             const response = await GetCollectionStructures(selectedSchema, selectedTable)
             columns = response.data
-        } catch (e) {
-
+        } catch (e: any) {
+            LogError(e)
         }
     }
 
@@ -30,8 +30,8 @@
         try {
             const response = await GetIndices(selectedSchema, selectedTable);
             indices = response.data;
-        } catch (e) {
-
+        } catch (e: any) {
+            LogError(e)
         }
     }
 </script>
@@ -43,8 +43,8 @@
     {#if selectedTable}
         <h2 class="text-lg font-bold mb-2"> {selectedSchema}.{selectedTable}</h2>
         
-        <div class="mb-4">
-            <table class="table-auto w-full text-sm border border-gray-300">
+        <div class="overflow-auto max-w-full border rounded shadow-sm mb-4">
+            <table class="table-auto w-full min-w-[600px] text-sm">
                 <thead class="bg-gray-100">
                     <tr>
                         <th class="px-2 py-1 border">Name</th>
@@ -74,29 +74,30 @@
             </table>
         </div>
         
-
-        <table class="table-auto w-full text-sm border border-gray-300">
-            <thead class="bg-gray-100">
-                <tr>
-                    <th class="px-2 py-1 border">Name</th>
-                    <th class="px-2 py-1 border">Columns</th>
-                    <th class="px-2 py-1 border">Is Unique</th>
-                    <th class="px-2 py-1 border">Algorithm</th>
-                    
-                </tr>
-            </thead>
-            <tbody>
-                {#each indices as col}
+        <div class="overflow-auto max-w-full border rounded shadow-sm">
+            <table class="table-auto w-full min-w-[600px] text-sm">
+                <thead class="bg-gray-100">
                     <tr>
-                        <td class="px-2 py-1 border">{col.name}</td>
-                        <td class="px-2 py-1 border">{col.columns}</td>
-                        <td class="px-2 py-1 border">{col.is_unique}</td>
-                        <td class="px-2 py-1 border">{col.algorithm}</td>
-
+                        <th class="px-2 py-1 border">Name</th>
+                        <th class="px-2 py-1 border">Columns</th>
+                        <th class="px-2 py-1 border">Is Unique</th>
+                        <th class="px-2 py-1 border">Algorithm</th>
+                        
                     </tr>
-                {/each}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {#each indices as col}
+                        <tr>
+                            <td class="px-2 py-1 border">{col.name}</td>
+                            <td class="px-2 py-1 border">{col.columns}</td>
+                            <td class="px-2 py-1 border">{col.is_unique}</td>
+                            <td class="px-2 py-1 border">{col.algorithm}</td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
+        </div>
+        
     {:else}
         <p class="text-gray-400 italic">Silakan pilih tabel di sebelah kiri untuk melihat detail atau menjalankan query.</p>
     {/if}

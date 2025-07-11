@@ -1,16 +1,16 @@
-<script>
+<script lang="ts">
     import { Connect } from '$lib/wailsjs/go/db/Service';
     import { database as driver, db as service } from '$lib/wailsjs/go/models';
     import { goto } from '$app/navigation';
     
-    let dbtype = 'postgres';
-    let host = '10.8.0.1';
-    let port = '5432';
-    let user = 'mahabbah';
-    let password = '7ps9AJGACrS3qY';
-    let dbname = 'mahabbahinvite';
-    let result = null;
-    let loading = false;
+    let dbtype : string = $state('postgres');
+    let host : string = $state('10.8.0.1');
+    let port : string = $state('5432');
+    let user : string = $state('mahabbah');
+    let password : string = $state('7ps9AJGACrS3qY');
+    let dbname : string = $state('mahabbahinvite');
+    let result = $state(null);
+    let loading : boolean = $state(false);
 
     async function connect() {
         loading = true;
@@ -33,12 +33,12 @@
             if(res.data?.connected) {
                 goto('/workspace')
             } else {
-                result = `❌ Failed: ${res.errors?.[0]?.detail || 'Unknown error'}`;
+                result = `Failed: ${res.errors?.[0]?.detail || 'Unknown error'}`;
             }
 
         } catch (e) {
             console.error('Caught error:', e);
-            result = `❌ Error: ${e.message}`;
+            result = `Error: ${e.message}`;
         } finally {
             loading = false
         }
@@ -46,7 +46,6 @@
 </script>
 
 <div class="flex flex-col md:flex-row h-screen">
-    <!-- Sidebar Kiri -->
     <div class="md:w-1/2 bg-gray-50 flex items-center justify-center border-b md:border-b-0 md:border-r p-8">
         <div class="text-center space-y-4">
             <img src="/appicon.png" alt="Logo" class="w-24 h-24 mx-auto" />
@@ -55,7 +54,6 @@
         </div>
     </div>
 
-  <!-- Form Kanan -->
     <div class="md:w-1/2 flex items-center justify-center p-8">
         <div class="w-full max-w-md space-y-4">
             <h2 class="text-2xl font-semibold">Connect to Database</h2>
@@ -91,7 +89,7 @@
             </fieldset>
 
             <button
-                on:click={connect}
+                onclick={connect}
                 disabled={loading}
                 class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
