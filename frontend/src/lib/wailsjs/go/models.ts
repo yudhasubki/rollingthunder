@@ -45,6 +45,7 @@ export namespace database {
 	    nullable: boolean;
 	    default?: string;
 	    is_primary?: boolean;
+	    is_primary_label?: string;
 	    is_unique?: boolean;
 	    is_autoinc?: boolean;
 	    foreign_key?: string;
@@ -62,6 +63,7 @@ export namespace database {
 	        this.nullable = source["nullable"];
 	        this.default = source["default"];
 	        this.is_primary = source["is_primary"];
+	        this.is_primary_label = source["is_primary_label"];
 	        this.is_unique = source["is_unique"];
 	        this.is_autoinc = source["is_autoinc"];
 	        this.foreign_key = source["foreign_key"];

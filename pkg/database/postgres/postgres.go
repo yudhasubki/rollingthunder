@@ -225,6 +225,7 @@ func (p *Postgres) GetCollectionStructures(schema, table string) (database.Struc
 			switch constraint.Type {
 			case "p":
 				info.IsPrimary = true
+				info.IsPrimaryLabel = "PRI"
 			case "u":
 				info.IsUnique = true
 			case "f":

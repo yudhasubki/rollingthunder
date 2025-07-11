@@ -29,5 +29,8 @@
 		"svelte": "^5.0.0",
 		"tailwindcss": "^4.0.0",
 		"vite": "^6.2.6"
+	},
+	"dependencies": {
+		"wx-svelte-grid": "^2.1.5"
 	}
 }
