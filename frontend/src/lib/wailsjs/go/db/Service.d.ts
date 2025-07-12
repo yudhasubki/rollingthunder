@@ -10,6 +10,8 @@ export function GetCollectionStructures(arg1:string,arg2:string):Promise<respons
 
 export function GetCollections(arg1:Array<string>):Promise<response.BaseResponse___string_>;
 
+export function GetDatabaseInfo():Promise<response.BaseResponse_rollingthunder_pkg_database_Info_>;
+
 export function GetIndices(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_pkg_database_Indices_>;
 
 export function GetSchemas():Promise<response.BaseResponse___string_>;

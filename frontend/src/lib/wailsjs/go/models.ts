@@ -38,6 +38,22 @@ export namespace database {
 	        this.algorithm = source["algorithm"];
 	    }
 	}
+	export class Info {
+	    engine: string;
+	    version: string;
+	    database: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Info(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.engine = source["engine"];
+	        this.version = source["version"];
+	        this.database = source["database"];
+	    }
+	}
 	export class Structure {
 	    name: string;
 	    data_type: string;
@@ -216,6 +232,38 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.Index);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_Info_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.Info;
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_Info_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.Info);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

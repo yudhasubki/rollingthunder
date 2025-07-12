@@ -6,6 +6,7 @@ type Driver interface {
 	GetCollections(schema ...string) ([]string, error)
 	GetCollectionStructures(schema, table string) (Structures, error)
 	GetIndices(schema, table string) (Indices, error)
+	GetDatabaseInfo() (Info, error)
 }
 
 type DriverWithSchema interface {

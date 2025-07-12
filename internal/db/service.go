@@ -130,3 +130,20 @@ func (s *Service) GetSchemas() response.BaseResponse[[]string] {
 		Data: []string{},
 	}
 }
+
+func (s *Service) GetDatabaseInfo() response.BaseResponse[database.Info] {
+	info, err := s.driver.GetDatabaseInfo()
+	if err != nil {
+		return response.BaseResponse[database.Info]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+		}
+	}
+
+	return response.BaseResponse[database.Info]{
+		Data: info,
+	}
+}

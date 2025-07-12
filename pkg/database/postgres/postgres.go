@@ -20,13 +20,18 @@ type Config struct {
 }
 
 type Postgres struct {
-	cfg  Config
-	ctx  context.Context
-	conn *sqlx.DB
+	cfg    Config
+	ctx    context.Context
+	conn   *sqlx.DB
+	engine string
 }
 
 func NewPostgres(ctx context.Context, cfg Config) *Postgres {
-	return &Postgres{cfg: cfg, ctx: ctx}
+	return &Postgres{
+		cfg:    cfg,
+		ctx:    ctx,
+		engine: "PostgreSQL",
+	}
 }
 
 func (p *Postgres) Connect() error {
@@ -240,4 +245,19 @@ func (p *Postgres) GetCollectionStructures(schema, table string) (database.Struc
 	}
 
 	return out, nil
+}
+
+func (p *Postgres) GetDatabaseInfo() (database.Info, error) {
+	var version, db string
+	err := p.conn.Get(&version, "SELECT current_setting('server_version')") // 14.18
+	if err != nil {
+		return database.Info{}, err
+	}
+	err = p.conn.Get(&db, "SELECT current_database()")
+
+	return database.Info{
+		Engine:   p.engine,
+		Version:  version,
+		Database: db,
+	}, err
 }

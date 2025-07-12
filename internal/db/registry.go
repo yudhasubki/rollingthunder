@@ -10,7 +10,6 @@ import (
 func NewDriver(ctx context.Context, driver string, cfg database.Config) (database.Driver, error) {
 	switch driver {
 	case "postgres":
-		fmt.Println(cfg)
 		return postgres.NewPostgres(ctx, postgres.Config{
 			Host:     cfg.Host,
 			Port:     cfg.Port,
