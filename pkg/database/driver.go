@@ -4,8 +4,8 @@ type Driver interface {
 	Connect() error
 	Close() error
 	GetCollections(schema ...string) ([]string, error)
-	GetCollectionStructures(schema, table string) (Structures, error)
-	GetIndices(schema, table string) (Indices, error)
+	GetCollectionStructures(table Table) (Structures, error)
+	GetIndices(table Table) (Indices, error)
 	GetDatabaseInfo() (Info, error)
 }
 

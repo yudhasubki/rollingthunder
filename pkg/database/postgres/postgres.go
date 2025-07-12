@@ -85,7 +85,7 @@ func (p *Postgres) GetSchemas() ([]string, error) {
 	return schemas, err
 }
 
-func (p *Postgres) GetIndices(schema, table string) (database.Indices, error) {
+func (p *Postgres) GetIndices(table database.Table) (database.Indices, error) {
 	const query = `
 	SELECT
 		i.relname AS index_name,
@@ -105,7 +105,7 @@ func (p *Postgres) GetIndices(schema, table string) (database.Indices, error) {
 		i.relname, cols.ord;
 	`
 
-	ref := fmt.Sprintf("%s.%s", schema, table)
+	ref := fmt.Sprintf("%s.%s", table.Schema, table.Name)
 
 	var indices Indices
 	err := p.conn.Select(&indices, query, ref)
@@ -135,7 +135,7 @@ func (p *Postgres) GetIndices(schema, table string) (database.Indices, error) {
 	return result, nil
 }
 
-func (p *Postgres) GetForeignKey(schema, table string) (Constraints, error) {
+func (p *Postgres) GetForeignKey(table database.Table) (Constraints, error) {
 	constraintQuery := `
 		SELECT
 			a.attname AS column,
@@ -152,7 +152,7 @@ func (p *Postgres) GetForeignKey(schema, table string) (Constraints, error) {
 	`
 
 	var constraints []Constraint
-	err := p.conn.Select(&constraints, constraintQuery, fmt.Sprintf("%s.%s", schema, table))
+	err := p.conn.Select(&constraints, constraintQuery, fmt.Sprintf("%s.%s", table.Schema, table.Name))
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (p *Postgres) GetForeignKey(schema, table string) (Constraints, error) {
 	return constraints, nil
 }
 
-func (p *Postgres) GetConstraints(schema, table string) (Constraints, error) {
+func (p *Postgres) GetConstraints(table database.Table) (Constraints, error) {
 	const query = `
 		SELECT a.attname AS column, c.contype AS type,
 		       confrelid::regclass::text AS foreign_table
@@ -169,19 +169,19 @@ func (p *Postgres) GetConstraints(schema, table string) (Constraints, error) {
 		WHERE c.conrelid = $1::regclass AND c.contype IN ('p', 'u', 'f')`
 
 	var out []Constraint
-	ref := fmt.Sprintf("%s.%s", schema, table)
+	ref := fmt.Sprintf("%s.%s", table.Schema, table.Name)
 	err := p.conn.Select(&out, query, ref)
 
 	return out, err
 }
 
-func (p *Postgres) GetCollectionStructures(schema, table string) (database.Structures, error) {
-	foreignKeys, err := p.GetForeignKey(schema, table)
+func (p *Postgres) GetCollectionStructures(table database.Table) (database.Structures, error) {
+	foreignKeys, err := p.GetForeignKey(table)
 	if err != nil {
 		return nil, err
 	}
 
-	constraints, err := p.GetConstraints(schema, table)
+	constraints, err := p.GetConstraints(table)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +205,7 @@ func (p *Postgres) GetCollectionStructures(schema, table string) (database.Struc
 	)
 
 	var rows Columns
-	err = p.conn.Select(&rows, query, schema, table)
+	err = p.conn.Select(&rows, query, table.Schema, table.Name)
 	if err != nil {
 		return nil, err
 	}

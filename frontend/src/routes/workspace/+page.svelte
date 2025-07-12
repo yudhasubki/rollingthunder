@@ -57,15 +57,19 @@
 
     $effect(() => {
         if (!selectedSchema || !selectedTable) return;
-        
+
         status = '';
         level = 'info';
 
         (async() => {
             try {
+                let reqTable = new database.Table();
+                reqTable.Name = selectedTable
+                reqTable.Schema = selectedSchema
+
                 const [cols, idxs, db] = await Promise.all([
-                    GetCollectionStructures(selectedSchema, selectedTable),
-                    GetIndices(selectedSchema, selectedTable),
+                    GetCollectionStructures(reqTable),
+                    GetIndices(reqTable),
                     GetDatabaseInfo(),
                 ])
                 
@@ -88,10 +92,8 @@
     <StatusBar segments={segments} level={level} />
     
     <div class="flex flex-1 overflow-hidden">
-        <!-- Sidebar (kiri) -->
         <Sidebar onTableClick={handleTableClick} />
 
-         <!-- Main (kanan) -->
         <main class="flex-1 p-4 overflow-y-auto">
             {#if selectedTable}
                 <h2 class="text-lg font-bold mb-2">

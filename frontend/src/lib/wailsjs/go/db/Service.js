@@ -6,8 +6,8 @@ export function Connect(arg1) {
   return window['go']['db']['Service']['Connect'](arg1);
 }
 
-export function GetCollectionStructures(arg1, arg2) {
-  return window['go']['db']['Service']['GetCollectionStructures'](arg1, arg2);
+export function GetCollectionStructures(arg1) {
+  return window['go']['db']['Service']['GetCollectionStructures'](arg1);
 }
 
 export function GetCollections(arg1) {
@@ -18,8 +18,8 @@ export function GetDatabaseInfo() {
   return window['go']['db']['Service']['GetDatabaseInfo']();
 }
 
-export function GetIndices(arg1, arg2) {
-  return window['go']['db']['Service']['GetIndices'](arg1, arg2);
+export function GetIndices(arg1) {
+  return window['go']['db']['Service']['GetIndices'](arg1);
 }
 
 export function GetSchemas() {

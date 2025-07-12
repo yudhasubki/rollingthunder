@@ -86,6 +86,20 @@ export namespace database {
 	        this.comment = source["comment"];
 	    }
 	}
+	export class Table {
+	    Schema: string;
+	    Name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Table(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Schema = source["Schema"];
+	        this.Name = source["Name"];
+	    }
+	}
 
 }
 
