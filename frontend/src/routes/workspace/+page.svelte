@@ -1,17 +1,20 @@
 <script lang="ts">
     import Sidebar from "$lib/components/Sidebar.svelte";
 	import StatusBar from "$lib/components/StatusBar.svelte";
+    import TabBar   from '$lib/components/TabBar.svelte';
     import Table from "$lib/components/Table.svelte";
     import { GetCollectionStructures, GetDatabaseInfo, GetIndices } from "$lib/wailsjs/go/db/Service"
 	import { database } from "$lib/wailsjs/go/models";
 	import { onMount } from "svelte";
+    import { tabs, activeTabId, newTableTab, updateTab } from '$lib/stores/tabs';
 
     let databaseInfo= $state<database.Info | null>();
-    let selectedTable: string = $state('');
-    let selectedSchema: string = $state('');
     let columns = $state<database.Structure[]>([]);
     let status : string = $state('');
     let level = $state<'info' | 'warn' | 'error'>('info');
+    let activeTab = $derived(
+        $tabs.find(t => t.id === $activeTabId) ?? null,
+    );
 
     const segments = $derived(
         databaseInfo
@@ -51,12 +54,21 @@
     ];
 
     function handleTableClick(schema: string, table: string) {
-        selectedSchema = schema;
-        selectedTable = table;
+        const existingTab = $tabs.find(t => 
+            t.kind === 'table' && 
+            t.schema === schema && 
+            t.table === table
+        );
+
+        if (existingTab) {
+            activeTabId.set(existingTab.id);
+        } else {
+            newTableTab(schema, table);
+        }
     }
 
     $effect(() => {
-        if (!selectedSchema || !selectedTable) return;
+        if (!activeTab || activeTab.kind !== 'table') return;
 
         status = '';
         level = 'info';
@@ -64,8 +76,8 @@
         (async() => {
             try {
                 let reqTable = new database.Table();
-                reqTable.Name = selectedTable
-                reqTable.Schema = selectedSchema
+                reqTable.Name = activeTab.table;
+                reqTable.Schema = activeTab.schema;
 
                 const [cols, idxs, db] = await Promise.all([
                     GetCollectionStructures(reqTable),
@@ -95,18 +107,25 @@
         <Sidebar onTableClick={handleTableClick} />
 
         <main class="flex-1 p-4 overflow-y-auto">
-            {#if selectedTable}
-                <h2 class="text-lg font-bold mb-2">
-                    {selectedSchema}.{selectedTable}
-                </h2>
+            <TabBar />
+            {#if activeTab}
+                {#if activeTab?.kind === 'table'}
+                    <h2 class="text-lg font-bold mb-2">
+                        {activeTab.schema}.{activeTab.table}
+                    </h2>
 
-                <div class="max-w-full rounded shadow-sm mb-2">
-                    <Table header={columnsHeader} rows={columns}/>
-                </div>
+                    <div class="max-w-full rounded shadow-sm mb-2">
+                        <Table header={columnsHeader} rows={columns}/>
+                    </div>
 
-                <div class="max-w-full rounded shadow-sm">
-                    <Table header={indicesHeader} rows={indices}/>
-                </div>
+                    <div class="max-w-full rounded shadow-sm">
+                        <Table header={indicesHeader} rows={indices}/>
+                    </div>
+                {:else}
+                    <main class="flex-1 flex items-center justify-center text-gray-400">
+                        Klik + buat tab baru
+                    </main>
+                {/if}
             {:else}
                 <p class="text-gray-400 italic">
                     Silakan pilih tabel di sebelah kiri untuk melihat detail atau menjalankan query.
