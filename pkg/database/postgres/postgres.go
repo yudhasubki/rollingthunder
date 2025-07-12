@@ -63,11 +63,17 @@ func (p *Postgres) GetCollections(schema ...string) ([]string, error) {
 
 	var tables []string
 	query := `
-		SELECT table_name
-		FROM information_schema.tables
-		WHERE table_schema = $1
-		AND table_type = 'BASE TABLE'
-	`
+		SELECT 
+			c.relname AS table_name
+		FROM 
+			pg_class c
+		JOIN 
+			pg_namespace n ON c.relnamespace = n.oid
+		WHERE 
+			n.nspname = $1
+			AND c.relkind = 'r' 
+		ORDER BY 
+			c.oid`
 	err := p.conn.Select(&tables, query, targetSchema)
 	return tables, err
 }

@@ -12,7 +12,6 @@
             type: col.data_type,
             sort: true,
             resize: true,
-            flexgrow: 1,
         }))
     );
 </script>
