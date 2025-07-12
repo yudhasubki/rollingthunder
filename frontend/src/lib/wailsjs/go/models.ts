@@ -89,6 +89,8 @@ export namespace database {
 	export class Table {
 	    Schema: string;
 	    Name: string;
+	    Page: number;
+	    Limit: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Table(source);
@@ -98,7 +100,41 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Schema = source["Schema"];
 	        this.Name = source["Name"];
+	        this.Page = source["Page"];
+	        this.Limit = source["Limit"];
 	    }
+	}
+	export class TableData {
+	    structures: Structure[];
+	    data: any[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TableData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.structures = this.convertValues(source["structures"], Structure);
+	        this.data = source["data"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -176,6 +212,38 @@ export namespace response {
 	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse___string_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = source["data"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_int_ {
+	    errors?: BaseErrorResponse[];
+	    data?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_int_(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -310,6 +378,38 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.Structure);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_TableData_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.TableData;
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_TableData_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.TableData);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

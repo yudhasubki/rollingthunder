@@ -1,6 +1,6 @@
 <script>
     import { Grid, Willow } from "wx-svelte-grid"; 
-    const { header, rows } = $props()
+    const { header = [], rows } = $props()
 </script>
 
 <Willow>

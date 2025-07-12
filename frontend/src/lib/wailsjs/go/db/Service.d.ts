@@ -7,6 +7,10 @@ import {context} from '../models';
 
 export function Connect(arg1:db.ConnectRequest):Promise<response.BaseResponse_rollingthunder_internal_db_ConnectResponse_>;
 
+export function CountCollectionData(arg1:database.Table):Promise<response.BaseResponse_int_>;
+
+export function GetCollectionData(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;
+
 export function GetCollectionStructures(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Structures_>;
 
 export function GetCollections(arg1:Array<string>):Promise<response.BaseResponse___string_>;

@@ -147,3 +147,49 @@ func (s *Service) GetDatabaseInfo() response.BaseResponse[database.Info] {
 		Data: info,
 	}
 }
+
+func (s *Service) CountCollectionData(table database.Table) response.BaseResponse[int] {
+	count, err := s.driver.CountCollectionData(table)
+	if err != nil {
+		return response.BaseResponse[int]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+		}
+	}
+
+	return response.BaseResponse[int]{
+		Data: count,
+	}
+}
+
+func (s *Service) GetCollectionData(table database.Table) response.BaseResponse[database.TableData] {
+	structures, results, err := s.driver.GetCollectionData(table)
+	if err != nil {
+		return response.BaseResponse[database.TableData]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+		}
+	}
+
+	resp := response.BaseResponse[database.TableData]{
+		Data: database.TableData{
+			Structures: make(database.Structures, 0),
+			Data:       make([]map[string]interface{}, 0),
+		},
+	}
+	if len(structures) > 0 {
+		resp.Data.Structures = structures
+	}
+
+	if len(results) > 0 {
+		resp.Data.Data = results
+	}
+
+	return resp
+}

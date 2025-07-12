@@ -175,6 +175,28 @@ func (p *Postgres) GetConstraints(table database.Table) (Constraints, error) {
 	return out, err
 }
 
+func (p *Postgres) getCollectionStructures(table database.Table) (Columns, error) {
+	var (
+		query = `SELECT
+			column_name,
+			data_type,
+			is_nullable,
+			character_maximum_length,
+			column_default
+		FROM information_schema.columns
+		WHERE table_schema = $1 AND table_name = $2
+		ORDER BY ordinal_position`
+	)
+
+	var rows Columns
+	err := p.conn.Select(&rows, query, table.Schema, table.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return rows, nil
+}
+
 func (p *Postgres) GetCollectionStructures(table database.Table) (database.Structures, error) {
 	foreignKeys, err := p.GetForeignKey(table)
 	if err != nil {
@@ -192,20 +214,7 @@ func (p *Postgres) GetCollectionStructures(table database.Table) (database.Struc
 		cMap[c.Column] = c
 	}
 
-	var (
-		query = `SELECT
-			column_name,
-			data_type,
-			is_nullable,
-			character_maximum_length,
-			column_default
-		FROM information_schema.columns
-		WHERE table_schema = $1 AND table_name = $2
-		ORDER BY ordinal_position`
-	)
-
-	var rows Columns
-	err = p.conn.Select(&rows, query, table.Schema, table.Name)
+	rows, err := p.getCollectionStructures(table)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +258,7 @@ func (p *Postgres) GetCollectionStructures(table database.Table) (database.Struc
 
 func (p *Postgres) GetDatabaseInfo() (database.Info, error) {
 	var version, db string
-	err := p.conn.Get(&version, "SELECT current_setting('server_version')") // 14.18
+	err := p.conn.Get(&version, "SELECT current_setting('server_version')")
 	if err != nil {
 		return database.Info{}, err
 	}
@@ -260,4 +269,58 @@ func (p *Postgres) GetDatabaseInfo() (database.Info, error) {
 		Version:  version,
 		Database: db,
 	}, err
+}
+
+func (p *Postgres) CountCollectionData(table database.Table) (int, error) {
+	var result int
+	err := p.conn.Get(&result, fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", table.Schema, table.Name))
+	return result, err
+}
+
+func (p *Postgres) GetCollectionData(table database.Table) (database.Structures, []map[string]interface{}, error) {
+	offset := (table.Page - 1) * table.Limit
+	query := fmt.Sprintf(`
+		SELECT * FROM %s.%s 
+		LIMIT %d OFFSET %d`,
+		table.Schema, table.Name, table.Limit, offset)
+
+	rows, err := p.conn.Queryx(query)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	columns, err := p.getCollectionStructures(table)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	structures := make(database.Structures, 0, len(columns))
+	for _, column := range columns {
+		dataType := column.DataType
+		if v, exist := Types[dataType]; exist {
+			dataType = v
+		}
+
+		structure := database.Structure{
+			Name:      column.ColumnName,
+			DataType:  dataType,
+			Length:    column.MaxLength,
+			Nullable:  column.IsNullable == "YES",
+			Default:   column.ColumnDefault,
+			IsAutoInc: column.ColumnDefault != nil && strings.HasPrefix(*column.ColumnDefault, "nextval("),
+		}
+		structures = append(structures, structure)
+	}
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		row := make(map[string]interface{})
+		if err := rows.MapScan(row); err != nil {
+			return nil, nil, fmt.Errorf("error scanning row: %v", err)
+		}
+		results = append(results, row)
+	}
+
+	return structures, results, err
 }

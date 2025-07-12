@@ -4,6 +4,7 @@ import { LogInfo } from '$lib/wailsjs/runtime/runtime';
 
 export const tabs         = writable<Tab[]>([]);
 export const activeTabId  = writable<string | null>(null);
+export const activeSubTab = writable<'structure' | 'data'>('structure');
 
 export function newQueryTab() {
     const id = crypto.randomUUID();
