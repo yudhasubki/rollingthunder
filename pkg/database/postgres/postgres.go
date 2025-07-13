@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"rollingthunder/pkg/database"
 	"strings"
@@ -35,13 +36,26 @@ func NewPostgres(ctx context.Context, cfg Config) *Postgres {
 }
 
 func (p *Postgres) Connect() error {
-	dsn := fmt.Sprintf(
-		"user=%s password=%s dbname=%s host=%s port=%s sslmode=disable",
-		p.cfg.User, p.cfg.Password, p.cfg.Db, p.cfg.Host, p.cfg.Port,
-	)
-	fmt.Println(dsn)
+	if p.cfg.Db == "" {
+		return errors.New("database is not exists")
+	}
 
-	pool, err := pgxpool.New(p.ctx, dsn)
+	dsn := []string{"dbname=" + p.cfg.Db, "sslmode=disable"}
+	if p.cfg.User != "" {
+		dsn = append(dsn, fmt.Sprintf("user=%s", p.cfg.User))
+	}
+
+	if p.cfg.Password != "" {
+		dsn = append(dsn, fmt.Sprintf("password=%s", p.cfg.Password))
+	}
+
+	port := "5432"
+	if p.cfg.Port != "5432" {
+		port = p.cfg.Port
+	}
+	dsn = append(dsn, fmt.Sprintf("port=%s", port))
+
+	pool, err := pgxpool.New(p.ctx, strings.Join(dsn, " "))
 	if err != nil {
 		return err
 	}
@@ -284,12 +298,10 @@ func (p *Postgres) CountCollectionData(table database.Table) (int, error) {
 }
 
 func (p *Postgres) GetCollectionData(table database.Table) (database.Structures, []map[string]interface{}, error) {
-	offset := (table.Page - 1) * table.Limit
 	query := fmt.Sprintf(`
 		SELECT * FROM %s.%s 
 		LIMIT %d OFFSET %d`,
-		table.Schema, table.Name, table.Limit, offset)
-
+		table.Schema, table.Name, table.Limit, table.Offset)
 	rows, err := p.conn.Queryx(query)
 	if err != nil {
 		return nil, nil, err

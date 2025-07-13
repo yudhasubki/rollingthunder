@@ -3,7 +3,7 @@ package database
 type Table struct {
 	Schema string
 	Name   string
-	Page   int
+	Offset int
 	Limit  int
 }
 

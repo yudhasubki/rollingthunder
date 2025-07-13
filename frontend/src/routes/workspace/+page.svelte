@@ -119,10 +119,9 @@
                 let reqTable = new database.Table();
                 reqTable.Name = activeTab.table;
                 reqTable.Schema = activeTab.schema;
-                reqTable.Limit = 300
-                reqTable.Page = 1
+                reqTable.Limit = tableLimit
 
-                loadCollectionData(reqTable)
+                loadCollectionData({from: 0, to: 300})
 
                 const total = await CountCollectionData(reqTable)
                 tableTotalData = total.data
@@ -136,7 +135,14 @@
         })();
     });
 
-    function loadCollectionData(reqTable: database.Table) {
+    function loadCollectionData(ev) {
+        const {from, to} = ev;
+        let reqTable = new database.Table();
+        reqTable.Name = activeTab.table;
+        reqTable.Schema = activeTab.schema;
+        reqTable.Limit = tableLimit
+        reqTable.Offset = from
+
         GetCollectionData(reqTable).then(res => {
             if(res.errors?.length > 0) {
                 level = 'error';
@@ -145,7 +151,6 @@
             }
 
             tableData = res.data
-            console.log(tableData)
         }).catch(e => {
             level = 'error';
             status = e?.message ?? 'failed fetching data';

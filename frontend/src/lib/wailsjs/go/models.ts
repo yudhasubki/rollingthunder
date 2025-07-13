@@ -89,7 +89,7 @@ export namespace database {
 	export class Table {
 	    Schema: string;
 	    Name: string;
-	    Page: number;
+	    Offset: number;
 	    Limit: number;
 	
 	    static createFrom(source: any = {}) {
@@ -100,7 +100,7 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Schema = source["Schema"];
 	        this.Name = source["Name"];
-	        this.Page = source["Page"];
+	        this.Offset = source["Offset"];
 	        this.Limit = source["Limit"];
 	    }
 	}

@@ -4,11 +4,11 @@
     import { goto } from '$app/navigation';
     
     let dbtype : string = $state('postgres');
-    let host : string = $state('10.8.0.1');
+    let host : string = $state('127.0.0.1');
     let port : string = $state('5432');
-    let user : string = $state('mahabbah');
-    let password : string = $state('7ps9AJGACrS3qY');
-    let dbname : string = $state('mahabbahinvite');
+    let user : string = $state('yudhapratamaputra');
+    let password : string = $state('');
+    let dbname : string = $state('myapp_db');
     let result = $state(null);
     let loading : boolean = $state(false);
 
