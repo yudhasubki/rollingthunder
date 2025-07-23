@@ -24,7 +24,7 @@
         {/if}
     {/each}
 </div>
-<div class="flex gap-4 px-3 py-2 border-t">
+<div class="flex gap-4 px-3 py-2">
     <button class="flex items-center gap-1 text-sm">
         <Plug size="14"/>
         Connect

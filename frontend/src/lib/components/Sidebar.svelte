@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { GetSchemas, GetCollections } from '$lib/wailsjs/go/db/Service';
+	import { Folder, Folders } from 'lucide-svelte';
 
     const { onTableClick } = $props<{
         onTableClick: (schema: string, table: string) => void;
@@ -35,10 +36,7 @@
 </script>
 
 <aside class="w-1/4 p-4 overflow-y-auto bg-gray-100">
-    <h2 class="font-bold mb-2">📦 Tables</h2>
-
     {#if showSchemaDropdown}
-        <label for="schema" class="block text-xs mb-1">Schema</label>
         <select
             bind:value={selectedSchema}
             onchange={loadTables}
@@ -62,9 +60,9 @@
                 role="button"
                 onclick={() => onTableClick(selectedSchema, table)}
                 onkeydown={(e) => e.key === 'Enter' && onTableClick(selectedSchema, table)}
-                class="cursor-pointer hover:bg-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                class="cursor-pointer flex flex-row items-center hover:bg-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
-                {table}
+                <Folders class="w-4 h-4" />&nbsp{table}
             </div>
         </li>
         {/each}

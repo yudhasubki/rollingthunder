@@ -13,20 +13,20 @@
 {#if list.length > 0}
 <div role="tablist" class="tabs tabs-lift">
     {#each list as tab (tab.id)}
-        <label class="tab group relative pr-6">
+        <label class="tab group flex flex-row gap-1 items-center">
             <input 
                 type="radio" 
-                class="tab"
+                class="tab peer"
                 checked={tab.id === active}
                 aria-label={tab.title}
                 onchange={() => {handleTabChange(tab.id)}}
             />
-            {tab.title}
+            <span class="peer-checked:font-semibold">{tab.title}</span>
 
             <span
                 role="button"
                 tabindex="0"
-                class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition text-gray-400"
+                class="opacity-0 group-hover:opacity-100 text-gray-400"
                 onclick={(e) => {
                 tabsStore.closeTab(tab.id);
                     e.stopPropagation();
