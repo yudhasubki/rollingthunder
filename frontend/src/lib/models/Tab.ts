@@ -9,6 +9,5 @@ export interface Tab {
     sql?:           string;       
     status?:        string;       
     level?:         'info' | 'warn' | 'error';
-    createdAt:      number;
     activeSubTab?: 'structure' | 'data';
 }
