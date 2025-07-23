@@ -1,3 +1,23 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin 'daisyui';
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('/fonts/PlusJakartaSans-Regular.ttf');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('/fonts/PlusJakartaSans-Bold.ttf');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+html {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}

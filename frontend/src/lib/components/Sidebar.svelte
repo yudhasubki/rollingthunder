@@ -34,7 +34,7 @@
     }
 </script>
 
-<aside class="w-1/4 border-r p-4 overflow-y-auto bg-gray-100">
+<aside class="w-1/4 p-4 overflow-y-auto bg-gray-100">
     <h2 class="font-bold mb-2">📦 Tables</h2>
 
     {#if showSchemaDropdown}
