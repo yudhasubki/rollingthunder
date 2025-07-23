@@ -4,10 +4,14 @@
     import { X } from 'lucide-svelte';
     let list = $derived(tabsStore.tabs);
     let active = $derived(tabsStore.activeTabId);
+
+    function handleTabChange(tabId) {
+        tabsStore.setActive(tabId)
+    }
 </script>
 
 {#if list.length > 0}
-<div role="tablist" class="tabs tabs-lift bg-base-100">
+<div role="tablist" class="tabs tabs-lift">
     {#each list as tab (tab.id)}
         <label class="tab group relative pr-6">
             <input 
@@ -15,6 +19,7 @@
                 class="tab"
                 checked={tab.id === active}
                 aria-label={tab.title}
+                onchange={() => {handleTabChange(tab.id)}}
             />
             {tab.title}
 
