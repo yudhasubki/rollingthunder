@@ -33,6 +33,7 @@
         } else {
             tabsStore.newTableTab(schema, table)
         }
+        updateStatus('', 'info')
     }
 </script>
 

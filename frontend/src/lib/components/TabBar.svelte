@@ -26,11 +26,12 @@
             <span
                 role="button"
                 tabindex="0"
-                class="opacity-0 group-hover:opacity-100 text-gray-400"
+                class="opacity-0 group-hover:opacity-100 text-gray-400 p-1"
                 onclick={(e) => {
-                tabsStore.closeTab(tab.id);
-                    e.stopPropagation();
-                }}
+                        tabsStore.closeTab(tab.id);
+                        e.stopPropagation();
+                    }
+                }
                 onkeydown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         tabsStore.closeTab(tab.id);
@@ -39,7 +40,7 @@
                     }
                 }}
             >
-                <X class="w-3 h-3" />
+                <X class="w-4 h-4" />
             </span>
         </label>
         <div class="tab-content bg-base-100 border-base-300">

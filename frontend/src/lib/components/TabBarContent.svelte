@@ -4,20 +4,20 @@
     import { updateStatus, setDatabaseInfo, updateDatabaseInfo } from '$lib/stores/status.svelte';
     import DataTable from "$lib/components/DataTable.svelte";
     import Table from "$lib/components/Table.svelte";
-	import { database } from "$lib/wailsjs/go/models";
-	import { CountCollectionData, GetCollectionData, GetCollectionStructures, GetDatabaseInfo, GetIndices } from '$lib/wailsjs/go/db/Service';
-	import { LayoutGrid, Text } from 'lucide-svelte';
+    import { database } from "$lib/wailsjs/go/models";
+    import { CountCollectionData, GetCollectionData, GetCollectionStructures, GetDatabaseInfo, GetIndices } from '$lib/wailsjs/go/db/Service';
+    import { LayoutGrid, Text } from 'lucide-svelte';
 
     // variables structure content
     let columns = $state<database.Structure[]>([]);
     let indices = $state<database.Index[]>([]);
 
-    let isLoadingData = $state(false);
     let tableTotalData = $state<number>(0);
     let tableData = $state<database.TableData>(database.TableData.createFrom({
         structures: [],
         data: []
     }));
+    const tableLimit = 300
 
     let columnsHeader = [
         {id: "name", header: "Name", editor: "text", sort: true},
@@ -36,11 +36,10 @@
         {id: "algorithm", header: "Algorithm", sort: true},
     ];
 
-    const tableLimit = 300
     $effect(() => {
         if (!tabsStore.activeTab || tabsStore.activeTab.kind !== 'table') return;
 
-        updateStatus('', 'warn');
+        updateStatus('', 'info');
 
         (async() => {
             try {
@@ -72,8 +71,7 @@
             return;
         }
         
-        updateStatus('Loading data...', 'warn');
-        isLoadingData = true;
+        updateStatus('Loading data...', 'info');
         (async() => {
             try {
                 let reqTable = new database.Table();
@@ -84,11 +82,9 @@
                 loadCollectionData({from: 0, to: 300});
                 const total = await CountCollectionData(reqTable);
                 tableTotalData = total.data;
-                updateStatus(''); // Clear status on success
+                updateStatus('', 'info'); // Clear status on success
             } catch(e: any) {
                 updateStatus(e?.message ?? 'Failed fetching data', 'error');
-            } finally {
-                isLoadingData = false;
             }
         })();
     });
@@ -101,7 +97,7 @@
         reqTable.Limit = tableLimit;
         reqTable.Offset = from;
 
-        updateStatus('', 'warn');
+        updateStatus('', 'info');
         GetCollectionData(reqTable)
             .then(res => {
                 if(res.errors?.length > 0) {

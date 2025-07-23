@@ -12,8 +12,6 @@
         ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
         : 'bg-green-100 border-green-300 text-green-800'
     )
-    import { onDestroy } from 'svelte';
-
 </script>
 
 <div class={`flex items-center gap-2 px-3 py-1 text-sm font-mono ${bg}`}>
@@ -24,7 +22,7 @@
         {/if}
     {/each}
 </div>
-<div class="flex gap-4 px-3 py-2">
+<div class="flex gap-4 px-3 py-2 border-zinc-300 border">
     <button class="flex items-center gap-1 text-sm">
         <Plug size="14"/>
         Connect

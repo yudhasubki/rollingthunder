@@ -1,7 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { GetSchemas, GetCollections } from '$lib/wailsjs/go/db/Service';
-	import { Folder, Folders } from 'lucide-svelte';
+	import { Sheet } from 'lucide-svelte';
+	import { updateStatus } from '$lib/stores/status.svelte';
 
     const { onTableClick } = $props<{
         onTableClick: (schema: string, table: string) => void;
@@ -11,7 +12,6 @@
     let selectedSchema = $state('public');
     let tables: string[] = $state([]);
     let showSchemaDropdown = $state(false);
-    let error: string = $state('');
 
     onMount(async () => {
         try {
@@ -29,42 +29,45 @@
         try {
             const response = await GetCollections([selectedSchema]);
             tables = response.data;
+            updateStatus('', 'info')
         } catch (e: any) {
-            error = e.message || 'Failed to load tables';
+            updateStatus(e?.message ?? 'Failed to load tables', 'error');
         }
     }
 </script>
 
-<aside class="w-1/4 p-4 overflow-y-auto bg-gray-100">
+<aside class="w-1/4 p-4 flex gap-2 flex-col border-zinc-300 border-r ">
     {#if showSchemaDropdown}
-        <select
-            bind:value={selectedSchema}
-            onchange={loadTables}
-            class="w-full mb-4 p-1 border rounded text-sm"
-        >
-        {#each schemas as schema}
-            <option value={schema}>{schema}</option>
-        {/each}
-        </select>
-    {/if}
-
-    {#if error}
-        <p class="text-red-500 text-sm mb-2">{error}</p>
-    {/if}
-
-    <ul class="text-sm space-y-1">
-        {#each tables as table}
-        <li>
-            <div
-                tabindex="0"
-                role="button"
-                onclick={() => onTableClick(selectedSchema, table)}
-                onkeydown={(e) => e.key === 'Enter' && onTableClick(selectedSchema, table)}
-                class="cursor-pointer flex flex-row items-center hover:bg-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+        <div>
+            <select
+                bind:value={selectedSchema}
+                onchange={loadTables}
+                class="select"
             >
-                <Folders class="w-4 h-4" />&nbsp{table}
-            </div>
-        </li>
-        {/each}
-    </ul>
+                {#each schemas as schema}
+                    <option value={schema}>{schema}</option>
+                {/each}
+            </select>
+        </div>
+        
+    {/if}
+
+    <div>
+        <ul class="text-sm space-y-1">
+            {#each tables as table}
+            <li>
+                <div
+                    tabindex="0"
+                    role="button"
+                    onclick={() => onTableClick(selectedSchema, table)}
+                    onkeydown={(e) => e.key === 'Enter' && onTableClick(selectedSchema, table)}
+                    class="cursor-pointer flex flex-row items-center hover:bg-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                    <Sheet class="w-4 h-4" />&nbsp{table}
+                </div>
+            </li>
+            {/each}
+        </ul>
+    </div>
+    
 </aside>
