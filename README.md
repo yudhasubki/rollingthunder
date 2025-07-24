@@ -19,3 +19,11 @@ It's **not ready for production use** yet, but stay tuned for updates!
 - Wails
 - Svelte
 - Go
+
+## Roadmap
+### 🧱 Core Feature 
+- [ ] SQL query editor (syntax highlight, autocomplete)
+- [ ] Run SQL
+- [ ] Query history
+- [ ] Inline Action (Create/Update/Delete)
+- [ ] DDL viewer & editor (CREATE/ALTER table)
