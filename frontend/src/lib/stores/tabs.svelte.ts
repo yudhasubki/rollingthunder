@@ -32,7 +32,7 @@ export const tabsStore = {
     const id = crypto.randomUUID();
     const tab: Tab = {
       id,
-      title: 'New Query',
+      title: 'SQL Query',
       kind: 'query',
       sql: '',
       level: 'info'
