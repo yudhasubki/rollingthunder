@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { updateStatus } from '$lib/stores/status.svelte';
+	import { tabsStore } from '$lib/stores/tabs.svelte';
     import { Database, Braces, Plug } from 'lucide-svelte';
     const {segments, level = 'info'} = $props<{
         segments: string[];
@@ -12,6 +14,11 @@
         ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
         : 'bg-green-100 border-green-300 text-green-800'
     )
+
+    function handleQueryEditor() {
+        tabsStore.newQueryTab()
+        updateStatus('', 'info')
+    }
 </script>
 
 <div class={`flex items-center gap-2 px-3 py-1 text-sm font-mono ${bg}`}>
@@ -31,7 +38,7 @@
         <Database size="14" />
         Database
     </button>
-    <button class="flex items-center gap-1 text-sm">
+    <button onclick={() => handleQueryEditor() } class="flex items-center gap-1 text-sm">
         <Braces size="14" />
         SQL Editor
     </button>
