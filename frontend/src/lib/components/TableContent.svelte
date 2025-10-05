@@ -5,7 +5,12 @@
     import Table from "$lib/components/Table.svelte";
     import { database } from "$lib/wailsjs/go/models";
     import { updateStatus, setDatabaseInfo, updateDatabaseInfo } from '$lib/stores/status.svelte';
-    import { CountCollectionData, GetCollectionData, GetCollectionStructures, GetDatabaseInfo, GetIndices } from '$lib/wailsjs/go/db/Service';
+    import { CountCollectionData, 
+            GetCollectionData, 
+            GetCollectionStructures, 
+            GetDatabaseInfo, 
+            GetIndices,
+        } from '$lib/wailsjs/go/db/Service';
 
     let columns = $state<database.Structure[]>([]);
     let indices = $state<database.Index[]>([]);

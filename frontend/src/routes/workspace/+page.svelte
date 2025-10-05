@@ -3,6 +3,11 @@
     import StatusBar from "$lib/components/StatusBar.svelte";
     import TabBar from '$lib/components/TabBar.svelte';
     import { tabsStore } from "$lib/stores/tabs.svelte";
+    import { Save, RefreshCcw } from 'lucide-svelte';
+    import {
+        hasChanges,
+        discardStagedChanges
+    } from '$lib/stores/staged.svelte';
     import { 
         getLevel,
         getSegments,
@@ -35,6 +40,15 @@
         }
         updateStatus('', 'info')
     }
+
+    function applyChanges() {
+        updateStatus("Applying changes...", "info");
+    }
+
+    function discardChanges() {
+        updateStatus("Discarding changes...", "info");
+        discardStagedChanges();
+    }
 </script>
 
 <div class="flex flex-col h-screen">
@@ -45,6 +59,24 @@
 
         <main class="flex-1 p-4 overflow-y-auto">
             <TabBar />
+
+            <div class="flex justify-end mt-4 gap-2">
+                <button 
+                    class="btn btn-primary"
+                    disabled={!hasChanges()}
+                    onclick={applyChanges}
+                >
+                    <Save size="14"/> Apply
+                </button>
+
+                <button 
+                    class="btn btn-primary"
+                    disabled={!hasChanges()}
+                    onclick={discardChanges}
+                >
+                    <RefreshCcw size="14" /> Discard
+                </button>
+            </div>
         </main>
     </div>
 </div>
