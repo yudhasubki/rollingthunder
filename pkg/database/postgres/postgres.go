@@ -49,6 +49,12 @@ func (p *Postgres) Connect() error {
 		dsn = append(dsn, fmt.Sprintf("password=%s", p.cfg.Password))
 	}
 
+	host := "localhost"
+	if p.cfg.Host != "" {
+		host = p.cfg.Host
+	}
+	dsn = append(dsn, fmt.Sprintf("host=%s", host))
+
 	port := "5432"
 	if p.cfg.Port != "5432" {
 		port = p.cfg.Port
