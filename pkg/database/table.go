@@ -5,6 +5,7 @@ type Table struct {
 	Name   string
 	Offset int
 	Limit  int
+	Filter string // WHERE clause for filtering data
 }
 
 type TableData struct {

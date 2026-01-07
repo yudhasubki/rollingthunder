@@ -299,15 +299,20 @@ func (p *Postgres) GetDatabaseInfo() (database.Info, error) {
 
 func (p *Postgres) CountCollectionData(table database.Table) (int, error) {
 	var result int
-	err := p.conn.Get(&result, fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", table.Schema, table.Name))
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", table.Schema, table.Name)
+	if table.Filter != "" {
+		query += fmt.Sprintf(" WHERE %s", table.Filter)
+	}
+	err := p.conn.Get(&result, query)
 	return result, err
 }
 
 func (p *Postgres) GetCollectionData(table database.Table) (database.Structures, []map[string]interface{}, error) {
-	query := fmt.Sprintf(`
-		SELECT * FROM %s.%s 
-		LIMIT %d OFFSET %d`,
-		table.Schema, table.Name, table.Limit, table.Offset)
+	query := fmt.Sprintf(`SELECT * FROM %s.%s`, table.Schema, table.Name)
+	if table.Filter != "" {
+		query += fmt.Sprintf(" WHERE %s", table.Filter)
+	}
+	query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
 	rows, err := p.conn.Queryx(query)
 	if err != nil {
 		return nil, nil, err
@@ -347,4 +352,116 @@ func (p *Postgres) GetCollectionData(table database.Table) (database.Structures,
 	}
 
 	return structures, results, err
+}
+
+// InsertRow inserts a new row into the table
+func (p *Postgres) InsertRow(table database.Table, data map[string]interface{}) error {
+	if len(data) == 0 {
+		return errors.New("no data to insert")
+	}
+
+	columns := make([]string, 0, len(data))
+	placeholders := make([]string, 0, len(data))
+	values := make([]interface{}, 0, len(data))
+	i := 1
+
+	for col, val := range data {
+		// Skip internal fields
+		if col == "id" && val == nil {
+			continue
+		}
+		if col == "_isNew" || strings.HasPrefix(col, "temp_") {
+			continue
+		}
+		columns = append(columns, fmt.Sprintf(`"%s"`, col))
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
+		values = append(values, val)
+		i++
+	}
+
+	query := fmt.Sprintf(
+		`INSERT INTO %s.%s (%s) VALUES (%s)`,
+		table.Schema,
+		table.Name,
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "),
+	)
+
+	_, err := p.conn.Exec(query, values...)
+	return err
+}
+
+// UpdateRow updates an existing row in the table
+func (p *Postgres) UpdateRow(table database.Table, data map[string]interface{}, primaryKey string) error {
+	if len(data) == 0 {
+		return errors.New("no data to update")
+	}
+
+	primaryValue, ok := data[primaryKey]
+	if !ok {
+		return fmt.Errorf("primary key '%s' not found in data", primaryKey)
+	}
+
+	setClauses := make([]string, 0, len(data))
+	values := make([]interface{}, 0, len(data))
+	i := 1
+
+	for col, val := range data {
+		if col == primaryKey {
+			continue
+		}
+		// Skip internal fields
+		if col == "_isNew" || strings.HasPrefix(col, "temp_") {
+			continue
+		}
+		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, col, i))
+		values = append(values, val)
+		i++
+	}
+
+	values = append(values, primaryValue)
+	query := fmt.Sprintf(
+		`UPDATE %s.%s SET %s WHERE "%s" = $%d`,
+		table.Schema,
+		table.Name,
+		strings.Join(setClauses, ", "),
+		primaryKey,
+		i,
+	)
+
+	_, err := p.conn.Exec(query, values...)
+	return err
+}
+
+// DeleteRow deletes a row from the table by primary key
+func (p *Postgres) DeleteRow(table database.Table, primaryKey string, primaryValue interface{}) error {
+	query := fmt.Sprintf(
+		`DELETE FROM %s.%s WHERE "%s" = $1`,
+		table.Schema,
+		table.Name,
+		primaryKey,
+	)
+
+	_, err := p.conn.Exec(query, primaryValue)
+	return err
+}
+
+// ExecuteQuery executes a raw SQL query and returns results
+func (p *Postgres) ExecuteQuery(query string) ([]map[string]interface{}, error) {
+	rows, err := p.conn.Queryx(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		row := make(map[string]interface{})
+		if err := rows.MapScan(row); err != nil {
+			return nil, fmt.Errorf("error scanning row: %v", err)
+		}
+		results = append(results, row)
+	}
+
+	return results, nil
 }

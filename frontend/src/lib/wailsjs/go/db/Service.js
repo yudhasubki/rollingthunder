@@ -10,6 +10,14 @@ export function CountCollectionData(arg1) {
   return window['go']['db']['Service']['CountCollectionData'](arg1);
 }
 
+export function DeleteRow(arg1, arg2, arg3) {
+  return window['go']['db']['Service']['DeleteRow'](arg1, arg2, arg3);
+}
+
+export function ExecuteQuery(arg1) {
+  return window['go']['db']['Service']['ExecuteQuery'](arg1);
+}
+
 export function GetCollectionData(arg1) {
   return window['go']['db']['Service']['GetCollectionData'](arg1);
 }
@@ -34,6 +42,14 @@ export function GetSchemas() {
   return window['go']['db']['Service']['GetSchemas']();
 }
 
+export function InsertRow(arg1, arg2) {
+  return window['go']['db']['Service']['InsertRow'](arg1, arg2);
+}
+
 export function Start(arg1) {
   return window['go']['db']['Service']['Start'](arg1);
+}
+
+export function UpdateRow(arg1, arg2, arg3) {
+  return window['go']['db']['Service']['UpdateRow'](arg1, arg2, arg3);
 }

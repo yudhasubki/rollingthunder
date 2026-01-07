@@ -9,7 +9,7 @@ export const stagedChanges = $state({
         updated: [],
         deleted: []
     },
-        indices: {
+    indices: {
         added: [],
         deleted: []
     }
@@ -17,6 +17,18 @@ export const stagedChanges = $state({
 
 export function stageDataAdd(row) {
     stagedChanges.data.added.push(row);
+}
+
+export function stageDataInsert(row: Partial<any>) {
+    // Don't set ID - let database auto-generate it
+    stagedChanges.data.added.push({ ...row, _isNew: true });
+}
+
+export function updateStagedRow(index: number, data: Record<string, any>) {
+    // Update an existing staged row in-place
+    if (index >= 0 && index < stagedChanges.data.added.length) {
+        Object.assign(stagedChanges.data.added[index], data);
+    }
 }
 
 export function stageDataUpdate(row) {

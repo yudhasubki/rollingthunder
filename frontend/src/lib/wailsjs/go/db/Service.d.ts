@@ -9,6 +9,10 @@ export function Connect(arg1:db.ConnectRequest):Promise<response.BaseResponse_ro
 
 export function CountCollectionData(arg1:database.Table):Promise<response.BaseResponse_int_>;
 
+export function DeleteRow(arg1:database.Table,arg2:string,arg3:any):Promise<response.BaseResponse_bool_>;
+
+export function ExecuteQuery(arg1:string):Promise<response.BaseResponse___map_string_interface____>;
+
 export function GetCollectionData(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;
 
 export function GetCollectionStructures(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Structures_>;
@@ -21,4 +25,8 @@ export function GetIndices(arg1:database.Table):Promise<response.BaseResponse_ro
 
 export function GetSchemas():Promise<response.BaseResponse___string_>;
 
+export function InsertRow(arg1:database.Table,arg2:Record<string, any>):Promise<response.BaseResponse_bool_>;
+
 export function Start(arg1:context.Context):Promise<void>;
+
+export function UpdateRow(arg1:database.Table,arg2:Record<string, any>,arg3:string):Promise<response.BaseResponse_bool_>;

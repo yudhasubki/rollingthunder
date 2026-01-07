@@ -9,6 +9,11 @@ type Driver interface {
 	GetCollectionStructures(table Table) (Structures, error)
 	GetIndices(table Table) (Indices, error)
 	GetDatabaseInfo() (Info, error)
+	// CRUD operations
+	InsertRow(table Table, data map[string]interface{}) error
+	UpdateRow(table Table, data map[string]interface{}, primaryKey string) error
+	DeleteRow(table Table, primaryKey string, primaryValue interface{}) error
+	ExecuteQuery(query string) ([]map[string]interface{}, error)
 }
 
 type DriverWithSchema interface {

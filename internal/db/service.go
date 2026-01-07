@@ -193,3 +193,78 @@ func (s *Service) GetCollectionData(table database.Table) response.BaseResponse[
 
 	return resp
 }
+
+// InsertRow inserts a new row into the table
+func (s *Service) InsertRow(table database.Table, data map[string]interface{}) response.BaseResponse[bool] {
+	err := s.driver.InsertRow(table, data)
+	if err != nil {
+		return response.BaseResponse[bool]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+			Data: false,
+		}
+	}
+
+	return response.BaseResponse[bool]{
+		Data: true,
+	}
+}
+
+// UpdateRow updates an existing row in the table
+func (s *Service) UpdateRow(table database.Table, data map[string]interface{}, primaryKey string) response.BaseResponse[bool] {
+	err := s.driver.UpdateRow(table, data, primaryKey)
+	if err != nil {
+		return response.BaseResponse[bool]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+			Data: false,
+		}
+	}
+
+	return response.BaseResponse[bool]{
+		Data: true,
+	}
+}
+
+// DeleteRow deletes a row from the table
+func (s *Service) DeleteRow(table database.Table, primaryKey string, primaryValue interface{}) response.BaseResponse[bool] {
+	err := s.driver.DeleteRow(table, primaryKey, primaryValue)
+	if err != nil {
+		return response.BaseResponse[bool]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+			Data: false,
+		}
+	}
+
+	return response.BaseResponse[bool]{
+		Data: true,
+	}
+}
+
+// ExecuteQuery executes a raw SQL query
+func (s *Service) ExecuteQuery(query string) response.BaseResponse[[]map[string]interface{}] {
+	results, err := s.driver.ExecuteQuery(query)
+	if err != nil {
+		return response.BaseResponse[[]map[string]interface{}]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+		}
+	}
+
+	return response.BaseResponse[[]map[string]interface{}]{
+		Data: results,
+	}
+}
