@@ -7,11 +7,8 @@
 		type ColumnDef,
 		type SortingState
 	} from '@tanstack/table-core';
-	import * as Table from '$lib/components/ui/table';
-	import * as ContextMenu from '$lib/components/ui/context-menu';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import { createContextMenu, melt } from '@melt-ui/svelte';
+	import { writable } from 'svelte/store';
 	import {
 		stageDataUpdate,
 		stageDataDelete,
@@ -20,6 +17,7 @@
 	} from '$lib/stores/staged.svelte';
 	import { Plus, Trash2, Copy, ArrowUp, ArrowDown, Filter } from 'lucide-svelte';
 	import { database } from '$lib/wailsjs/go/models';
+	import { fly } from 'svelte/transition';
 
 	interface Props {
 		columns: database.Structure[];
@@ -29,7 +27,7 @@
 		pageSize: number;
 		onPageChange: (page: number) => void;
 		onAddFilter?: () => void;
-		readonly?: boolean; // Hide edit/add/delete buttons for query results
+		readonly?: boolean;
 	}
 
 	let {
@@ -43,6 +41,24 @@
 		readonly = false
 	}: Props = $props();
 
+	// Use writable store for context menu state to avoid Svelte 5 runes conflict
+	const ctxOpenStore = writable(false);
+
+	// Track menu position for manual positioning
+	let menuPosition = $state({ x: 0, y: 0 });
+
+	// Create melt-ui context menu
+	const {
+		elements: { menu: ctxMenu, item: ctxItem, separator: ctxSeparator },
+		states: { open: ctxOpen }
+	} = createContextMenu({
+		open: ctxOpenStore,
+		forceVisible: true
+	});
+
+	// Track which row is being right-clicked
+	let contextRow = $state<Record<string, any> | null>(null);
+
 	// Merge staged added rows with existing data for display
 	const displayData = $derived([...stagedChanges.data.added.filter((r: any) => r._isNew), ...data]);
 
@@ -54,7 +70,6 @@
 	// Sorting state
 	let sorting = $state<SortingState>([]);
 
-	// Get row class based on staged changes
 	function getRowClass(row: Record<string, any>, rowIndex: number): string {
 		const rowId = row.id || row._id || rowIndex;
 		if (stagedChanges.data.added.some((r: any) => r.id === rowId || r._isNew)) {
@@ -81,25 +96,15 @@
 		if (!editingCell) return;
 
 		const { colName } = editingCell;
+		const newValue = editValue;
 		const oldValue = row[colName];
 
-		if (oldValue !== editValue) {
-			// Check if this is a staged new row
-			if (row._isNew) {
-				// Update the staged row in-place
-				const stagedIndex = stagedChanges.data.added.findIndex((r: any) => r === row);
-				if (stagedIndex >= 0) {
-					stagedChanges.data.added[stagedIndex][colName] = editValue;
-				}
-			} else {
-				// It's an existing row from DB - add to updated list
-				const updatedRow = { ...row, [colName]: editValue };
-				stageDataUpdate(updatedRow);
-			}
+		if (newValue !== oldValue?.toString()) {
+			const updatedRow = { ...row, [colName]: newValue };
+			stageDataUpdate(updatedRow);
 		}
 
 		editingCell = null;
-		editValue = '';
 	}
 
 	function cancelEdit() {
@@ -115,25 +120,13 @@
 		}
 	}
 
-	function selectRow(rowIndex: number) {
-		selectedRowIndex = selectedRowIndex === rowIndex ? null : rowIndex;
-	}
-
 	function addNewRow() {
-		// Create a new empty row - leave auto-increment columns empty
-		const newRow: Record<string, any> = {};
+		const newRow: Record<string, any> = { _isNew: true };
 		columns.forEach((col) => {
-			// Skip auto-increment columns (let DB handle them)
-			if (col.is_autoinc || col.is_primary) {
-				newRow[col.name] = null;
+			if (col.defaultValue) {
+				newRow[col.name] = col.defaultValue;
 			} else {
-				// Only use default if it's a simple value, not an expression
-				const defaultVal = col.default;
-				if (defaultVal && !defaultVal.includes('(') && !defaultVal.includes('::')) {
-					newRow[col.name] = defaultVal;
-				} else {
-					newRow[col.name] = null;
-				}
+				newRow[col.name] = null;
 			}
 		});
 		stageDataInsert(newRow);
@@ -146,9 +139,15 @@
 		}
 	}
 
-	function copyRowValue(row: Record<string, any>, colName: string) {
-		const value = row[colName]?.toString() ?? '';
-		navigator.clipboard.writeText(value);
+	function selectRow(rowIndex: number) {
+		selectedRowIndex = selectedRowIndex === rowIndex ? null : rowIndex;
+	}
+
+	function handleContextMenu(e: MouseEvent, row: Record<string, any>) {
+		e.preventDefault();
+		contextRow = row;
+		menuPosition = { x: e.clientX, y: e.clientY };
+		ctxOpenStore.set(true);
 	}
 
 	const totalPages = $derived(Math.ceil(totalRows / pageSize) || 1);
@@ -159,26 +158,30 @@
 	<div class="mb-2 flex flex-shrink-0 items-center justify-between">
 		<div class="flex items-center gap-2">
 			{#if !readonly}
-				<Button variant="outline" size="sm" class="gap-1.5" onclick={addNewRow}>
+				<button
+					class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-3 text-sm transition-colors"
+					onclick={addNewRow}
+				>
 					<Plus class="h-3.5 w-3.5" />
 					Add Row
-				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					class="gap-1.5"
+				</button>
+				<button
+					class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-3 text-sm transition-colors disabled:pointer-events-none disabled:opacity-50"
 					disabled={selectedRowIndex === null}
 					onclick={deleteSelectedRow}
 				>
 					<Trash2 class="h-3.5 w-3.5" />
 					Delete
-				</Button>
+				</button>
 			{/if}
 			{#if onAddFilter}
-				<Button variant="outline" size="sm" class="gap-1.5" onclick={onAddFilter}>
+				<button
+					class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-3 text-sm transition-colors"
+					onclick={onAddFilter}
+				>
 					<Filter class="h-3.5 w-3.5" />
 					Filter
-				</Button>
+				</button>
 			{/if}
 		</div>
 		<span class="text-muted-foreground text-sm">
@@ -186,22 +189,23 @@
 		</span>
 	</div>
 
-	<!-- Data Grid - scrollable container -->
+	<!-- Data Grid -->
 	<div class="min-h-0 flex-1 overflow-auto rounded-md border">
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head class="w-8">#</Table.Head>
+		<table class="w-full caption-bottom text-sm">
+			<thead class="[&_tr]:border-b">
+				<tr class="hover:bg-muted/50 border-b transition-colors">
+					<th class="text-muted-foreground h-10 w-8 px-2 text-left align-middle font-medium">#</th>
 					{#each columns as col (col.name)}
-						<Table.Head class="font-mono text-xs">
+						<th
+							class="text-muted-foreground h-10 px-2 text-left align-middle font-mono text-xs font-medium"
+						>
 							<button
 								type="button"
 								class="hover:text-foreground flex items-center gap-1"
 								onclick={() => {
-									// Toggle sorting
-									const existingSort = sorting.find((s) => s.id === col.name);
-									if (existingSort) {
-										if (existingSort.desc) {
+									const existing = sorting.find((s) => s.id === col.name);
+									if (existing) {
+										if (existing.desc) {
 											sorting = sorting.filter((s) => s.id !== col.name);
 										} else {
 											sorting = sorting.map((s) => (s.id === col.name ? { ...s, desc: true } : s));
@@ -220,82 +224,118 @@
 									{/if}
 								{/if}
 							</button>
-						</Table.Head>
+						</th>
 					{/each}
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
+				</tr>
+			</thead>
+			<tbody class="[&_tr:last-child]:border-0">
 				{#each displayData as row, rowIndex (rowIndex)}
-					<ContextMenu.Root>
-						<ContextMenu.Trigger class="contents">
-							<Table.Row
-								class="{getRowClass(row, rowIndex)} cursor-pointer"
-								onclick={() => selectRow(rowIndex)}
-							>
-								<Table.Cell class="text-muted-foreground text-xs">
-									{currentPage * pageSize + rowIndex + 1}
-								</Table.Cell>
-								{#each columns as col (col.name)}
-									<Table.Cell class="p-0">
-										{#if editingCell?.rowIndex === rowIndex && editingCell?.colName === col.name}
-											<Input
-												class="h-8 rounded-none border-0 font-mono text-xs focus-visible:ring-1"
-												bind:value={editValue}
-												onblur={() => saveEdit(row, rowIndex)}
-												onkeydown={(e) => handleKeydown(e, row, rowIndex)}
-												autofocus
-											/>
-										{:else}
-											<button
-												type="button"
-												class="hover:bg-accent block w-full px-4 py-2 text-left font-mono text-xs"
-												ondblclick={() => startEdit(rowIndex, col.name, row[col.name])}
-											>
-												<span class="block max-w-48 truncate">
-													{#if row[col.name] !== null && row[col.name] !== undefined}
-														{row[col.name]}
-													{:else}
-														<span class="text-muted-foreground italic">NULL</span>
-													{/if}
-												</span>
-											</button>
-										{/if}
-									</Table.Cell>
-								{/each}
-							</Table.Row>
-						</ContextMenu.Trigger>
-						<ContextMenu.Content class="w-48">
-							<ContextMenu.Item class="" inset={false} onclick={addNewRow}>
-								<Plus class="mr-2 h-4 w-4" />
-								Add row
-							</ContextMenu.Item>
-							<ContextMenu.Item class="" inset={false} onclick={() => stageDataDelete(row)}>
-								<Trash2 class="mr-2 h-4 w-4" />
-								Delete row
-							</ContextMenu.Item>
-							<ContextMenu.Separator class="" />
-							<ContextMenu.Item
-								class=""
-								inset={false}
-								onclick={() => navigator.clipboard.writeText(JSON.stringify(row))}
-							>
-								<Copy class="mr-2 h-4 w-4" />
-								Copy Row as JSON
-							</ContextMenu.Item>
-						</ContextMenu.Content>
-					</ContextMenu.Root>
+					<tr
+						class="hover:bg-muted/50 border-b transition-colors {getRowClass(
+							row,
+							rowIndex
+						)} cursor-pointer"
+						onclick={() => selectRow(rowIndex)}
+						oncontextmenu={(e) => handleContextMenu(e, row)}
+					>
+						<td class="text-muted-foreground w-8 p-2 text-center align-middle text-xs">
+							{currentPage * pageSize + rowIndex + 1}
+						</td>
+						{#each columns as col (col.name)}
+							<td class="p-0 align-middle">
+								{#if editingCell?.rowIndex === rowIndex && editingCell?.colName === col.name}
+									<input
+										class="bg-background focus:ring-primary h-full w-full border-0 px-4 py-2 font-mono text-xs outline-none focus:ring-2"
+										value={editValue}
+										oninput={(e) => (editValue = e.currentTarget.value)}
+										onblur={() => saveEdit(row, rowIndex)}
+										onkeydown={(e) => handleKeydown(e, row, rowIndex)}
+									/>
+								{:else}
+									<button
+										type="button"
+										class="hover:bg-accent block w-full px-4 py-2 text-left font-mono text-xs"
+										ondblclick={() => startEdit(rowIndex, col.name, row[col.name])}
+									>
+										<span class="block max-w-48 truncate">
+											{#if row[col.name] !== null && row[col.name] !== undefined}
+												{row[col.name]}
+											{:else}
+												<span class="text-muted-foreground italic">NULL</span>
+											{/if}
+										</span>
+									</button>
+								{/if}
+							</td>
+						{/each}
+					</tr>
 				{/each}
 
 				{#if displayData.length === 0}
-					<Table.Row>
-						<Table.Cell colspan={columns.length + 1} class="text-muted-foreground h-24 text-center">
+					<tr>
+						<td colspan={columns.length + 1} class="text-muted-foreground h-24 text-center">
 							no data
-						</Table.Cell>
-					</Table.Row>
+						</td>
+					</tr>
 				{/if}
-			</Table.Body>
-		</Table.Root>
+			</tbody>
+		</table>
 	</div>
+
+	<!-- Context Menu -->
+	{#if $ctxOpen}
+		<div
+			class="bg-popover text-popover-foreground fixed z-50 min-w-48 rounded-md border p-1 shadow-md"
+			style="left: {menuPosition.x}px; top: {menuPosition.y}px;"
+			transition:fly={{ duration: 150, y: -5 }}
+			role="menu"
+		>
+			<button
+				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+				onclick={() => {
+					addNewRow();
+					ctxOpenStore.set(false);
+				}}
+			>
+				<Plus class="h-4 w-4" />
+				Add row
+			</button>
+			<button
+				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+				onclick={() => {
+					if (contextRow) stageDataDelete(contextRow);
+					ctxOpenStore.set(false);
+				}}
+			>
+				<Trash2 class="h-4 w-4" />
+				Delete row
+			</button>
+			<div class="bg-border -mx-1 my-1 h-px"></div>
+			<button
+				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+				onclick={() => {
+					if (contextRow) navigator.clipboard.writeText(JSON.stringify(contextRow));
+					ctxOpenStore.set(false);
+				}}
+			>
+				<Copy class="h-4 w-4" />
+				Copy Row as JSON
+			</button>
+		</div>
+	{/if}
+
+	<!-- Click outside to close -->
+	{#if $ctxOpen}
+		<button
+			type="button"
+			class="fixed inset-0 z-40 cursor-default"
+			onclick={() => ctxOpenStore.set(false)}
+			oncontextmenu={(e) => {
+				e.preventDefault();
+				ctxOpenStore.set(false);
+			}}
+		></button>
+	{/if}
 
 	<!-- Pagination -->
 	<div class="mt-2 flex items-center justify-between">
@@ -303,25 +343,23 @@
 			showing {currentPage * pageSize + 1}-{Math.min((currentPage + 1) * pageSize, totalRows)} of {totalRows}
 		</span>
 		<div class="flex items-center gap-2">
-			<Button
-				variant="outline"
-				size="sm"
+			<button
+				class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 cursor-pointer items-center rounded-md border bg-transparent px-3 text-sm transition-colors disabled:pointer-events-none disabled:opacity-50"
 				disabled={currentPage === 0}
 				onclick={() => onPageChange(currentPage - 1)}
 			>
 				Previous
-			</Button>
+			</button>
 			<span class="text-sm">
 				page {currentPage + 1} of {totalPages}
 			</span>
-			<Button
-				variant="outline"
-				size="sm"
+			<button
+				class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 cursor-pointer items-center rounded-md border bg-transparent px-3 text-sm transition-colors disabled:pointer-events-none disabled:opacity-50"
 				disabled={currentPage + 1 >= totalPages}
 				onclick={() => onPageChange(currentPage + 1)}
 			>
 				Next
-			</Button>
+			</button>
 		</div>
 	</div>
 </div>

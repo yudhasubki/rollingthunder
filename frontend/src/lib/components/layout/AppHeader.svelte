@@ -1,11 +1,21 @@
 <script lang="ts">
 	import { Database, Settings, Moon, Sun, Monitor, TerminalSquare } from 'lucide-svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { Button } from '$lib/components/ui/button';
+	import { createDropdownMenu, melt } from '@melt-ui/svelte';
 	import { onMount } from 'svelte';
 	import { newQueryTab } from '$lib/stores/tabs.svelte';
+	import { fly } from 'svelte/transition';
 
 	let theme: 'light' | 'dark' | 'system' = $state('system');
+
+	// Create melt-ui dropdown menu
+	const {
+		elements: { trigger, menu, item },
+		states: { open }
+	} = createDropdownMenu({
+		positioning: {
+			placement: 'bottom-end'
+		}
+	});
 
 	onMount(() => {
 		const stored = localStorage.getItem('theme');
@@ -50,47 +60,68 @@
 	<!-- Actions -->
 	<div class="flex items-center gap-1">
 		<!-- New Query Button -->
-		<Button variant="ghost" size="sm" class="gap-1.5" disabled={false} onclick={newQueryTab}>
+		<button
+			class="hover:bg-accent hover:text-accent-foreground inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors"
+			onclick={newQueryTab}
+		>
 			<TerminalSquare class="h-4 w-4" />
 			New Query
-		</Button>
+		</button>
 
 		<!-- Theme Toggle -->
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger>
-				{#snippet child({ props })}
-					<Button variant="ghost" size="icon" class="" disabled={false} {...props}>
-						{#if theme === 'light'}
-							<Sun class="h-4 w-4" />
-						{:else if theme === 'dark'}
-							<Moon class="h-4 w-4" />
-						{:else}
-							<Monitor class="h-4 w-4" />
-						{/if}
-						<span class="sr-only">Toggle theme</span>
-					</Button>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content class="w-32" align="end">
-				<DropdownMenu.Item class="" inset={false} onclick={() => setTheme('light')}>
-					<Sun class="mr-2 h-4 w-4" />
+		<button
+			use:melt={$trigger}
+			class="hover:bg-accent hover:text-accent-foreground inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition-colors"
+		>
+			{#if theme === 'light'}
+				<Sun class="h-4 w-4" />
+			{:else if theme === 'dark'}
+				<Moon class="h-4 w-4" />
+			{:else}
+				<Monitor class="h-4 w-4" />
+			{/if}
+			<span class="sr-only">Toggle theme</span>
+		</button>
+
+		{#if $open}
+			<div
+				use:melt={$menu}
+				class="bg-popover text-popover-foreground z-50 min-w-32 rounded-md border p-1 shadow-md"
+				transition:fly={{ duration: 150, y: -10 }}
+			>
+				<button
+					use:melt={$item}
+					class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+					onclick={() => setTheme('light')}
+				>
+					<Sun class="h-4 w-4" />
 					Light
-				</DropdownMenu.Item>
-				<DropdownMenu.Item class="" inset={false} onclick={() => setTheme('dark')}>
-					<Moon class="mr-2 h-4 w-4" />
+				</button>
+				<button
+					use:melt={$item}
+					class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+					onclick={() => setTheme('dark')}
+				>
+					<Moon class="h-4 w-4" />
 					Dark
-				</DropdownMenu.Item>
-				<DropdownMenu.Item class="" inset={false} onclick={() => setTheme('system')}>
-					<Monitor class="mr-2 h-4 w-4" />
+				</button>
+				<button
+					use:melt={$item}
+					class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+					onclick={() => setTheme('system')}
+				>
+					<Monitor class="h-4 w-4" />
 					System
-				</DropdownMenu.Item>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+				</button>
+			</div>
+		{/if}
 
 		<!-- Settings -->
-		<Button variant="ghost" size="icon" class="" disabled={false}>
+		<button
+			class="hover:bg-accent hover:text-accent-foreground inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition-colors"
+		>
 			<Settings class="h-4 w-4" />
 			<span class="sr-only">Settings</span>
-		</Button>
+		</button>
 	</div>
 </header>

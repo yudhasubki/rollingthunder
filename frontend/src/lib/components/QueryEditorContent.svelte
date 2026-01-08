@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
 	import { Play, Loader2 } from 'lucide-svelte';
 	import { ExecuteQuery } from '$lib/wailsjs/go/db/Service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
@@ -276,15 +275,19 @@
 			<h3 class="text-sm font-medium">SQL Query</h3>
 			<span class="text-muted-foreground text-xs"> (select text to run specific query) </span>
 		</div>
-		<Button size="sm" class="gap-1.5" onclick={handleRun} disabled={isRunning}>
+		<button
+			class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50"
+			onclick={handleRun}
+			disabled={isRunning}
+		>
 			{#if isRunning}
 				<Loader2 class="h-3.5 w-3.5 animate-spin" />
 				Running...
 			{:else}
 				<Play class="h-3.5 w-3.5" />
-				Run <span class="text-muted-foreground text-xs">(Ctrl+Enter)</span>
+				Run <span class="text-primary-foreground/70 text-xs">(Ctrl+Enter)</span>
 			{/if}
-		</Button>
+		</button>
 	</div>
 
 	<!-- Editor -->

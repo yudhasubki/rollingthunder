@@ -1,11 +1,6 @@
 <script lang="ts">
 	import { tabsStore } from '$lib/stores/tabs.svelte';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import * as Table from '$lib/components/ui/table';
-	import * as Select from '$lib/components/ui/select';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import { createTabs, melt } from '@melt-ui/svelte';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import { database } from '$lib/wailsjs/go/models';
 	import { updateStatus, updateDatabaseInfo } from '$lib/stores/status.svelte';
@@ -43,13 +38,20 @@
 	let indices = $state<database.Index[]>([]);
 	let tableTotalData = $state<number>(0);
 	let tableData = $state<Record<string, any>[]>([]);
-	let isLoadingData = false; // Prevent infinite loop
+	let isLoadingData = false;
 	let filters = $state<FilterCondition[]>([]);
-	let appliedFilters = $state<FilterCondition[]>([]); // Filters that are actually applied
+	let appliedFilters = $state<FilterCondition[]>([]);
 
 	const tableLimit = 100;
 	let currentPage = $state(0);
-	let subTab = $state<'structure' | 'data'>('structure');
+
+	// Melt-UI Tabs
+	const {
+		elements: { root: tabsRoot, list: tabsList, trigger: tabTrigger, content: tabContent },
+		states: { value: tabValue }
+	} = createTabs({
+		defaultValue: 'structure'
+	});
 
 	// Filter management functions
 	function addFilter() {
@@ -76,7 +78,7 @@
 
 	function applyFilters() {
 		appliedFilters = [...filters];
-		currentPage = 0; // Reset to first page when filters change
+		currentPage = 0;
 	}
 
 	function clearFilters() {
@@ -90,7 +92,7 @@
 		if (!activeTab || activeTab.kind !== 'table') return;
 
 		updateStatus('', 'info');
-		currentPage = 0; // Reset page when tab changes
+		currentPage = 0;
 
 		const loadStructure = async () => {
 			try {
@@ -120,26 +122,22 @@
 	});
 
 	$effect(() => {
-		// Capture dependencies
-		const tab = subTab;
+		const tab = $tabValue;
 		const page = currentPage;
 		const activeTab = tabsStore.activeTab;
-		const currentFilters = appliedFilters; // Track applied filters
+		const currentFilters = appliedFilters;
 
 		if (tab !== 'data' || !activeTab || activeTab.kind !== 'table') {
 			return;
 		}
 
-		// Prevent infinite loop - skip if already loading
 		if (isLoadingData) {
 			return;
 		}
 
-		// Use captured values in loadTableData
 		const tableName = activeTab.table;
 		const schemaName = activeTab.schema;
 
-		// Build filter clause
 		const buildFilterClause = (): string => {
 			if (currentFilters.length === 0) return '';
 
@@ -195,107 +193,130 @@
 
 	function handlePageChange(page: number) {
 		currentPage = page;
-		// Effect will auto-trigger when currentPage changes
 	}
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-	<!-- Sub-tabs: Structure / Data -->
-	<Tabs.Root bind:value={subTab} class="flex min-h-0 flex-1 flex-col">
+	<div use:melt={$tabsRoot} class="flex min-h-0 flex-1 flex-col">
 		<div class="px-4">
-			<Tabs.List variant="underline" class="h-9 bg-transparent">
-				<Tabs.Trigger variant="underline" value="structure" class="gap-1.5 text-xs">
+			<div use:melt={$tabsList} class="border-border inline-flex h-9 items-center gap-1 border-b">
+				<button
+					use:melt={$tabTrigger('structure')}
+					class="data-[state=active]:border-primary data-[state=active]:text-foreground text-muted-foreground inline-flex items-center justify-center gap-1.5 border-b-2 border-transparent px-3 py-1.5 text-xs font-medium transition-colors"
+				>
 					<LayoutGrid class="h-3.5 w-3.5" />
 					Structure
-				</Tabs.Trigger>
-				<Tabs.Trigger variant="underline" value="data" class="gap-1.5 text-xs">
+				</button>
+				<button
+					use:melt={$tabTrigger('data')}
+					class="data-[state=active]:border-primary data-[state=active]:text-foreground text-muted-foreground inline-flex items-center justify-center gap-1.5 border-b-2 border-transparent px-3 py-1.5 text-xs font-medium transition-colors"
+				>
 					<Table2 class="h-3.5 w-3.5" />
 					Data
-				</Tabs.Trigger>
-			</Tabs.List>
+				</button>
+			</div>
 		</div>
 
 		<!-- Structure Tab -->
-		<Tabs.Content value="structure" class="flex-1 overflow-auto p-4">
+		<div use:melt={$tabContent('structure')} class="flex-1 overflow-auto p-4">
 			<div class="space-y-4">
 				<!-- Columns -->
 				<div>
 					<h3 class="mb-2 text-sm font-medium">columns</h3>
-					<div class="rounded-md border">
-						<ScrollArea class="h-[35vh]">
-							<Table.Root>
-								<Table.Header>
-									<Table.Row>
-										<Table.Head class="w-48">name</Table.Head>
-										<Table.Head>type</Table.Head>
-										<Table.Head>length</Table.Head>
-										<Table.Head>nullable</Table.Head>
-										<Table.Head>default</Table.Head>
-										<Table.Head>primary</Table.Head>
-										<Table.Head>foreign key</Table.Head>
-									</Table.Row>
-								</Table.Header>
-								<Table.Body>
-									{#each columns as col (col.name)}
-										<Table.Row>
-											<Table.Cell class="font-mono text-sm">{col.name}</Table.Cell>
-											<Table.Cell class="text-muted-foreground font-mono text-xs"
-												>{col.data_type}</Table.Cell
-											>
-											<Table.Cell>{col.length || '-'}</Table.Cell>
-											<Table.Cell>{col.nullable ? 'yes' : 'no'}</Table.Cell>
-											<Table.Cell class="max-w-32 truncate font-mono text-xs"
-												>{col.default || '-'}</Table.Cell
-											>
-											<Table.Cell>{col.is_primary_label || '-'}</Table.Cell>
-											<Table.Cell>{col.foreign_key || '-'}</Table.Cell>
-										</Table.Row>
-									{/each}
-								</Table.Body>
-							</Table.Root>
-						</ScrollArea>
+					<div class="max-h-[35vh] overflow-auto rounded-md border">
+						<table class="w-full caption-bottom text-sm">
+							<thead class="[&_tr]:border-b">
+								<tr class="hover:bg-muted/50 border-b transition-colors">
+									<th
+										class="text-muted-foreground h-10 w-48 px-4 text-left align-middle font-medium"
+										>name</th
+									>
+									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+										>type</th
+									>
+									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+										>length</th
+									>
+									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+										>nullable</th
+									>
+									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+										>default</th
+									>
+									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+										>primary</th
+									>
+									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+										>foreign key</th
+									>
+								</tr>
+							</thead>
+							<tbody class="[&_tr:last-child]:border-0">
+								{#each columns as col (col.name)}
+									<tr class="hover:bg-muted/50 border-b transition-colors">
+										<td class="p-4 align-middle font-mono text-sm">{col.name}</td>
+										<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
+											>{col.data_type}</td
+										>
+										<td class="p-4 align-middle">{col.length || '-'}</td>
+										<td class="p-4 align-middle">{col.nullable ? 'yes' : 'no'}</td>
+										<td class="max-w-32 truncate p-4 align-middle font-mono text-xs"
+											>{col.default || '-'}</td
+										>
+										<td class="p-4 align-middle">{col.is_primary_label || '-'}</td>
+										<td class="max-w-48 truncate p-4 align-middle font-mono text-xs"
+											>{col.foreign_key || '-'}</td
+										>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
 					</div>
 				</div>
 
 				<!-- Indices -->
 				<div>
 					<h3 class="mb-2 text-sm font-medium">indices</h3>
-					<div class="rounded-md border">
-						<ScrollArea class="h-[20vh]">
-							<Table.Root>
-								<Table.Header>
-									<Table.Row>
-										<Table.Head>name</Table.Head>
-										<Table.Head>columns</Table.Head>
-										<Table.Head>unique</Table.Head>
-										<Table.Head>algorithm</Table.Head>
-									</Table.Row>
-								</Table.Header>
-								<Table.Body>
-									{#each indices as idx (idx.name)}
-										<Table.Row>
-											<Table.Cell class="font-mono text-sm">{idx.name}</Table.Cell>
-											<Table.Cell class="font-mono text-xs">{idx.columns}</Table.Cell>
-											<Table.Cell>{idx.is_unique ? 'yes' : 'no'}</Table.Cell>
-											<Table.Cell>{idx.algorithm || '-'}</Table.Cell>
-										</Table.Row>
-									{/each}
-								</Table.Body>
-							</Table.Root>
-						</ScrollArea>
+					<div class="max-h-[25vh] overflow-auto rounded-md border">
+						<table class="w-full caption-bottom text-sm">
+							<thead class="[&_tr]:border-b">
+								<tr class="hover:bg-muted/50 border-b transition-colors">
+									<th
+										class="text-muted-foreground h-10 w-64 px-4 text-left align-middle font-medium"
+										>name</th
+									>
+									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+										>definition</th
+									>
+								</tr>
+							</thead>
+							<tbody class="[&_tr:last-child]:border-0">
+								{#each indices as idx (idx.name)}
+									<tr class="hover:bg-muted/50 border-b transition-colors">
+										<td class="p-4 align-middle font-mono text-sm">{idx.name}</td>
+										<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
+											>{idx.definition}</td
+										>
+									</tr>
+								{:else}
+									<tr>
+										<td colspan="2" class="text-muted-foreground p-4 text-center">no indices</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
 					</div>
 				</div>
 			</div>
-		</Tabs.Content>
+		</div>
 
 		<!-- Data Tab -->
-		<Tabs.Content value="data" class="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-			<!-- Filter Section -->
+		<div use:melt={$tabContent('data')} class="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+			<!-- Filters Panel -->
 			{#if filters.length > 0}
-				<div class="mb-3 space-y-2">
+				<div class="bg-muted/30 mb-3 space-y-2 rounded-lg border p-3">
 					{#each filters as filter (filter.id)}
 						<div class="flex items-center gap-2">
-							<!-- Checkbox -->
 							<input
 								type="checkbox"
 								class="border-input h-4 w-4 rounded"
@@ -306,71 +327,65 @@
 								}}
 							/>
 
-							<!-- Column Select -->
-							<Select.Root
-								type="single"
-								bind:value={filter.column}
-								onValueChange={(v) => updateFilter(filter.id, 'column', v ?? '')}
+							<select
+								class="border-input bg-background h-8 w-32 rounded-md border px-2 text-sm"
+								value={filter.column}
+								onchange={(e) => updateFilter(filter.id, 'column', e.currentTarget.value)}
 							>
-								<Select.Trigger class="h-8 w-32" size="sm">
-									{filter.column || 'Column'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each columns as col}
-										<Select.Item value={col.name}>{col.name}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+								{#each columns as col}
+									<option value={col.name}>{col.name}</option>
+								{/each}
+							</select>
 
-							<!-- Operator Select -->
-							<Select.Root
-								type="single"
-								bind:value={filter.operator}
-								onValueChange={(v) => updateFilter(filter.id, 'operator', v ?? '=')}
+							<select
+								class="border-input bg-background h-8 w-28 rounded-md border px-2 text-sm"
+								value={filter.operator}
+								onchange={(e) => updateFilter(filter.id, 'operator', e.currentTarget.value)}
 							>
-								<Select.Trigger class="h-8 w-28" size="sm">
-									{FILTER_OPERATORS.find((op) => op.value === filter.operator)?.label || 'equals'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each FILTER_OPERATORS as op}
-										<Select.Item value={op.value}>{op.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+								{#each FILTER_OPERATORS as op}
+									<option value={op.value}>{op.label}</option>
+								{/each}
+							</select>
 
-							<!-- Value Input (full width) -->
 							{#if filter.operator !== 'IS NULL' && filter.operator !== 'IS NOT NULL'}
-								<Input
+								<input
 									type="text"
-									class="h-8 flex-1"
+									class="border-input bg-background h-8 flex-1 rounded-md border px-3 text-sm"
 									placeholder="Value..."
 									value={filter.value}
-									oninput={(e) =>
-										updateFilter(filter.id, 'value', (e.target as HTMLInputElement).value)}
+									oninput={(e) => updateFilter(filter.id, 'value', e.currentTarget.value)}
 								/>
 							{/if}
 
-							<!-- Remove Button -->
-							<Button
-								variant="ghost"
-								size="icon"
-								class="h-8 w-8 shrink-0"
+							<button
+								class="hover:bg-accent inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
 								onclick={() => removeFilter(filter.id)}
 							>
 								<Minus class="h-4 w-4" />
-							</Button>
+							</button>
 
-							<!-- Add Button -->
-							<Button variant="ghost" size="icon" class="h-8 w-8 shrink-0" onclick={addFilter}>
+							<button
+								class="hover:bg-accent inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
+								onclick={addFilter}
+							>
 								<Plus class="h-4 w-4" />
-							</Button>
+							</button>
 						</div>
 					{/each}
 
-					<!-- Action Row -->
 					<div class="flex items-center justify-end gap-2 pt-1">
-						<Button variant="ghost" size="sm" class="h-8" onclick={clearFilters}>Clear</Button>
-						<Button variant="default" size="sm" class="h-8" onclick={applyFilters}>Apply</Button>
+						<button
+							class="hover:bg-accent inline-flex h-8 cursor-pointer items-center rounded-md px-3 text-sm transition-colors"
+							onclick={clearFilters}
+						>
+							Clear
+						</button>
+						<button
+							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 cursor-pointer items-center rounded-md px-3 text-sm transition-colors"
+							onclick={applyFilters}
+						>
+							Apply
+						</button>
 					</div>
 				</div>
 			{/if}
@@ -387,6 +402,6 @@
 					onAddFilter={addFilter}
 				/>
 			</div>
-		</Tabs.Content>
-	</Tabs.Root>
+		</div>
+	</div>
 </div>

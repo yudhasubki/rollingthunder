@@ -16,6 +16,8 @@
 		"@eslint/js": "^9.18.0",
 		"@internationalized/date": "^3.10.1",
 		"@lucide/svelte": "^0.561.0",
+		"@melt-ui/pp": "^0.3.2",
+		"@melt-ui/svelte": "^0.86.6",
 		"@sveltejs/adapter-auto": "^6.0.0",
 		"@sveltejs/kit": "^2.16.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
@@ -36,7 +38,6 @@
 	},
 	"dependencies": {
 		"@tanstack/table-core": "^8.21.3",
-		"bits-ui": "^2.15.4",
 		"clsx": "^2.1.1",
 		"lucide-svelte": "^0.525.0",
 		"monaco-editor": "^0.55.1",

@@ -2,10 +2,9 @@
 	import { Connect } from '$lib/wailsjs/go/db/Service';
 	import { database as driver, db as service } from '$lib/wailsjs/go/models';
 	import { goto } from '$app/navigation';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import { Database, Loader2 } from 'lucide-svelte';
+	import { createSelect, melt } from '@melt-ui/svelte';
+	import { Database, Loader2, ChevronDown } from 'lucide-svelte';
+	import { fly } from 'svelte/transition';
 
 	let dbtype = $state('postgres');
 	let host = $state('127.0.0.1');
@@ -21,6 +20,22 @@
 		{ value: 'mysql', label: 'MySQL' },
 		{ value: 'sqlite', label: 'SQLite' }
 	];
+
+	// Melt-UI Select
+	const {
+		elements: { trigger: selectTrigger, menu: selectMenu, option },
+		states: { open: selectOpen, selected }
+	} = createSelect({
+		defaultSelected: { value: 'postgres', label: 'PostgreSQL' },
+		positioning: { placement: 'bottom', sameWidth: true }
+	});
+
+	// Sync selected value to dbtype
+	$effect(() => {
+		if ($selected?.value) {
+			dbtype = $selected.value as string;
+		}
+	});
 
 	async function connect() {
 		loading = true;
@@ -93,59 +108,90 @@
 				<!-- Database Type -->
 				<div class="space-y-2">
 					<label class="text-sm font-medium" for="dbtype">Database Type</label>
-					<Select.Root type="single" name="dbtype">
-						<Select.Trigger class="w-full">
-							{dbTypes.find((d) => d.value === dbtype)?.label || 'Select type'}
-						</Select.Trigger>
-						<Select.Content class="w-full">
+					<button
+						use:melt={$selectTrigger}
+						class="border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex h-10 w-full cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-sm"
+					>
+						{$selected?.label || 'Select type'}
+						<ChevronDown class="h-4 w-4 opacity-50" />
+					</button>
+					{#if $selectOpen}
+						<div
+							use:melt={$selectMenu}
+							class="bg-popover text-popover-foreground z-50 rounded-md border p-1 shadow-md"
+							transition:fly={{ duration: 150, y: -10 }}
+						>
 							{#each dbTypes as db}
-								<Select.Item
-									value={db.value}
-									label={db.label}
-									class=""
-									onclick={() => (dbtype = db.value)}
+								<div
+									use:melt={$option({ value: db.value, label: db.label })}
+									class="hover:bg-accent hover:text-accent-foreground data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none"
 								>
 									{db.label}
-								</Select.Item>
+								</div>
 							{/each}
-						</Select.Content>
-					</Select.Root>
+						</div>
+					{/if}
 				</div>
 
 				<!-- Host -->
 				<div class="space-y-2">
 					<label class="text-sm font-medium" for="host">Host</label>
-					<Input id="host" bind:value={host} placeholder="127.0.0.1" disabled={loading} />
+					<input
+						id="host"
+						bind:value={host}
+						placeholder="127.0.0.1"
+						disabled={loading}
+						class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+					/>
 				</div>
 
 				<!-- Port -->
 				<div class="space-y-2">
 					<label class="text-sm font-medium" for="port">Port</label>
-					<Input id="port" bind:value={port} placeholder="5432" disabled={loading} />
+					<input
+						id="port"
+						bind:value={port}
+						placeholder="5432"
+						disabled={loading}
+						class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+					/>
 				</div>
 
 				<!-- Username -->
 				<div class="space-y-2">
 					<label class="text-sm font-medium" for="user">Username</label>
-					<Input id="user" bind:value={user} placeholder="postgres" disabled={loading} />
+					<input
+						id="user"
+						bind:value={user}
+						placeholder="postgres"
+						disabled={loading}
+						class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+					/>
 				</div>
 
 				<!-- Password -->
 				<div class="space-y-2">
 					<label class="text-sm font-medium" for="password">Password</label>
-					<Input
+					<input
 						id="password"
 						type="password"
 						bind:value={password}
 						placeholder="••••••••"
 						disabled={loading}
+						class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 					/>
 				</div>
 
 				<!-- Database Name -->
 				<div class="space-y-2">
 					<label class="text-sm font-medium" for="dbname">Database Name</label>
-					<Input id="dbname" bind:value={dbname} placeholder="myapp_db" disabled={loading} />
+					<input
+						id="dbname"
+						bind:value={dbname}
+						placeholder="myapp_db"
+						disabled={loading}
+						class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+					/>
 				</div>
 
 				<!-- Error Message -->
@@ -156,14 +202,18 @@
 				{/if}
 
 				<!-- Submit Button -->
-				<Button type="submit" class="w-full" disabled={loading}>
+				<button
+					type="submit"
+					class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50"
+					disabled={loading}
+				>
 					{#if loading}
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 						Connecting...
 					{:else}
 						Connect
 					{/if}
-				</Button>
+				</button>
 			</form>
 		</div>
 	</div>
