@@ -268,3 +268,68 @@ func (s *Service) ExecuteQuery(query string) response.BaseResponse[[]map[string]
 		Data: results,
 	}
 }
+
+// CreateTable creates a new table in the database
+func (s *Service) CreateTable(table database.Table, columns []database.ColumnDefinition) response.BaseResponse[bool] {
+	err := s.driver.CreateTable(table, columns)
+	if err != nil {
+		return response.BaseResponse[bool]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+			Data: false,
+		}
+	}
+
+	return response.BaseResponse[bool]{
+		Data: true,
+	}
+}
+
+// GetDataTypes returns available data types for the current database driver
+func (s *Service) GetDataTypes() response.BaseResponse[[]database.DataType] {
+	types := s.driver.GetDataTypes()
+	return response.BaseResponse[[]database.DataType]{
+		Data: types,
+	}
+}
+
+// DropTable drops a table from the database
+func (s *Service) DropTable(table database.Table) response.BaseResponse[bool] {
+	err := s.driver.DropTable(table)
+	if err != nil {
+		return response.BaseResponse[bool]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+			Data: false,
+		}
+	}
+
+	return response.BaseResponse[bool]{
+		Data: true,
+	}
+}
+
+// TruncateTable removes all rows from a table
+func (s *Service) TruncateTable(table database.Table) response.BaseResponse[bool] {
+	err := s.driver.TruncateTable(table)
+	if err != nil {
+		return response.BaseResponse[bool]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+			Data: false,
+		}
+	}
+
+	return response.BaseResponse[bool]{
+		Data: true,
+	}
+}

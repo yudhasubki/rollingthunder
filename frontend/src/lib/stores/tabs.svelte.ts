@@ -19,9 +19,9 @@ export const tabsStore = {
   get tabs() { return state.tabs },
   get activeTabId() { return state.activeTabId },
   get activeSubTab() { return state.activeSubTab },
-  get activeTab() { 
-    
-    if(_activeTab) {
+  get activeTab() {
+
+    if (_activeTab) {
       return _activeTab
     }
     return null;
@@ -56,6 +56,19 @@ export const tabsStore = {
 
   },
 
+  newCreateTableTab(schema: string) {
+    const id = crypto.randomUUID();
+    const tab: Tab = {
+      id,
+      title: 'New Table',
+      kind: 'createTable',
+      schema,
+      level: 'info'
+    };
+    state.tabs = [...state.tabs, tab];
+    state.activeTabId = id;
+  },
+
   closeTab(id: string) {
     state.tabs = state.tabs.filter(tab => tab.id !== id);
     if (state.activeTabId === id) {
@@ -76,9 +89,9 @@ export const tabsStore = {
   },
 
   findTableTab(schema: string, table: string) {
-    return state.tabs.find(t => 
-      t.kind === 'table' && 
-      t.schema === schema && 
+    return state.tabs.find(t =>
+      t.kind === 'table' &&
+      t.schema === schema &&
       t.table === table
     );
   }

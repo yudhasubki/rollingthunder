@@ -12,6 +12,20 @@ export const stagedChanges = $state({
     indices: {
         added: [],
         deleted: []
+    },
+    // For create table tab
+    createTable: {
+        schema: '',
+        tableName: '',
+        columns: [] as {
+            name: string;
+            type: string;
+            size: string;
+            nullable: boolean;
+            defaultValue: string;
+            primaryKey: boolean;
+            unique: boolean;
+        }[]
     }
 });
 
@@ -43,10 +57,17 @@ export function stageStructureAdd(col) {
     stagedChanges.structure.added.push(col);
 }
 
+export function setCreateTable(schema: string, tableName: string, columns: typeof stagedChanges.createTable.columns) {
+    stagedChanges.createTable.schema = schema;
+    stagedChanges.createTable.tableName = tableName;
+    stagedChanges.createTable.columns = columns;
+}
+
 export function discardStagedChanges() {
     stagedChanges.data = { added: [], updated: [], deleted: [] };
     stagedChanges.structure = { added: [], updated: [], deleted: [] };
     stagedChanges.indices = { added: [], deleted: [] };
+    stagedChanges.createTable = { schema: '', tableName: '', columns: [] };
 }
 
 export function hasChanges() {
@@ -60,4 +81,21 @@ export function hasChanges() {
         stagedChanges.indices.added.length > 0 ||
         stagedChanges.indices.deleted.length > 0
     );
+}
+
+export function hasCreateTableChanges() {
+    return (
+        stagedChanges.createTable.tableName.trim() !== '' &&
+        stagedChanges.createTable.columns.some(c => c.name.trim() !== '')
+    );
+}
+
+// Callback for create table submit - set by CreateTableContent, called by workspace Apply
+// Using $state for reactivity
+export const createTableState = $state({
+    submit: null as (() => Promise<boolean>) | null
+});
+
+export function setCreateTableSubmit(fn: (() => Promise<boolean>) | null) {
+    createTableState.submit = fn;
 }

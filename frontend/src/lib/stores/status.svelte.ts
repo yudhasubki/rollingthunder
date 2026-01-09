@@ -5,12 +5,12 @@ import { database } from "$lib/wailsjs/go/models";
 interface LogEntry {
     timestamp: Date;
     message: string;
-    level: 'info' | 'warn' | 'error';
+    level: 'info' | 'warn' | 'error' | 'success';
 }
 
 const state = $state({
     status: '',
-    level: 'info' as 'info' | 'warn' | 'error',
+    level: 'info' as 'info' | 'warn' | 'error' | 'success',
     databaseInfo: null as database.Info | null,
     consoleLogs: [] as LogEntry[],
     showConsole: false
@@ -38,7 +38,7 @@ export function setStatus(newStatus: string) {
     state.status = newStatus;
 }
 
-export function setLevel(newLevel: 'info' | 'warn' | 'error') {
+export function setLevel(newLevel: 'info' | 'warn' | 'error' | 'success') {
     state.level = newLevel;
 }
 
@@ -50,7 +50,7 @@ export function toggleConsole() {
     state.showConsole = !state.showConsole;
 }
 
-export function addConsoleLog(message: string, level: 'info' | 'warn' | 'error' = 'info') {
+export function addConsoleLog(message: string, level: 'info' | 'warn' | 'error' | 'success' = 'info') {
     state.consoleLogs = [
         { timestamp: new Date(), message, level },
         ...state.consoleLogs.slice(0, 99) // Keep last 100 logs
@@ -68,7 +68,7 @@ export function clearConsoleLogs() {
 // Update methods remain the same
 export function updateStatus(
     status: string,
-    level: 'info' | 'warn' | 'error' = 'info'
+    level: 'info' | 'warn' | 'error' | 'success' = 'info'
 ) {
     setStatus(status);
     setLevel(level);
@@ -78,7 +78,7 @@ export function updateStatus(
     }
 }
 
-export function updateLevel(newLevel: 'info' | 'warn' | 'error') {
+export function updateLevel(newLevel: 'info' | 'warn' | 'error' | 'success') {
     state.level = newLevel;
 }
 

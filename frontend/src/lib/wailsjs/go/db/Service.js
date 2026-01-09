@@ -10,8 +10,20 @@ export function CountCollectionData(arg1) {
   return window['go']['db']['Service']['CountCollectionData'](arg1);
 }
 
+export function CreateTable(arg1, arg2) {
+  return window['go']['db']['Service']['CreateTable'](arg1, arg2);
+}
+
+export function DeleteConnection(arg1) {
+  return window['go']['db']['Service']['DeleteConnection'](arg1);
+}
+
 export function DeleteRow(arg1, arg2, arg3) {
   return window['go']['db']['Service']['DeleteRow'](arg1, arg2, arg3);
+}
+
+export function DropTable(arg1) {
+  return window['go']['db']['Service']['DropTable'](arg1);
 }
 
 export function ExecuteQuery(arg1) {
@@ -30,12 +42,20 @@ export function GetCollections(arg1) {
   return window['go']['db']['Service']['GetCollections'](arg1);
 }
 
+export function GetDataTypes() {
+  return window['go']['db']['Service']['GetDataTypes']();
+}
+
 export function GetDatabaseInfo() {
   return window['go']['db']['Service']['GetDatabaseInfo']();
 }
 
 export function GetIndices(arg1) {
   return window['go']['db']['Service']['GetIndices'](arg1);
+}
+
+export function GetSavedConnections() {
+  return window['go']['db']['Service']['GetSavedConnections']();
 }
 
 export function GetSchemas() {
@@ -46,8 +66,20 @@ export function InsertRow(arg1, arg2) {
   return window['go']['db']['Service']['InsertRow'](arg1, arg2);
 }
 
+export function SaveConnection(arg1) {
+  return window['go']['db']['Service']['SaveConnection'](arg1);
+}
+
 export function Start(arg1) {
   return window['go']['db']['Service']['Start'](arg1);
+}
+
+export function TruncateTable(arg1) {
+  return window['go']['db']['Service']['TruncateTable'](arg1);
+}
+
+export function UpdateConnection(arg1, arg2) {
+  return window['go']['db']['Service']['UpdateConnection'](arg1, arg2);
 }
 
 export function UpdateRow(arg1, arg2, arg3) {

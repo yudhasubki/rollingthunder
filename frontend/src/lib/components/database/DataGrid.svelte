@@ -28,6 +28,7 @@
 		onPageChange: (page: number) => void;
 		onAddFilter?: () => void;
 		readonly?: boolean;
+		loading?: boolean;
 	}
 
 	let {
@@ -38,7 +39,8 @@
 		pageSize,
 		onPageChange,
 		onAddFilter,
-		readonly = false
+		readonly = false,
+		loading = false
 	}: Props = $props();
 
 	// Use writable store for context menu state to avoid Svelte 5 runes conflict
@@ -97,11 +99,23 @@
 
 		const { colName } = editingCell;
 		const newValue = editValue;
-		const oldValue = row[colName];
 
-		if (newValue !== oldValue?.toString()) {
-			const updatedRow = { ...row, [colName]: newValue };
-			stageDataUpdate(updatedRow);
+		// Always update the row with new value
+		const updatedRow = { ...row, [colName]: newValue };
+
+		// For new rows (_isNew), update the staged insert directly
+		if (row._isNew) {
+			// Find and update the row in stagedChanges.data.added
+			const addedIndex = stagedChanges.data.added.findIndex((r: any) => r === row);
+			if (addedIndex >= 0) {
+				stagedChanges.data.added[addedIndex] = updatedRow;
+			}
+		} else {
+			// For existing rows, stage as update if value changed
+			const oldValue = row[colName];
+			if (newValue !== oldValue?.toString()) {
+				stageDataUpdate(updatedRow);
+			}
 		}
 
 		editingCell = null;
@@ -271,10 +285,21 @@
 					</tr>
 				{/each}
 
-				{#if displayData.length === 0}
+				{#if loading}
+					<tr>
+						<td colspan={columns.length + 1} class="h-32 text-center">
+							<div class="flex flex-col items-center justify-center gap-2">
+								<div
+									class="border-primary h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
+								></div>
+								<span class="text-muted-foreground text-sm">Loading data...</span>
+							</div>
+						</td>
+					</tr>
+				{:else if displayData.length === 0}
 					<tr>
 						<td colspan={columns.length + 1} class="text-muted-foreground h-24 text-center">
-							no data
+							No data
 						</td>
 					</tr>
 				{/if}

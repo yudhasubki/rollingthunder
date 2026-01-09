@@ -9,7 +9,13 @@ export function Connect(arg1:db.ConnectRequest):Promise<response.BaseResponse_ro
 
 export function CountCollectionData(arg1:database.Table):Promise<response.BaseResponse_int_>;
 
+export function CreateTable(arg1:database.Table,arg2:Array<database.ColumnDefinition>):Promise<response.BaseResponse_bool_>;
+
+export function DeleteConnection(arg1:string):Promise<response.BaseResponse_bool_>;
+
 export function DeleteRow(arg1:database.Table,arg2:string,arg3:any):Promise<response.BaseResponse_bool_>;
+
+export function DropTable(arg1:database.Table):Promise<response.BaseResponse_bool_>;
 
 export function ExecuteQuery(arg1:string):Promise<response.BaseResponse___map_string_interface____>;
 
@@ -19,14 +25,24 @@ export function GetCollectionStructures(arg1:database.Table):Promise<response.Ba
 
 export function GetCollections(arg1:Array<string>):Promise<response.BaseResponse___string_>;
 
+export function GetDataTypes():Promise<response.BaseResponse___rollingthunder_pkg_database_DataType_>;
+
 export function GetDatabaseInfo():Promise<response.BaseResponse_rollingthunder_pkg_database_Info_>;
 
 export function GetIndices(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Indices_>;
+
+export function GetSavedConnections():Promise<response.BaseResponse___rollingthunder_internal_db_SavedConnection_>;
 
 export function GetSchemas():Promise<response.BaseResponse___string_>;
 
 export function InsertRow(arg1:database.Table,arg2:Record<string, any>):Promise<response.BaseResponse_bool_>;
 
+export function SaveConnection(arg1:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;
+
 export function Start(arg1:context.Context):Promise<void>;
+
+export function TruncateTable(arg1:database.Table):Promise<response.BaseResponse_bool_>;
+
+export function UpdateConnection(arg1:string,arg2:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;
 
 export function UpdateRow(arg1:database.Table,arg2:Record<string, any>,arg3:string):Promise<response.BaseResponse_bool_>;

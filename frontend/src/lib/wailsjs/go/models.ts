@@ -1,11 +1,39 @@
 export namespace database {
 	
+	export class ColumnDefinition {
+	    name: string;
+	    type: string;
+	    nullable: boolean;
+	    default: string;
+	    primaryKey: boolean;
+	    unique: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ColumnDefinition(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.nullable = source["nullable"];
+	        this.default = source["default"];
+	        this.primaryKey = source["primaryKey"];
+	        this.unique = source["unique"];
+	    }
+	}
 	export class Config {
+	    name: string;
+	    color: string;
 	    host: string;
 	    port: string;
 	    user: string;
 	    password: string;
 	    db: string;
+	    sslMode: string;
+	    sslCert: string;
+	    sslKey: string;
+	    sslRootCert: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -13,11 +41,33 @@ export namespace database {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.color = source["color"];
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.user = source["user"];
 	        this.password = source["password"];
 	        this.db = source["db"];
+	        this.sslMode = source["sslMode"];
+	        this.sslCert = source["sslCert"];
+	        this.sslKey = source["sslKey"];
+	        this.sslRootCert = source["sslRootCert"];
+	    }
+	}
+	export class DataType {
+	    name: string;
+	    category: string;
+	    description: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DataType(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.category = source["category"];
+	        this.description = source["description"];
 	    }
 	}
 	export class Index {
@@ -187,6 +237,38 @@ export namespace db {
 	        this.connected = source["connected"];
 	    }
 	}
+	export class SavedConnection {
+	    id: string;
+	    config: database.Config;
+	
+	    static createFrom(source: any = {}) {
+	        return new SavedConnection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.config = this.convertValues(source["config"], database.Config);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
@@ -220,6 +302,70 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = source["data"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse___rollingthunder_internal_db_SavedConnection_ {
+	    errors?: BaseErrorResponse[];
+	    data?: db.SavedConnection[];
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse___rollingthunder_internal_db_SavedConnection_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], db.SavedConnection);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse___rollingthunder_pkg_database_DataType_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.DataType[];
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse___rollingthunder_pkg_database_DataType_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.DataType);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -348,6 +494,38 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], db.ConnectResponse);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_internal_db_SavedConnection_ {
+	    errors?: BaseErrorResponse[];
+	    data?: db.SavedConnection;
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_internal_db_SavedConnection_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], db.SavedConnection);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

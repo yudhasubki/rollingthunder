@@ -1,18 +1,29 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { GetSchemas, GetCollections } from '$lib/wailsjs/go/db/Service';
+	import { writable } from 'svelte/store';
+	import { GetSchemas, GetCollections, DropTable, TruncateTable } from '$lib/wailsjs/go/db/Service';
+	import { database } from '$lib/wailsjs/go/models';
 	import {
 		ChevronDown,
-		ChevronRight,
 		Database,
 		Table2,
 		Plus,
 		RefreshCw,
-		Code
+		Code,
+		Search,
+		Trash2,
+		Eraser,
+		MoreVertical,
+		AlertTriangle
 	} from 'lucide-svelte';
-	import { createDropdownMenu, createContextMenu, melt } from '@melt-ui/svelte';
+	import { createDropdownMenu, createDialog, melt } from '@melt-ui/svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
+	import {
+		setSidebarRefresh,
+		setSidebarAddTable,
+		setSidebarRemoveTable
+	} from '$lib/stores/sidebar.svelte';
 	import { fly } from 'svelte/transition';
 
 	interface Props {
@@ -22,19 +33,24 @@
 	let { onTableClick }: Props = $props();
 
 	let schemas: string[] = $state([]);
-	let expandedSchemas = $state<string[]>([]);
-	let tablesBySchema = $state<Record<string, string[]>>({});
+	let selectedSchema = $state<string>('');
+	let tables = $state<string[]>([]);
 	let loading = $state(false);
+	let loadingTables = $state(false);
 	let selectedItem = $state<string | null>(null);
+	let searchQuery = $state('');
 
-	// Context menu for tables
-	let contextTable = $state<{ schema: string; table: string } | null>(null);
+	// Schema selector dropdown
+	const schemaOpenStore = writable(false);
 	const {
-		elements: { trigger: ctxTrigger, menu: ctxMenu, item: ctxItem, separator: ctxSeparator },
-		states: { open: ctxOpen }
-	} = createContextMenu();
+		elements: { trigger: schemaTrigger, menu: schemaMenu, item: schemaItem },
+		states: { open: schemaOpen }
+	} = createDropdownMenu({
+		open: schemaOpenStore,
+		positioning: { placement: 'bottom', sameWidth: true }
+	});
 
-	// Dropdown menu for new actions
+	// New actions dropdown menu
 	const {
 		elements: { trigger: ddTrigger, menu: ddMenu, item: ddItem },
 		states: { open: ddOpen }
@@ -42,8 +58,118 @@
 		positioning: { placement: 'bottom-end' }
 	});
 
-	onMount(async () => {
-		await loadSchemas();
+	// Filtered tables based on search
+	const filteredTables = $derived(
+		searchQuery ? tables.filter((t) => t.toLowerCase().includes(searchQuery.toLowerCase())) : tables
+	);
+
+	// Context menu state
+	let contextMenuTable = $state<string | null>(null);
+	let contextMenuPos = $state({ x: 0, y: 0 });
+	let showContextMenu = $state(false);
+
+	// Context menu dropdown
+	const {
+		elements: { trigger: ctxTrigger, menu: ctxMenu, item: ctxItem },
+		states: { open: ctxOpen }
+	} = createDropdownMenu({
+		positioning: { placement: 'bottom-start' }
+	});
+
+	// Confirmation dialog state
+	let confirmAction = $state<'drop' | 'truncate' | null>(null);
+	let confirmTableName = $state<string | null>(null);
+
+	const confirmOpenStore = writable(false);
+	const {
+		elements: { trigger: dialogTrigger, overlay, content, title, description, close, portalled },
+		states: { open: dialogOpen }
+	} = createDialog({
+		open: confirmOpenStore,
+		forceVisible: true
+	});
+
+	function openConfirmDialog(action: 'drop' | 'truncate', tableName: string) {
+		confirmAction = action;
+		confirmTableName = tableName;
+		closeContextMenu();
+		confirmOpenStore.set(true);
+	}
+
+	function closeConfirmDialog() {
+		confirmOpenStore.set(false);
+		confirmAction = null;
+		confirmTableName = null;
+		actionLoading = false;
+	}
+
+	let actionLoading = $state(false);
+
+	async function executeConfirmedAction() {
+		if (!confirmTableName || !selectedSchema || !confirmAction) return;
+
+		const tableName = confirmTableName;
+		const action = confirmAction;
+		actionLoading = true;
+
+		if (action === 'drop') {
+			try {
+				const table = new database.Table({ Schema: selectedSchema, Name: tableName });
+				const response = await DropTable(table);
+				if (response.errors?.length) {
+					updateStatus(response.errors[0].detail, 'error');
+				} else {
+					updateStatus(`DROP TABLE ${selectedSchema}.${tableName}`, 'info');
+					const tabId = tabsStore.tabs.find(
+						(t) => t.schema === selectedSchema && t.name === tableName
+					)?.id;
+					if (tabId) {
+						tabsStore.closeTab(tabId);
+					}
+					tables = tables.filter((t) => t !== tableName);
+				}
+			} catch (e: any) {
+				updateStatus(e?.message ?? 'Failed to drop table', 'error');
+			}
+		} else if (action === 'truncate') {
+			try {
+				const table = new database.Table({ Schema: selectedSchema, Name: tableName });
+				const response = await TruncateTable(table);
+				if (response.errors?.length) {
+					updateStatus(response.errors[0].detail, 'error');
+				} else {
+					updateStatus(`TRUNCATE TABLE ${selectedSchema}.${tableName}`, 'info');
+				}
+			} catch (e: any) {
+				updateStatus(e?.message ?? 'Failed to truncate table', 'error');
+			}
+		}
+		closeConfirmDialog();
+	}
+
+	onMount(() => {
+		// Register sidebar functions for external access
+		setSidebarRefresh(async () => {
+			await loadTables();
+		});
+		setSidebarAddTable((tableName: string) => {
+			if (!tables.includes(tableName)) {
+				tables = [...tables, tableName].sort((a, b) => a.localeCompare(b));
+			}
+		});
+		setSidebarRemoveTable((tableName: string) => {
+			tables = tables.filter((t) => t !== tableName);
+		});
+
+		// Load initial data
+		loadSchemas();
+
+		// Cleanup
+		return () => {
+			setSidebarRefresh(null);
+			setSidebarAddTable(null);
+			setSidebarRemoveTable(null);
+		};
 	});
 
 	async function loadSchemas() {
@@ -51,9 +177,10 @@
 		try {
 			const response = await GetSchemas();
 			schemas = response.data || [];
-			expandedSchemas = [...schemas];
-			for (const schema of schemas) {
-				await loadTablesForSchema(schema);
+			// Auto-select first schema
+			if (schemas.length > 0 && !selectedSchema) {
+				selectedSchema = schemas[0];
+				await loadTables();
 			}
 		} catch (e: any) {
 			updateStatus(e?.message ?? 'Failed to load schemas', 'error');
@@ -62,48 +189,87 @@
 		}
 	}
 
-	async function loadTablesForSchema(schema: string) {
+	async function loadTables() {
+		if (!selectedSchema) return;
+		loadingTables = true;
 		try {
-			const response = await GetCollections([schema]);
-			tablesBySchema = {
-				...tablesBySchema,
-				[schema]: (response.data || []).sort((a, b) => a.localeCompare(b))
-			};
+			const response = await GetCollections([selectedSchema]);
+			tables = (response.data || []).sort((a, b) => a.localeCompare(b));
 		} catch (e: any) {
 			updateStatus(e?.message ?? 'Failed to load tables', 'error');
+		} finally {
+			loadingTables = false;
 		}
 	}
 
-	function toggleSchema(schema: string) {
-		if (expandedSchemas.includes(schema)) {
-			expandedSchemas = expandedSchemas.filter((s) => s !== schema);
-		} else {
-			expandedSchemas = [...expandedSchemas, schema];
-			if (!tablesBySchema[schema]) {
-				loadTablesForSchema(schema);
-			}
-		}
+	async function selectSchema(schema: string) {
+		selectedSchema = schema;
+		schemaOpenStore.set(false);
+		await loadTables();
 	}
 
-	function handleTableClick(schema: string, table: string) {
-		selectedItem = `${schema}.${table}`;
-		onTableClick(schema, table);
+	function handleTableClick(table: string) {
+		selectedItem = `${selectedSchema}.${table}`;
+		onTableClick(selectedSchema, table);
 		updateStatus('', 'info');
 	}
 
 	async function refresh() {
-		tablesBySchema = {};
-		await loadSchemas();
-		updateStatus('Refreshed', 'info');
+		// Refresh schemas first, then reload tables
+		loading = true;
+		try {
+			const response = await GetSchemas();
+			schemas = response.data || [];
+			// Keep the current schema if it still exists, otherwise select first
+			if (selectedSchema && schemas.includes(selectedSchema)) {
+				await loadTables();
+			} else if (schemas.length > 0) {
+				selectedSchema = schemas[0];
+				await loadTables();
+			} else {
+				tables = [];
+			}
+		} catch (e: any) {
+			updateStatus(e?.message ?? 'Failed to refresh', 'error');
+		} finally {
+			loading = false;
+		}
+		updateStatus('Schema refreshed', 'info');
 	}
 
 	function newQuery() {
 		tabsStore.newQueryTab();
-		updateStatus('New query tab created', 'info');
+		updateStatus('', 'info');
 	}
 
-	function handleTableContextMenu(schema: string, table: string) {
-		contextTable = { schema, table };
+	function openNewTableTab() {
+		if (!selectedSchema) {
+			updateStatus('Please select a schema first', 'error');
+			return;
+		}
+		tabsStore.newCreateTableTab(selectedSchema);
+	}
+
+	function handleContextMenu(e: MouseEvent, table: string) {
+		e.preventDefault();
+		contextMenuTable = table;
+		contextMenuPos = { x: e.clientX, y: e.clientY };
+		showContextMenu = true;
+	}
+
+	function closeContextMenu() {
+		showContextMenu = false;
+		contextMenuTable = null;
+	}
+
+	function handleDropTable() {
+		if (!contextMenuTable) return;
+		openConfirmDialog('drop', contextMenuTable);
+	}
+
+	function handleTruncateTable() {
+		if (!contextMenuTable) return;
+		openConfirmDialog('truncate', contextMenuTable);
 	}
 </script>
 
@@ -113,6 +279,7 @@
 		<span class="text-sidebar-foreground text-sm font-medium">Explorer</span>
 		<div class="flex gap-1">
 			<button
+				type="button"
 				class="hover:bg-sidebar-accent inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-50"
 				onclick={refresh}
 				disabled={loading}
@@ -121,6 +288,7 @@
 			</button>
 			<!-- New dropdown -->
 			<button
+				type="button"
 				use:melt={$ddTrigger}
 				class="hover:bg-sidebar-accent inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors"
 			>
@@ -136,6 +304,16 @@
 			transition:fly={{ duration: 150, y: -10 }}
 		>
 			<button
+				type="button"
+				use:melt={$ddItem}
+				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+				onclick={openNewTableTab}
+			>
+				<Table2 class="h-4 w-4" />
+				New Table
+			</button>
+			<button
+				type="button"
 				use:melt={$ddItem}
 				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
 				onclick={newQuery}
@@ -146,92 +324,201 @@
 		</div>
 	{/if}
 
-	<!-- Schema Tree -->
-	<div class="min-h-0 flex-1 overflow-auto p-2">
-		{#each schemas as schema (schema)}
-			<div class="mb-1">
-				<button
-					type="button"
-					class="hover:bg-sidebar-accent flex w-full items-center gap-1 rounded-md px-2 py-1 text-sm"
-					onclick={() => toggleSchema(schema)}
-				>
-					{#if expandedSchemas.includes(schema)}
-						<ChevronDown class="text-muted-foreground h-4 w-4" />
-					{:else}
-						<ChevronRight class="text-muted-foreground h-4 w-4" />
-					{/if}
-					<Database class="text-muted-foreground h-4 w-4" />
-					<span class="font-medium">{schema}</span>
-				</button>
-
-				{#if expandedSchemas.includes(schema) && tablesBySchema[schema]}
-					<div class="ml-4 mt-1 space-y-0.5">
-						{#each tablesBySchema[schema] as table (table)}
-							<button
-								type="button"
-								use:melt={$ctxTrigger}
-								class="hover:bg-sidebar-accent flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors {selectedItem ===
-								`${schema}.${table}`
-									? 'bg-sidebar-accent text-sidebar-accent-foreground'
-									: 'text-muted-foreground'}"
-								onclick={() => handleTableClick(schema, table)}
-								oncontextmenu={() => handleTableContextMenu(schema, table)}
-							>
-								<Table2 class="h-3.5 w-3.5" />
-								<span class="truncate">{table}</span>
-							</button>
-						{/each}
-					</div>
-				{/if}
+	<!-- Schema Selector -->
+	<div class="flex-shrink-0 border-b p-2">
+		<button
+			type="button"
+			use:melt={$schemaTrigger}
+			class="border-input bg-background hover:bg-accent/50 flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 text-sm transition-colors"
+		>
+			<div class="flex items-center gap-2">
+				<Database class="text-muted-foreground h-4 w-4" />
+				<span class="truncate">{selectedSchema || 'Select schema...'}</span>
 			</div>
-		{/each}
+			<ChevronDown class="text-muted-foreground h-4 w-4 shrink-0" />
+		</button>
 
-		{#if schemas.length === 0 && !loading}
-			<div class="text-muted-foreground flex flex-col items-center justify-center py-8 text-center">
-				<Database class="mb-2 h-8 w-8" />
-				<p class="text-sm">No schemas found</p>
+		{#if $schemaOpen}
+			<!-- Backdrop -->
+			<button
+				type="button"
+				class="fixed inset-0 z-40 cursor-default"
+				onclick={() => schemaOpenStore.set(false)}
+			></button>
+
+			<div
+				class="bg-popover text-popover-foreground absolute left-2 right-2 z-50 mt-1 max-h-52 overflow-auto rounded-md border p-1 shadow-lg"
+				style="width: calc(100% - 16px);"
+				transition:fly={{ duration: 100, y: -5 }}
+			>
+				{#each schemas as schema (schema)}
+					<button
+						type="button"
+						class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none {selectedSchema ===
+						schema
+							? 'bg-accent'
+							: ''}"
+						onclick={() => selectSchema(schema)}
+					>
+						<Database class="h-4 w-4" />
+						{schema}
+					</button>
+				{/each}
+				{#if schemas.length === 0}
+					<div class="text-muted-foreground px-2 py-1.5 text-sm">No schemas</div>
+				{/if}
 			</div>
 		{/if}
 	</div>
 
-	<!-- Context Menu for tables -->
-	{#if $ctxOpen && contextTable}
+	<!-- Search -->
+	<div class="flex-shrink-0 px-2 py-1.5">
+		<div class="relative">
+			<Search
+				class="text-muted-foreground pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+			/>
+			<input
+				type="text"
+				class="border-input bg-background placeholder:text-muted-foreground focus:ring-primary h-7 w-full rounded-md border pl-7 pr-2 text-sm focus:outline-none focus:ring-1"
+				placeholder="Filter tables..."
+				bind:value={searchQuery}
+			/>
+		</div>
+	</div>
+
+	<!-- Tables List -->
+	<div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
+		{#if loadingTables}
+			<div class="flex flex-col items-center justify-center py-8">
+				<div
+					class="border-primary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
+				></div>
+				<span class="text-muted-foreground mt-2 text-xs">Loading tables...</span>
+			</div>
+		{:else if filteredTables.length === 0}
+			<div class="text-muted-foreground flex flex-col items-center justify-center py-8 text-center">
+				<Table2 class="mb-2 h-8 w-8" />
+				<p class="text-sm">{searchQuery ? 'No tables match' : 'No tables'}</p>
+			</div>
+		{:else}
+			<div class="space-y-0.5">
+				{#each filteredTables as table (table)}
+					<button
+						type="button"
+						class="hover:bg-sidebar-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors {selectedItem ===
+						`${selectedSchema}.${table}`
+							? 'bg-sidebar-accent text-sidebar-accent-foreground'
+							: 'text-muted-foreground'}"
+						onclick={() => handleTableClick(table)}
+						oncontextmenu={(e) => handleContextMenu(e, table)}
+					>
+						<Table2 class="h-3.5 w-3.5 shrink-0" />
+						<span class="truncate">{table}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	<!-- Context Menu -->
+	{#if showContextMenu && contextMenuTable}
+		<!-- Backdrop to close menu -->
+		<button
+			type="button"
+			class="fixed inset-0 z-40 cursor-default"
+			onclick={closeContextMenu}
+			aria-label="Close context menu"
+		></button>
+		<!-- Menu -->
 		<div
-			use:melt={$ctxMenu}
-			class="bg-popover text-popover-foreground z-50 min-w-48 rounded-md border p-1 shadow-md"
-			transition:fly={{ duration: 150, y: -5 }}
+			class="bg-popover text-popover-foreground fixed z-50 min-w-40 rounded-md border p-1 shadow-lg"
+			style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
+			transition:fly={{ duration: 100, y: -5 }}
 		>
+			<div class="text-muted-foreground border-b px-2 py-1 text-xs font-medium">
+				{contextMenuTable}
+			</div>
 			<button
-				use:melt={$ctxItem}
-				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
-				onclick={() => contextTable && handleTableClick(contextTable.schema, contextTable.table)}
+				type="button"
+				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm"
+				onclick={handleTruncateTable}
 			>
-				Open Table
-			</button>
-			<div use:melt={$ctxSeparator} class="bg-border -mx-1 my-1 h-px"></div>
-			<button
-				use:melt={$ctxItem}
-				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
-			>
-				Rename
+				<Eraser class="h-4 w-4" />
+				Truncate Table
 			</button>
 			<button
-				use:melt={$ctxItem}
-				class="hover:bg-destructive/10 text-destructive flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+				type="button"
+				class="hover:bg-destructive/10 text-destructive flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm"
+				onclick={handleDropTable}
 			>
+				<Trash2 class="h-4 w-4" />
 				Drop Table
 			</button>
 		</div>
 	{/if}
 
-	<!-- Bottom Actions -->
-	<div class="flex-shrink-0 border-t p-2">
-		<button
-			class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 w-full cursor-pointer items-center justify-center gap-2 rounded-md border bg-transparent px-3 text-sm transition-colors"
-			onclick={newQuery}
-		>
-			<Code class="h-4 w-4" />
-			New SQL Query
-		</button>
+	<!-- Footer with table count -->
+	<div class="text-muted-foreground flex-shrink-0 border-t px-3 py-1.5 text-xs">
+		{tables.length} table{tables.length !== 1 ? 's' : ''}
 	</div>
 </aside>
+
+<!-- Confirmation Dialog -->
+{#if $dialogOpen}
+	<div use:melt={$portalled}>
+		<div use:melt={$overlay} class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"></div>
+		<div
+			use:melt={$content}
+			class="bg-popover text-popover-foreground fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg"
+		>
+			<div class="flex items-start gap-4">
+				<div
+					class="bg-destructive/10 text-destructive flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+				>
+					<AlertTriangle class="h-5 w-5" />
+				</div>
+				<div class="flex-1">
+					<h2 use:melt={$title} class="text-lg font-semibold">
+						{confirmAction === 'drop' ? 'Drop Table' : 'Truncate Table'}
+					</h2>
+					<p use:melt={$description} class="text-muted-foreground mt-2 text-sm">
+						{#if confirmAction === 'drop'}
+							Are you sure you want to drop <strong>"{selectedSchema}.{confirmTableName}"</strong>?
+							This action cannot be undone and all data will be permanently lost.
+						{:else}
+							Are you sure you want to truncate <strong
+								>"{selectedSchema}.{confirmTableName}"</strong
+							>? All data in the table will be permanently deleted.
+						{/if}
+					</p>
+				</div>
+			</div>
+			<div class="mt-6 flex justify-end gap-3">
+				<button
+					use:melt={$close}
+					type="button"
+					class="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+					onclick={closeConfirmDialog}
+					disabled={actionLoading}
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+					onclick={executeConfirmedAction}
+					disabled={actionLoading}
+				>
+					{#if actionLoading}
+						<div
+							class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+						></div>
+						Processing...
+					{:else}
+						{confirmAction === 'drop' ? 'Drop Table' : 'Truncate'}
+					{/if}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

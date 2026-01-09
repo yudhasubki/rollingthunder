@@ -13,11 +13,15 @@ import (
 )
 
 type Config struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	Db       string
+	Host        string
+	Port        string
+	User        string
+	Password    string
+	Db          string
+	SSLMode     string
+	SSLRootCert string
+	SSLCert     string
+	SSLKey      string
 }
 
 type Postgres struct {
@@ -40,7 +44,26 @@ func (p *Postgres) Connect() error {
 		return errors.New("database is not exists")
 	}
 
-	dsn := []string{"dbname=" + p.cfg.Db, "sslmode=disable"}
+	dsn := []string{"dbname=" + p.cfg.Db}
+
+	// SSL Mode
+	sslMode := "disable"
+	if p.cfg.SSLMode != "" {
+		sslMode = p.cfg.SSLMode
+	}
+	dsn = append(dsn, fmt.Sprintf("sslmode=%s", sslMode))
+
+	// SSL Certificates
+	if p.cfg.SSLRootCert != "" {
+		dsn = append(dsn, fmt.Sprintf("sslrootcert=%s", p.cfg.SSLRootCert))
+	}
+	if p.cfg.SSLCert != "" {
+		dsn = append(dsn, fmt.Sprintf("sslcert=%s", p.cfg.SSLCert))
+	}
+	if p.cfg.SSLKey != "" {
+		dsn = append(dsn, fmt.Sprintf("sslkey=%s", p.cfg.SSLKey))
+	}
+
 	if p.cfg.User != "" {
 		dsn = append(dsn, fmt.Sprintf("user=%s", p.cfg.User))
 	}
@@ -464,4 +487,174 @@ func (p *Postgres) ExecuteQuery(query string) ([]map[string]interface{}, error) 
 	}
 
 	return results, nil
+}
+
+// CreateTable creates a new table in the database
+func (p *Postgres) CreateTable(table database.Table, columns []database.ColumnDefinition) error {
+	// Validate table name
+	if strings.TrimSpace(table.Name) == "" {
+		return errors.New("table name is required")
+	}
+	// Validate schema
+	schema := table.Schema
+	if strings.TrimSpace(schema) == "" {
+		schema = "public"
+	}
+
+	if len(columns) == 0 {
+		return errors.New("at least one column is required")
+	}
+
+	var colDefs []string
+	var primaryKeys []string
+
+	for _, col := range columns {
+		// Skip columns with empty names
+		if strings.TrimSpace(col.Name) == "" {
+			continue
+		}
+
+		def := fmt.Sprintf(`"%s" %s`, strings.TrimSpace(col.Name), col.Type)
+
+		if !col.Nullable {
+			def += " NOT NULL"
+		}
+
+		if col.Default != "" {
+			def += fmt.Sprintf(" DEFAULT %s", col.Default)
+		}
+
+		if col.Unique {
+			def += " UNIQUE"
+		}
+
+		if col.PrimaryKey {
+			primaryKeys = append(primaryKeys, fmt.Sprintf(`"%s"`, strings.TrimSpace(col.Name)))
+		}
+
+		colDefs = append(colDefs, def)
+	}
+
+	// Validate we have at least one valid column
+	if len(colDefs) == 0 {
+		return errors.New("at least one column with a name is required")
+	}
+
+	// Add primary key constraint if any
+	if len(primaryKeys) > 0 {
+		colDefs = append(colDefs, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(primaryKeys, ", ")))
+	}
+
+	query := fmt.Sprintf(`CREATE TABLE "%s"."%s" (%s)`, schema, strings.TrimSpace(table.Name), strings.Join(colDefs, ", "))
+
+	_, err := p.conn.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to create table: %v", err)
+	}
+
+	return nil
+}
+
+// DropTable drops a table from the database
+func (p *Postgres) DropTable(table database.Table) error {
+	if strings.TrimSpace(table.Name) == "" {
+		return errors.New("table name is required")
+	}
+
+	schema := table.Schema
+	if strings.TrimSpace(schema) == "" {
+		schema = "public"
+	}
+
+	query := fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schema, strings.TrimSpace(table.Name))
+	_, err := p.conn.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to drop table: %v", err)
+	}
+
+	return nil
+}
+
+// TruncateTable removes all rows from a table
+func (p *Postgres) TruncateTable(table database.Table) error {
+	if strings.TrimSpace(table.Name) == "" {
+		return errors.New("table name is required")
+	}
+
+	schema := table.Schema
+	if strings.TrimSpace(schema) == "" {
+		schema = "public"
+	}
+
+	query := fmt.Sprintf(`TRUNCATE TABLE "%s"."%s" CASCADE`, schema, strings.TrimSpace(table.Name))
+	_, err := p.conn.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to truncate table: %v", err)
+	}
+
+	return nil
+}
+
+// GetDataTypes returns available PostgreSQL data types
+func (p *Postgres) GetDataTypes() []database.DataType {
+	return []database.DataType{
+		// Numeric Types
+		{Name: "smallint", Category: "Numeric", Description: "2 bytes, -32768 to 32767"},
+		{Name: "integer", Category: "Numeric", Description: "4 bytes, -2147483648 to 2147483647"},
+		{Name: "bigint", Category: "Numeric", Description: "8 bytes, large range"},
+		{Name: "decimal", Category: "Numeric", Description: "Variable precision"},
+		{Name: "numeric", Category: "Numeric", Description: "Variable precision"},
+		{Name: "real", Category: "Numeric", Description: "4 bytes floating-point"},
+		{Name: "double precision", Category: "Numeric", Description: "8 bytes floating-point"},
+		{Name: "smallserial", Category: "Numeric", Description: "Auto-increment 2 bytes"},
+		{Name: "serial", Category: "Numeric", Description: "Auto-increment 4 bytes"},
+		{Name: "bigserial", Category: "Numeric", Description: "Auto-increment 8 bytes"},
+
+		// Character Types
+		{Name: "varchar", Category: "Character", Description: "Variable length with limit"},
+		{Name: "char", Category: "Character", Description: "Fixed length, blank padded"},
+		{Name: "text", Category: "Character", Description: "Variable unlimited length"},
+
+		// Binary Types
+		{Name: "bytea", Category: "Binary", Description: "Binary data"},
+
+		// Date/Time Types
+		{Name: "date", Category: "Date/Time", Description: "Date only"},
+		{Name: "time", Category: "Date/Time", Description: "Time of day"},
+		{Name: "time with time zone", Category: "Date/Time", Description: "Time with timezone"},
+		{Name: "timestamp", Category: "Date/Time", Description: "Date and time"},
+		{Name: "timestamp with time zone", Category: "Date/Time", Description: "Date and time with timezone"},
+		{Name: "interval", Category: "Date/Time", Description: "Time interval"},
+
+		// Boolean
+		{Name: "boolean", Category: "Boolean", Description: "true/false"},
+
+		// UUID
+		{Name: "uuid", Category: "UUID", Description: "Universally unique identifier"},
+
+		// JSON Types
+		{Name: "json", Category: "JSON", Description: "JSON data"},
+		{Name: "jsonb", Category: "JSON", Description: "Binary JSON (faster)"},
+
+		// Array Types
+		{Name: "integer[]", Category: "Array", Description: "Array of integers"},
+		{Name: "text[]", Category: "Array", Description: "Array of text"},
+
+		// Network Types
+		{Name: "inet", Category: "Network", Description: "IPv4/IPv6 host address"},
+		{Name: "cidr", Category: "Network", Description: "IPv4/IPv6 network"},
+		{Name: "macaddr", Category: "Network", Description: "MAC address"},
+
+		// Geometric Types
+		{Name: "point", Category: "Geometric", Description: "Point on plane"},
+		{Name: "line", Category: "Geometric", Description: "Infinite line"},
+		{Name: "box", Category: "Geometric", Description: "Rectangular box"},
+		{Name: "circle", Category: "Geometric", Description: "Circle"},
+
+		// Other
+		{Name: "money", Category: "Monetary", Description: "Currency amount"},
+		{Name: "xml", Category: "XML", Description: "XML data"},
+		{Name: "tsquery", Category: "Full Text", Description: "Text search query"},
+		{Name: "tsvector", Category: "Full Text", Description: "Text search document"},
+	}
 }

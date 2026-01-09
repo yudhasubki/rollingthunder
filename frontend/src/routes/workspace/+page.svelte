@@ -2,9 +2,16 @@
 	import AppHeader from '$lib/components/layout/AppHeader.svelte';
 	import AppSidebar from '$lib/components/layout/AppSidebar.svelte';
 	import AppStatusBar from '$lib/components/layout/AppStatusBar.svelte';
+	import CreateTableContent from '$lib/components/CreateTableContent.svelte';
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
-	import { hasChanges, discardStagedChanges, stagedChanges } from '$lib/stores/staged.svelte';
+	import {
+		hasChanges,
+		hasCreateTableChanges,
+		discardStagedChanges,
+		stagedChanges,
+		createTableState
+	} from '$lib/stores/staged.svelte';
 	import {
 		updateStatus,
 		updateDatabaseInfo,
@@ -13,7 +20,13 @@
 		toggleConsole,
 		clearConsoleLogs
 	} from '$lib/stores/status.svelte';
-	import { GetDatabaseInfo, InsertRow, UpdateRow, DeleteRow } from '$lib/wailsjs/go/db/Service';
+	import {
+		GetDatabaseInfo,
+		InsertRow,
+		UpdateRow,
+		DeleteRow,
+		CreateTable
+	} from '$lib/wailsjs/go/db/Service';
 	import { database } from '$lib/wailsjs/go/models';
 	import { onMount } from 'svelte';
 	import { writable } from 'svelte/store';
@@ -36,7 +49,10 @@
 	const tabs = $derived(tabsStore.tabs);
 	const activeTabId = $derived(tabsStore.activeTabId);
 	const activeTab = $derived(tabsStore.activeTab);
-	const hasUnsavedChanges = $derived(hasChanges());
+	const hasUnsavedChanges = $derived(
+		hasChanges() ||
+			(tabsStore.activeTab?.kind === 'createTable' && createTableState.submit !== null)
+	);
 	const consoleLogs = $derived(getConsoleLogs());
 	const showConsole = $derived(getShowConsole());
 
@@ -119,7 +135,22 @@
 	}
 
 	async function applyChanges() {
-		if (!tabsStore.activeTab || tabsStore.activeTab.kind !== 'table') {
+		if (!tabsStore.activeTab) {
+			updateStatus('No active tab', 'error');
+			return;
+		}
+
+		// Handle createTable tab - use registered callback
+		if (tabsStore.activeTab.kind === 'createTable') {
+			if (createTableState.submit) {
+				await createTableState.submit();
+			} else {
+				updateStatus('Create table form not ready', 'error');
+			}
+			return;
+		}
+
+		if (tabsStore.activeTab.kind !== 'table') {
 			updateStatus('No active table selected', 'error');
 			return;
 		}
@@ -172,6 +203,63 @@
 			}
 		} catch (e: any) {
 			updateStatus(e?.message ?? 'Failed to apply changes', 'error');
+		}
+	}
+
+	// Types that require a size/length parameter
+	const typesWithSize = ['varchar', 'char', 'numeric', 'decimal'];
+	function typeNeedsSize(type: string): boolean {
+		return typesWithSize.some((t) => type.toLowerCase().startsWith(t));
+	}
+
+	async function applyCreateTable() {
+		const { schema, tableName, columns } = stagedChanges.createTable;
+
+		if (!tableName.trim()) {
+			updateStatus('Table name is required', 'error');
+			return;
+		}
+
+		const validColumns = columns.filter((c) => c.name.trim() && c.type);
+		if (validColumns.length === 0) {
+			updateStatus('At least one column with name and type is required', 'error');
+			return;
+		}
+
+		updateStatus('Creating table...', 'info');
+
+		try {
+			const table = new database.Table({ schema, name: tableName.trim() });
+			const columnDefs = validColumns.map((c) => {
+				let finalType = c.type;
+				if (typeNeedsSize(c.type) && c.size) {
+					finalType = `${c.type}(${c.size})`;
+				}
+				return {
+					name: c.name.trim(),
+					type: finalType,
+					nullable: c.nullable,
+					default: c.defaultValue,
+					primaryKey: c.primaryKey,
+					unique: c.unique
+				};
+			});
+
+			const response = await CreateTable(table, columnDefs);
+			if (response.errors?.length) {
+				updateStatus(response.errors[0].detail, 'error');
+			} else {
+				updateStatus(`Table "${tableName}" created successfully`, 'info');
+				// Close this tab and open the new table
+				const currentTabId = tabsStore.activeTabId;
+				if (currentTabId) {
+					tabsStore.closeTab(currentTabId);
+				}
+				tabsStore.newTableTab(schema, tableName.trim());
+				discardStagedChanges();
+			}
+		} catch (e: any) {
+			updateStatus(e?.message ?? 'Failed to create table', 'error');
 		}
 	}
 
@@ -255,6 +343,8 @@
 								<TableContent />
 							{:else if tab.kind === 'query'}
 								<QueryEditorContent />
+							{:else if tab.kind === 'createTable'}
+								<CreateTableContent />
 							{:else}
 								<div class="text-muted-foreground flex flex-1 items-center justify-center">
 									Select a table or create a new query

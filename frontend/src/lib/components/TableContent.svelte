@@ -2,6 +2,7 @@
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
+	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import { database } from '$lib/wailsjs/go/models';
 	import { updateStatus, updateDatabaseInfo } from '$lib/stores/status.svelte';
 	import {
@@ -38,7 +39,7 @@
 	let indices = $state<database.Index[]>([]);
 	let tableTotalData = $state<number>(0);
 	let tableData = $state<Record<string, any>[]>([]);
-	let isLoadingData = false;
+	let isLoadingData = $state(false);
 	let filters = $state<FilterCondition[]>([]);
 	let appliedFilters = $state<FilterCondition[]>([]);
 
@@ -317,56 +318,65 @@
 				<div class="bg-muted/30 mb-3 space-y-2 rounded-lg border p-3">
 					{#each filters as filter (filter.id)}
 						<div class="flex items-center gap-2">
-							<input
-								type="checkbox"
-								class="border-input h-4 w-4 rounded"
-								checked={filter.enabled}
-								onchange={() => {
-									filter.enabled = !filter.enabled;
-									filters = [...filters];
-								}}
+							<!-- Enabled Checkbox -->
+							<div class="flex items-center">
+								<input
+									type="checkbox"
+									id="filter-{filter.id}"
+									class="border-input bg-background focus:ring-primary accent-primary h-4 w-4 rounded border focus:ring-2 focus:ring-offset-2"
+									checked={filter.enabled}
+									onchange={() => {
+										filter.enabled = !filter.enabled;
+										filters = [...filters];
+									}}
+								/>
+							</div>
+
+							<!-- Column Select -->
+							<FilterCombobox
+								options={columns.map((col) => ({ value: col.name, label: col.name }))}
+								value={filter.column}
+								onChange={(v) => updateFilter(filter.id, 'column', v)}
+								placeholder="Column..."
+								class="w-40"
 							/>
 
-							<select
-								class="border-input bg-background h-8 w-32 rounded-md border px-2 text-sm"
-								value={filter.column}
-								onchange={(e) => updateFilter(filter.id, 'column', e.currentTarget.value)}
-							>
-								{#each columns as col}
-									<option value={col.name}>{col.name}</option>
-								{/each}
-							</select>
-
-							<select
-								class="border-input bg-background h-8 w-28 rounded-md border px-2 text-sm"
+							<!-- Operator Select -->
+							<FilterCombobox
+								options={FILTER_OPERATORS}
 								value={filter.operator}
-								onchange={(e) => updateFilter(filter.id, 'operator', e.currentTarget.value)}
-							>
-								{#each FILTER_OPERATORS as op}
-									<option value={op.value}>{op.label}</option>
-								{/each}
-							</select>
+								onChange={(v) => updateFilter(filter.id, 'operator', v)}
+								placeholder="Operator..."
+								class="w-36"
+							/>
 
+							<!-- Value Input -->
 							{#if filter.operator !== 'IS NULL' && filter.operator !== 'IS NOT NULL'}
 								<input
 									type="text"
-									class="border-input bg-background h-8 flex-1 rounded-md border px-3 text-sm"
-									placeholder="Value..."
+									class="border-input bg-background placeholder:text-muted-foreground focus:ring-primary h-8 flex-1 rounded-md border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
+									placeholder="Enter value..."
 									value={filter.value}
 									oninput={(e) => updateFilter(filter.id, 'value', e.currentTarget.value)}
 								/>
 							{/if}
 
+							<!-- Remove Filter Button -->
 							<button
-								class="hover:bg-accent inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
+								type="button"
+								class="hover:bg-destructive/10 hover:text-destructive inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
 								onclick={() => removeFilter(filter.id)}
+								title="Remove filter"
 							>
 								<Minus class="h-4 w-4" />
 							</button>
 
+							<!-- Add Filter Button -->
 							<button
-								class="hover:bg-accent inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
+								type="button"
+								class="hover:bg-primary/10 hover:text-primary inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
 								onclick={addFilter}
+								title="Add another filter"
 							>
 								<Plus class="h-4 w-4" />
 							</button>
@@ -400,6 +410,7 @@
 					pageSize={tableLimit}
 					onPageChange={handlePageChange}
 					onAddFilter={addFilter}
+					loading={isLoadingData}
 				/>
 			</div>
 		</div>
