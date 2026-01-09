@@ -43,6 +43,9 @@
 	let filters = $state<FilterCondition[]>([]);
 	let appliedFilters = $state<FilterCondition[]>([]);
 
+	// Track last loaded state to prevent duplicate loads
+	let lastLoadKey = '';
+
 	const tableLimit = 100;
 	let currentPage = $state(0);
 
@@ -132,12 +135,17 @@
 			return;
 		}
 
-		if (isLoadingData) {
-			return;
-		}
-
 		const tableName = activeTab.table;
 		const schemaName = activeTab.schema;
+
+		// Create a key from current load parameters
+		const filterKey = JSON.stringify(currentFilters.filter((f) => f.enabled));
+		const loadKey = `${schemaName}.${tableName}:${page}:${filterKey}`;
+
+		// Skip if we already loaded this exact state
+		if (loadKey === lastLoadKey) {
+			return;
+		}
 
 		const buildFilterClause = (): string => {
 			if (currentFilters.length === 0) return '';
@@ -153,7 +161,7 @@
 					if (f.operator === 'IS NULL' || f.operator === 'IS NOT NULL') {
 						return `"${f.column}" ${f.operator}`;
 					} else if (f.operator === 'LIKE') {
-						return `"${f.column}" ILIKE '%${f.value.replace(/'/g, "''")}%'`;
+						return `"${f.column}" ILIKE '%${f.value.replace(/'/g, "''")}'`;
 					} else {
 						return `"${f.column}" ${f.operator} '${f.value.replace(/'/g, "''")}'`;
 					}
@@ -163,6 +171,7 @@
 		};
 
 		const doLoadData = async () => {
+			lastLoadKey = loadKey; // Set before async to prevent re-entry
 			isLoadingData = true;
 			updateStatus('loading data...', 'info');
 			try {
@@ -184,6 +193,7 @@
 			} catch (e: any) {
 				console.error('[TableContent] Error loading data:', e);
 				updateStatus(e?.message ?? 'Failed fetching data', 'error');
+				lastLoadKey = ''; // Reset on error to allow retry
 			} finally {
 				isLoadingData = false;
 			}
@@ -312,7 +322,7 @@
 		</div>
 
 		<!-- Data Tab -->
-		<div use:melt={$tabContent('data')} class="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+		<div use:melt={$tabContent('data')} class="flex min-h-0 flex-1 flex-col p-4">
 			<!-- Filters Panel -->
 			{#if filters.length > 0}
 				<div class="bg-muted/30 mb-3 space-y-2 rounded-lg border p-3">
@@ -401,7 +411,7 @@
 			{/if}
 
 			<!-- Data Grid -->
-			<div class="min-h-0 flex-1 overflow-hidden">
+			<div class="min-h-0 flex-1 overflow-auto">
 				<DataGrid
 					{columns}
 					data={tableData}

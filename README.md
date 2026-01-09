@@ -61,13 +61,14 @@ wails build
 - [x] Connection manager with colors & SSL
 - [x] Table browser with context menu
 - [x] Create/Drop/Truncate tables
-- [x] Basic SQL query execution
+- [x] SQL query editor with syntax highlighting (Monaco Editor)
+- [x] Autocomplete for tables and columns
+- [x] Inline data editing (Create/Update/Delete rows)
 
 ### In Progress
-- [ ] SQL query editor (syntax highlight, autocomplete)
 - [ ] Query history
-- [ ] Inline data editing (Create/Update/Delete rows)
-- [ ] DDL viewer & editor (CREATE/ALTER table)
+- [ ] DDL viewer & editor (ALTER table)
+- [ ] Multi Connection
 
 ### Planned
 - [ ] MySQL support
@@ -75,7 +76,7 @@ wails build
 - [ ] Export data (CSV, JSON, SQL)
 - [ ] Dark/Light theme toggle
 - [ ] Keyboard shortcuts
-
-## 📄 License
+ 
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.

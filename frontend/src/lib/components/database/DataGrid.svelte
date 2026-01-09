@@ -204,7 +204,7 @@
 	</div>
 
 	<!-- Data Grid -->
-	<div class="min-h-0 flex-1 overflow-auto rounded-md border">
+	<div class="max-h-[calc(100vh-320px)] min-h-0 flex-1 overflow-auto rounded-md border">
 		<table class="w-full caption-bottom text-sm">
 			<thead class="[&_tr]:border-b">
 				<tr class="hover:bg-muted/50 border-b transition-colors">
@@ -363,7 +363,7 @@
 	{/if}
 
 	<!-- Pagination -->
-	<div class="mt-2 flex items-center justify-between">
+	<div class="mt-3 flex flex-shrink-0 items-center justify-between py-2">
 		<span class="text-muted-foreground text-sm">
 			showing {currentPage * pageSize + 1}-{Math.min((currentPage + 1) * pageSize, totalRows)} of {totalRows}
 		</span>

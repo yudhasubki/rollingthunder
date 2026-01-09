@@ -337,7 +337,7 @@
 					{#each tabs as tab (tab.id)}
 						<div
 							use:melt={$tabContent(tab.id)}
-							class="min-h-0 flex-1 overflow-hidden p-0 data-[state=active]:flex data-[state=active]:flex-col"
+							class="min-h-0 flex-1 p-0 data-[state=active]:flex data-[state=active]:flex-col"
 						>
 							{#if tab.kind === 'table'}
 								<TableContent />
