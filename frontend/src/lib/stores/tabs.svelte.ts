@@ -39,6 +39,21 @@ export const tabsStore = {
     };
     state.tabs = [...state.tabs, tab];
     state.activeTabId = id;
+    return id;
+  },
+
+  newQueryTabWithContent(sql: string, title?: string) {
+    const id = crypto.randomUUID();
+    const tab: Tab = {
+      id,
+      title: title || 'SQL Query',
+      kind: 'query',
+      sql: sql,
+      level: 'info'
+    };
+    state.tabs = [...state.tabs, tab];
+    state.activeTabId = id;
+    return id;
   },
 
   newTableTab(schema: string, table: string) {
@@ -99,4 +114,4 @@ export const tabsStore = {
 
 // Export individual properties (excluding activeTab to avoid conflict)
 export const { tabs, activeTabId, activeSubTab } = state;
-export const { newQueryTab, newTableTab, closeTab, setActive, updateTab, findTableTab, setActiveSubTab } = tabsStore;
+export const { newQueryTab, newQueryTabWithContent, newTableTab, closeTab, setActive, updateTab, findTableTab, setActiveSubTab } = tabsStore;

@@ -333,3 +333,21 @@ func (s *Service) TruncateTable(table database.Table) response.BaseResponse[bool
 		Data: true,
 	}
 }
+
+// GetTableDDL returns the CREATE TABLE DDL statement for a table
+func (s *Service) GetTableDDL(table database.Table) response.BaseResponse[string] {
+	ddl, err := s.driver.GetTableDDL(table)
+	if err != nil {
+		return response.BaseResponse[string]{
+			Errors: []response.BaseErrorResponse{
+				{
+					Detail: err.Error(),
+				},
+			},
+		}
+	}
+
+	return response.BaseResponse[string]{
+		Data: ddl,
+	}
+}

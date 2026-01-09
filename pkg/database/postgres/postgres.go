@@ -658,3 +658,64 @@ func (p *Postgres) GetDataTypes() []database.DataType {
 		{Name: "tsvector", Category: "Full Text", Description: "Text search document"},
 	}
 }
+
+// GetTableDDL generates CREATE TABLE DDL statement for a table
+func (p *Postgres) GetTableDDL(table database.Table) (string, error) {
+	if strings.TrimSpace(table.Name) == "" {
+		return "", errors.New("table name is required")
+	}
+
+	schema := table.Schema
+	if strings.TrimSpace(schema) == "" {
+		schema = "public"
+	}
+
+	// Get columns
+	columns, err := p.GetCollectionStructures(table)
+	if err != nil {
+		return "", fmt.Errorf("failed to get table structure: %v", err)
+	}
+
+	if len(columns) == 0 {
+		return "", errors.New("table has no columns")
+	}
+
+	var ddl strings.Builder
+	ddl.WriteString(fmt.Sprintf("CREATE TABLE \"%s\".\"%s\" (\n", schema, table.Name))
+
+	var primaryKeys []string
+	for i, col := range columns {
+		// Column name and type
+		ddl.WriteString(fmt.Sprintf("    \"%s\" %s", col.Name, col.DataType))
+
+		// NOT NULL constraint
+		if !col.Nullable {
+			ddl.WriteString(" NOT NULL")
+		}
+
+		// DEFAULT value (skip auto-increment defaults)
+		if col.Default != nil && *col.Default != "" && !col.IsAutoInc {
+			ddl.WriteString(fmt.Sprintf(" DEFAULT %s", *col.Default))
+		}
+
+		// Track primary keys
+		if col.IsPrimary {
+			primaryKeys = append(primaryKeys, fmt.Sprintf("\"%s\"", col.Name))
+		}
+
+		// Add comma if not last column and no primary key following
+		if i < len(columns)-1 || len(primaryKeys) > 0 {
+			ddl.WriteString(",")
+		}
+		ddl.WriteString("\n")
+	}
+
+	// Add PRIMARY KEY constraint
+	if len(primaryKeys) > 0 {
+		ddl.WriteString(fmt.Sprintf("    PRIMARY KEY (%s)\n", strings.Join(primaryKeys, ", ")))
+	}
+
+	ddl.WriteString(");")
+
+	return ddl.String(), nil
+}

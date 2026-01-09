@@ -5,6 +5,7 @@
 	import { database } from '$lib/wailsjs/go/models';
 	import {
 		ChevronDown,
+		ChevronRight,
 		Database,
 		Table2,
 		Plus,
@@ -14,10 +15,19 @@
 		Trash2,
 		Eraser,
 		MoreVertical,
-		AlertTriangle
+		AlertTriangle,
+		History,
+		Clock,
+		Play
 	} from 'lucide-svelte';
 	import { createDropdownMenu, createDialog, melt } from '@melt-ui/svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import {
+		getQueryHistory,
+		deleteQueryHistoryItem,
+		clearQueryHistory,
+		type QueryHistoryItem
+	} from '$lib/stores/queryHistory.svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import {
 		setSidebarRefresh,
@@ -39,6 +49,7 @@
 	let loadingTables = $state(false);
 	let selectedItem = $state<string | null>(null);
 	let searchQuery = $state('');
+	let historyExpanded = $state(true);
 
 	// Schema selector dropdown
 	const schemaOpenStore = writable(false);
@@ -271,6 +282,21 @@
 		if (!contextMenuTable) return;
 		openConfirmDialog('truncate', contextMenuTable);
 	}
+
+	function openQueryFromHistory(item: QueryHistoryItem) {
+		tabsStore.newQueryTabWithContent(item.query, 'History Query');
+	}
+
+	function formatHistoryTime(date: Date): string {
+		const now = new Date();
+		const diff = now.getTime() - date.getTime();
+		const mins = Math.floor(diff / 60000);
+		if (mins < 1) return 'now';
+		if (mins < 60) return `${mins}m`;
+		const hours = Math.floor(mins / 60);
+		if (hours < 24) return `${hours}h`;
+		return date.toLocaleDateString();
+	}
 </script>
 
 <aside class="bg-sidebar flex h-full w-64 min-w-64 flex-col overflow-hidden border-r">
@@ -416,6 +442,79 @@
 						<span class="truncate">{table}</span>
 					</button>
 				{/each}
+			</div>
+		{/if}
+	</div>
+
+	<!-- Query History Section -->
+	<div class="flex-shrink-0 border-t">
+		<button
+			type="button"
+			class="hover:bg-sidebar-accent flex w-full items-center justify-between px-3 py-2 transition-colors"
+			onclick={() => (historyExpanded = !historyExpanded)}
+		>
+			<div class="flex items-center gap-2">
+				{#if historyExpanded}
+					<ChevronDown class="h-3.5 w-3.5" />
+				{:else}
+					<ChevronRight class="h-3.5 w-3.5" />
+				{/if}
+				<History class="h-3.5 w-3.5" />
+				<span class="text-sm font-medium">Query History</span>
+			</div>
+			{#if getQueryHistory().length > 0}
+				<span class="text-muted-foreground text-xs">{getQueryHistory().length}</span>
+			{/if}
+		</button>
+
+		{#if historyExpanded}
+			<div class="max-h-48 overflow-auto px-2 pb-2">
+				{#if getQueryHistory().length === 0}
+					<div class="text-muted-foreground py-4 text-center text-xs">No query history</div>
+				{:else}
+					<div class="space-y-0.5">
+						{#each getQueryHistory().slice(0, 20) as item (item.id)}
+							<div
+								role="button"
+								tabindex="0"
+								class="hover:bg-sidebar-accent group flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors"
+								onclick={() => openQueryFromHistory(item)}
+								onkeydown={(e) => e.key === 'Enter' && openQueryFromHistory(item)}
+							>
+								<div class="mt-0.5 shrink-0">
+									{#if item.status === 'success'}
+										<div class="h-1.5 w-1.5 rounded-full bg-green-500"></div>
+									{:else}
+										<div class="h-1.5 w-1.5 rounded-full bg-red-500"></div>
+									{/if}
+								</div>
+								<div class="min-w-0 flex-1">
+									<div class="truncate font-mono text-xs">
+										{item.query.substring(0, 40)}{item.query.length > 40 ? '...' : ''}
+									</div>
+									<div class="text-muted-foreground flex items-center gap-1 text-[10px]">
+										<Clock class="h-2.5 w-2.5" />
+										{formatHistoryTime(item.timestamp)}
+										{#if item.rowCount !== undefined}
+											<span>• {item.rowCount} rows</span>
+										{/if}
+									</div>
+								</div>
+								<button
+									type="button"
+									class="invisible shrink-0 rounded p-0.5 hover:bg-red-100 hover:text-red-600 group-hover:visible"
+									onclick={(e) => {
+										e.stopPropagation();
+										deleteQueryHistoryItem(item.id);
+									}}
+									title="Delete"
+								>
+									<Trash2 class="h-3 w-3" />
+								</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		{/if}
 	</div>

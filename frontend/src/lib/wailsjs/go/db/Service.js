@@ -62,6 +62,10 @@ export function GetSchemas() {
   return window['go']['db']['Service']['GetSchemas']();
 }
 
+export function GetTableDDL(arg1) {
+  return window['go']['db']['Service']['GetTableDDL'](arg1);
+}
+
 export function InsertRow(arg1, arg2) {
   return window['go']['db']['Service']['InsertRow'](arg1, arg2);
 }

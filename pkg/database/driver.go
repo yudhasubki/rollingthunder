@@ -18,6 +18,7 @@ type Driver interface {
 	CreateTable(table Table, columns []ColumnDefinition) error
 	DropTable(table Table) error
 	TruncateTable(table Table) error
+	GetTableDDL(table Table) (string, error)
 	GetDataTypes() []DataType
 }
 

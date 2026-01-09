@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Play, Loader2 } from 'lucide-svelte';
+	import { Play, Loader2, History, Trash2, Clock, X } from 'lucide-svelte';
 	import { ExecuteQuery } from '$lib/wailsjs/go/db/Service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
+	import {
+		addQueryToHistory,
+		getQueryHistory,
+		clearQueryHistory,
+		deleteQueryHistoryItem,
+		type QueryHistoryItem
+	} from '$lib/stores/queryHistory.svelte';
 	import {
 		getAllTables,
 		getAllColumns,
@@ -12,6 +19,7 @@
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import { database } from '$lib/wailsjs/go/models';
 	import type * as Monaco from 'monaco-editor';
+	import { tabsStore } from '$lib/stores/tabs.svelte';
 
 	let editorContainer: HTMLDivElement;
 	let editor: Monaco.editor.IStandaloneCodeEditor | null = null;
@@ -22,6 +30,7 @@
 	let resultColumns = $state<database.Structure[]>([]);
 	let errorMessage = $state<string>('');
 	let executedQuery = $state<string>('');
+	let showHistory = $state(false);
 
 	onMount(async () => {
 		// Load schema info for autocomplete
@@ -79,10 +88,15 @@
 			}
 		});
 
+		// Get initial SQL from tab if present
+		const activeTab = tabsStore.activeTab;
+		const initialSql =
+			activeTab?.sql ||
+			'-- Write your SQL query here\n-- Use semicolons to separate multiple queries\n-- Select text to run only that portion\n\nSELECT * FROM ';
+
 		// Create editor with dark theme
 		editor = monaco.editor.create(editorContainer, {
-			value:
-				'-- Write your SQL query here\n-- Use semicolons to separate multiple queries\n-- Select text to run only that portion\n\nSELECT * FROM ',
+			value: initialSql,
 			language: 'sql',
 			theme: 'vs-dark',
 			minimap: { enabled: false },
@@ -237,6 +251,8 @@
 			'info'
 		);
 
+		const startTime = Date.now();
+
 		try {
 			const response = await ExecuteQuery(query);
 
@@ -256,15 +272,37 @@
 				})) as database.Structure[];
 			}
 
-			updateStatus(`Query returned ${queryResults.length} rows`, 'info');
-			addConsoleLog(`✓ Query returned ${queryResults.length} rows`, 'info');
+			const executionTime = Date.now() - startTime;
+			updateStatus(`Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
+			addConsoleLog(`✓ Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
+			addQueryToHistory(query, 'success', queryResults.length, undefined, executionTime);
 		} catch (e: any) {
+			const executionTime = Date.now() - startTime;
 			errorMessage = e?.message ?? 'Query execution failed';
 			updateStatus(errorMessage, 'error');
 			addConsoleLog(`✗ Error: ${errorMessage}`, 'error');
+			addQueryToHistory(query, 'error', undefined, errorMessage, executionTime);
 		} finally {
 			isRunning = false;
 		}
+	}
+
+	function loadQueryFromHistory(item: QueryHistoryItem) {
+		if (editor) {
+			editor.setValue(item.query);
+			showHistory = false;
+		}
+	}
+
+	function formatTimestamp(date: Date): string {
+		const now = new Date();
+		const diff = now.getTime() - date.getTime();
+		const mins = Math.floor(diff / 60000);
+		if (mins < 1) return 'just now';
+		if (mins < 60) return `${mins}m ago`;
+		const hours = Math.floor(mins / 60);
+		if (hours < 24) return `${hours}h ago`;
+		return date.toLocaleDateString();
 	}
 </script>
 
@@ -275,20 +313,105 @@
 			<h3 class="text-sm font-medium">SQL Query</h3>
 			<span class="text-muted-foreground text-xs"> (select text to run specific query) </span>
 		</div>
-		<button
-			class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50"
-			onclick={handleRun}
-			disabled={isRunning}
-		>
-			{#if isRunning}
-				<Loader2 class="h-3.5 w-3.5 animate-spin" />
-				Running...
-			{:else}
-				<Play class="h-3.5 w-3.5" />
-				Run <span class="text-primary-foreground/70 text-xs">(Ctrl+Enter)</span>
-			{/if}
-		</button>
+		<div class="flex items-center gap-2">
+			<button
+				class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-3 text-sm transition-colors"
+				onclick={() => (showHistory = !showHistory)}
+			>
+				<History class="h-3.5 w-3.5" />
+				History
+			</button>
+			<button
+				class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50"
+				onclick={handleRun}
+				disabled={isRunning}
+			>
+				{#if isRunning}
+					<Loader2 class="h-3.5 w-3.5 animate-spin" />
+					Running...
+				{:else}
+					<Play class="h-3.5 w-3.5" />
+					Run <span class="text-primary-foreground/70 text-xs">(Ctrl+Enter)</span>
+				{/if}
+			</button>
+		</div>
 	</div>
+
+	<!-- History Panel (slide-out) -->
+	{#if showHistory}
+		<div class="bg-muted/30 mb-2 max-h-60 overflow-auto rounded-lg border p-2">
+			<div class="mb-2 flex items-center justify-between">
+				<span class="text-sm font-medium">Query History</span>
+				<div class="flex items-center gap-1">
+					{#if getQueryHistory().length > 0}
+						<button
+							class="hover:bg-destructive/10 hover:text-destructive rounded p-1 text-xs transition-colors"
+							onclick={clearQueryHistory}
+							title="Clear all history"
+						>
+							<Trash2 class="h-3.5 w-3.5" />
+						</button>
+					{/if}
+					<button
+						class="hover:bg-accent rounded p-1 transition-colors"
+						onclick={() => (showHistory = false)}
+					>
+						<X class="h-3.5 w-3.5" />
+					</button>
+				</div>
+			</div>
+			{#if getQueryHistory().length === 0}
+				<div class="text-muted-foreground py-4 text-center text-sm">No query history yet</div>
+			{:else}
+				<div class="space-y-1">
+					{#each getQueryHistory() as item (item.id)}
+						<div
+							role="button"
+							tabindex="0"
+							class="hover:bg-accent group flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left transition-colors"
+							onclick={() => loadQueryFromHistory(item)}
+							onkeydown={(e) => e.key === 'Enter' && loadQueryFromHistory(item)}
+						>
+							<div class="mt-0.5 shrink-0">
+								{#if item.status === 'success'}
+									<div class="h-2 w-2 rounded-full bg-green-500"></div>
+								{:else}
+									<div class="h-2 w-2 rounded-full bg-red-500"></div>
+								{/if}
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="truncate font-mono text-xs">
+									{item.query.substring(0, 80)}{item.query.length > 80 ? '...' : ''}
+								</div>
+								<div class="text-muted-foreground mt-0.5 flex items-center gap-2 text-xs">
+									<span class="flex items-center gap-1">
+										<Clock class="h-3 w-3" />
+										{formatTimestamp(item.timestamp)}
+									</span>
+									{#if item.rowCount !== undefined}
+										<span>{item.rowCount} rows</span>
+									{/if}
+									{#if item.executionTime !== undefined}
+										<span>{item.executionTime}ms</span>
+									{/if}
+								</div>
+							</div>
+							<button
+								class="invisible shrink-0 rounded p-1 hover:bg-red-100 hover:text-red-600 group-hover:visible"
+								onclick={(e) => {
+									e.stopPropagation();
+									deleteQueryHistoryItem(item.id);
+								}}
+								title="Delete"
+							>
+								<Trash2 class="h-3 w-3" />
+							</button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Editor -->
 	<div class="h-48 flex-shrink-0 overflow-hidden rounded-md border">

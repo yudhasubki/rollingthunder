@@ -35,6 +35,8 @@ export function GetSavedConnections():Promise<response.BaseResponse___rollingthu
 
 export function GetSchemas():Promise<response.BaseResponse___string_>;
 
+export function GetTableDDL(arg1:database.Table):Promise<response.BaseResponse_string_>;
+
 export function InsertRow(arg1:database.Table,arg2:Record<string, any>):Promise<response.BaseResponse_bool_>;
 
 export function SaveConnection(arg1:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;

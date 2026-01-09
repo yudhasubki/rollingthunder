@@ -10,9 +10,10 @@
 		GetCollectionData,
 		GetCollectionStructures,
 		GetDatabaseInfo,
-		GetIndices
+		GetIndices,
+		GetTableDDL
 	} from '$lib/wailsjs/go/db/Service';
-	import { LayoutGrid, Table2, Plus, Minus, Filter, Search } from 'lucide-svelte';
+	import { LayoutGrid, Table2, Plus, Minus, Filter, Search, Code } from 'lucide-svelte';
 
 	// Filter types
 	interface FilterCondition {
@@ -42,6 +43,10 @@
 	let isLoadingData = $state(false);
 	let filters = $state<FilterCondition[]>([]);
 	let appliedFilters = $state<FilterCondition[]>([]);
+
+	// DDL state
+	let tableDDL = $state<string>('');
+	let isLoadingDDL = $state(false);
 
 	// Track last loaded state to prevent duplicate loads
 	let lastLoadKey = '';
@@ -205,6 +210,39 @@
 	function handlePageChange(page: number) {
 		currentPage = page;
 	}
+
+	// Load DDL when DDL tab is selected
+	$effect(() => {
+		const tab = $tabValue;
+		const activeTab = tabsStore.activeTab;
+
+		if (tab !== 'ddl' || !activeTab || activeTab.kind !== 'table') {
+			return;
+		}
+
+		const tableName = activeTab.table;
+		const schemaName = activeTab.schema;
+
+		const loadDDL = async () => {
+			isLoadingDDL = true;
+			try {
+				let reqTable = new database.Table();
+				reqTable.Name = tableName;
+				reqTable.Schema = schemaName;
+
+				const res = await GetTableDDL(reqTable);
+				if (res.errors?.length) throw new Error(res.errors[0].detail);
+				tableDDL = res.data || '';
+			} catch (e: any) {
+				console.error('[TableContent] Error loading DDL:', e);
+				tableDDL = `-- Error: ${e?.message ?? 'Failed to generate DDL'}`;
+			} finally {
+				isLoadingDDL = false;
+			}
+		};
+
+		loadDDL();
+	});
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -224,6 +262,13 @@
 				>
 					<Table2 class="h-3.5 w-3.5" />
 					Data
+				</button>
+				<button
+					use:melt={$tabTrigger('ddl')}
+					class="data-[state=active]:border-primary data-[state=active]:text-foreground text-muted-foreground inline-flex items-center justify-center gap-1.5 border-b-2 border-transparent px-3 py-1.5 text-xs font-medium transition-colors"
+				>
+					<Code class="h-3.5 w-3.5" />
+					DDL
 				</button>
 			</div>
 		</div>
@@ -423,6 +468,24 @@
 					loading={isLoadingData}
 				/>
 			</div>
+		</div>
+
+		<!-- DDL Tab -->
+		<div use:melt={$tabContent('ddl')} class="flex-1 overflow-auto p-4">
+			{#if isLoadingDDL}
+				<div class="flex h-32 items-center justify-center">
+					<div
+						class="h-6 w-6 animate-spin rounded-full border-2 border-current border-t-transparent"
+					></div>
+				</div>
+			{:else if tableDDL}
+				<div class="rounded-md border">
+					<pre
+						class="bg-muted/30 overflow-auto whitespace-pre-wrap p-4 font-mono text-sm">{tableDDL}</pre>
+				</div>
+			{:else}
+				<div class="text-muted-foreground py-8 text-center">No DDL available</div>
+			{/if}
 		</div>
 	</div>
 </div>
