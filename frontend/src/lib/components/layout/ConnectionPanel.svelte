@@ -1,12 +1,17 @@
 <script lang="ts">
 	import { Database, Plus, X } from 'lucide-svelte';
-	import { connectionStore } from '$lib/stores/connectionStore.svelte';
+	import {
+		connectionState,
+		refreshConnections,
+		switchToConnection,
+		removeConnection
+	} from '$lib/stores/connectionStore.svelte';
 	import { goto } from '$app/navigation';
 	import { fly } from 'svelte/transition';
 
 	// Refresh on mount
 	$effect(() => {
-		connectionStore.refreshConnections();
+		refreshConnections();
 	});
 
 	// Context menu state
@@ -15,9 +20,8 @@
 	let contextMenuConnId = $state<string | null>(null);
 
 	async function handleSwitch(id: string) {
-		const success = await connectionStore.switchToConnection(id);
+		const success = await switchToConnection(id);
 		if (success) {
-			// Dispatch event for other components to react to connection change
 			window.dispatchEvent(new CustomEvent('connection-switched'));
 		}
 	}
@@ -40,10 +44,10 @@
 
 	async function handleDisconnect() {
 		if (contextMenuConnId) {
-			await connectionStore.removeConnection(contextMenuConnId);
+			const success = await removeConnection(contextMenuConnId);
 			closeContextMenu();
-			// If no connections left, redirect to login page
-			if (connectionStore.connections.length === 0) {
+
+			if (success && connectionState.connections.length === 0) {
 				goto('/');
 			}
 		}
@@ -53,7 +57,7 @@
 <aside class="bg-sidebar flex h-full w-16 flex-col items-center border-r py-2">
 	<!-- Connections -->
 	<div class="flex flex-1 flex-col items-center gap-2 overflow-auto">
-		{#each connectionStore.connections as conn (conn.id)}
+		{#each connectionState.connections as conn (conn.id)}
 			<button
 				class="group relative flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl transition-all {conn.isActive
 					? 'bg-accent'

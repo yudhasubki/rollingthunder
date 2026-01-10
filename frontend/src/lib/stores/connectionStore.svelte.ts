@@ -10,22 +10,24 @@ export interface ConnectionInfo {
     isActive: boolean;
 }
 
-// State
-const state = $state({
+// State - exported for direct reactive access
+export const connectionState = $state({
     connections: [] as ConnectionInfo[],
-    activeConnection: null as ConnectionInfo | null
+    activeConnection: null as ConnectionInfo | null,
+    isLoaded: false
 });
 
 // Functions
 export async function refreshConnections() {
     try {
         const res = await GetActiveConnections();
-        if (res.data) {
-            state.connections = res.data;
-            state.activeConnection = state.connections.find(c => c.isActive) || null;
-        }
+        // Always update - use empty array if no data
+        connectionState.connections = res.data || [];
+        connectionState.activeConnection = connectionState.connections.find(c => c.isActive) || null;
+        connectionState.isLoaded = true;
     } catch (e) {
         console.error('Failed to get active connections:', e);
+        connectionState.isLoaded = true;
     }
 }
 
@@ -55,10 +57,11 @@ export async function removeConnection(connectionId: string) {
     return false;
 }
 
-// Export store object
+// Convenience export for backward compatibility
 export const connectionStore = {
-    get connections() { return state.connections; },
-    get activeConnection() { return state.activeConnection; },
+    get connections() { return connectionState.connections; },
+    get activeConnection() { return connectionState.activeConnection; },
+    get isLoaded() { return connectionState.isLoaded; },
     refreshConnections,
     switchToConnection,
     removeConnection
