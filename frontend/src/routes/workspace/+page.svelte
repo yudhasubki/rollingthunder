@@ -46,6 +46,8 @@
 	import TableContent from '$lib/components/TableContent.svelte';
 	import QueryEditorContent from '$lib/components/QueryEditorContent.svelte';
 	import ConnectionPanel from '$lib/components/layout/ConnectionPanel.svelte';
+	import { connectionStore } from '$lib/stores/connectionStore.svelte';
+	import { goto } from '$app/navigation';
 
 	const tabs = $derived(tabsStore.tabs);
 	const activeTabId = $derived(tabsStore.activeTabId);
@@ -56,6 +58,24 @@
 	);
 	const consoleLogs = $derived(getConsoleLogs());
 	const showConsole = $derived(getShowConsole());
+
+	// Guard: redirect to login if no connections (after checking)
+	let hasCheckedConnections = $state(false);
+
+	$effect(() => {
+		const checkConnections = async () => {
+			await connectionStore.refreshConnections();
+			hasCheckedConnections = true;
+		};
+		checkConnections();
+	});
+
+	$effect(() => {
+		// Only redirect after we've checked and there are no connections
+		if (hasCheckedConnections && connectionStore.connections.length === 0) {
+			goto('/');
+		}
+	});
 
 	const tabValueStore = writable(tabsStore.activeTabId ?? '');
 

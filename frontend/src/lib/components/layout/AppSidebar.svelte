@@ -175,11 +175,19 @@
 		// Load initial data
 		loadSchemas();
 
+		// Listen for connection switch events
+		const handleConnectionSwitch = () => {
+			selectedSchema = ''; // Reset schema selection
+			loadSchemas(); // Reload schemas for new connection
+		};
+		window.addEventListener('connection-switched', handleConnectionSwitch);
+
 		// Cleanup
 		return () => {
 			setSidebarRefresh(null);
 			setSidebarAddTable(null);
 			setSidebarRemoveTable(null);
+			window.removeEventListener('connection-switched', handleConnectionSwitch);
 		};
 	});
 

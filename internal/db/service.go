@@ -2,6 +2,9 @@ package db
 
 import (
 	"context"
+	"sort"
+	"time"
+
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 
@@ -10,11 +13,12 @@ import (
 
 // Connection represents an active database connection
 type Connection struct {
-	ID     string          `json:"id"`
-	Name   string          `json:"name"`
-	Driver database.Driver `json:"-"`
-	Config database.Config `json:"config"`
-	Color  string          `json:"color"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Driver      database.Driver `json:"-"`
+	Config      database.Config `json:"config"`
+	Color       string          `json:"color"`
+	ConnectedAt time.Time       `json:"connectedAt"`
 }
 
 // ConnectionInfo is the public info about a connection (without driver)
@@ -76,11 +80,12 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 	// Generate connection ID and store in registry
 	connID := uuid.New().String()
 	conn := &Connection{
-		ID:     connID,
-		Name:   req.Config.Name,
-		Driver: driver,
-		Config: req.Config,
-		Color:  req.Config.Color,
+		ID:          connID,
+		Name:        req.Config.Name,
+		Driver:      driver,
+		Config:      req.Config,
+		Color:       req.Config.Color,
+		ConnectedAt: time.Now(),
 	}
 	s.connections[connID] = conn
 	s.activeID = connID
@@ -413,8 +418,20 @@ func (s *Service) SwitchConnection(connectionID string) response.BaseResponse[bo
 
 // GetActiveConnections returns all active connections
 func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo] {
-	var connections []ConnectionInfo
+	// Collect connections into a slice for sorting
+	var connList []*Connection
 	for _, conn := range s.connections {
+		connList = append(connList, conn)
+	}
+
+	// Sort by connection time (oldest first)
+	sort.Slice(connList, func(i, j int) bool {
+		return connList[i].ConnectedAt.Before(connList[j].ConnectedAt)
+	})
+
+	// Convert to ConnectionInfo
+	var connections []ConnectionInfo
+	for _, conn := range connList {
 		connections = append(connections, ConnectionInfo{
 			ID:       conn.ID,
 			Name:     conn.Name,

@@ -15,8 +15,11 @@
 	let contextMenuConnId = $state<string | null>(null);
 
 	async function handleSwitch(id: string) {
-		await connectionStore.switchToConnection(id);
-		window.location.reload();
+		const success = await connectionStore.switchToConnection(id);
+		if (success) {
+			// Dispatch event for other components to react to connection change
+			window.dispatchEvent(new CustomEvent('connection-switched'));
+		}
 	}
 
 	function handleNewConnection() {
@@ -39,6 +42,10 @@
 		if (contextMenuConnId) {
 			await connectionStore.removeConnection(contextMenuConnId);
 			closeContextMenu();
+			// If no connections left, redirect to login page
+			if (connectionStore.connections.length === 0) {
+				goto('/');
+			}
 		}
 	}
 </script>
