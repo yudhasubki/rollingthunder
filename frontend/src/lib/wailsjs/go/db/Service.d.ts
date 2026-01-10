@@ -15,9 +15,13 @@ export function DeleteConnection(arg1:string):Promise<response.BaseResponse_bool
 
 export function DeleteRow(arg1:database.Table,arg2:string,arg3:any):Promise<response.BaseResponse_bool_>;
 
+export function DisconnectConnection(arg1:string):Promise<response.BaseResponse_bool_>;
+
 export function DropTable(arg1:database.Table):Promise<response.BaseResponse_bool_>;
 
 export function ExecuteQuery(arg1:string):Promise<response.BaseResponse___map_string_interface____>;
+
+export function GetActiveConnections():Promise<response.BaseResponse___rollingthunder_internal_db_ConnectionInfo_>;
 
 export function GetCollectionData(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;
 
@@ -42,6 +46,8 @@ export function InsertRow(arg1:database.Table,arg2:Record<string, any>):Promise<
 export function SaveConnection(arg1:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;
 
 export function Start(arg1:context.Context):Promise<void>;
+
+export function SwitchConnection(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function TruncateTable(arg1:database.Table):Promise<response.BaseResponse_bool_>;
 

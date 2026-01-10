@@ -227,6 +227,7 @@ export namespace db {
 	}
 	export class ConnectResponse {
 	    connected: boolean;
+	    connectionId?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectResponse(source);
@@ -235,6 +236,29 @@ export namespace db {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.connected = source["connected"];
+	        this.connectionId = source["connectionId"];
+	    }
+	}
+	export class ConnectionInfo {
+	    id: string;
+	    name: string;
+	    database: string;
+	    host: string;
+	    color: string;
+	    isActive: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConnectionInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.database = source["database"];
+	        this.host = source["host"];
+	        this.color = source["color"];
+	        this.isActive = source["isActive"];
 	    }
 	}
 	export class SavedConnection {
@@ -302,6 +326,38 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = source["data"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse___rollingthunder_internal_db_ConnectionInfo_ {
+	    errors?: BaseErrorResponse[];
+	    data?: db.ConnectionInfo[];
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse___rollingthunder_internal_db_ConnectionInfo_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], db.ConnectionInfo);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

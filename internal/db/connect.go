@@ -8,5 +8,6 @@ type ConnectRequest struct {
 }
 
 type ConnectResponse struct {
-	Connected bool `json:"connected"`
+	Connected    bool   `json:"connected"`
+	ConnectionID string `json:"connectionId,omitempty"`
 }

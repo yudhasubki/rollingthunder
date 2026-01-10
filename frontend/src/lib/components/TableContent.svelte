@@ -13,7 +13,7 @@
 		GetIndices,
 		GetTableDDL
 	} from '$lib/wailsjs/go/db/Service';
-	import { LayoutGrid, Table2, Plus, Minus, Filter, Search, Code } from 'lucide-svelte';
+	import { LayoutGrid, Table2, Plus, Minus, Filter, Search, Code, Loader2 } from 'lucide-svelte';
 
 	// Filter types
 	interface FilterCondition {
@@ -41,6 +41,7 @@
 	let tableTotalData = $state<number>(0);
 	let tableData = $state<Record<string, any>[]>([]);
 	let isLoadingData = $state(false);
+	let isLoadingStructure = $state(false);
 	let filters = $state<FilterCondition[]>([]);
 	let appliedFilters = $state<FilterCondition[]>([]);
 
@@ -104,6 +105,7 @@
 		currentPage = 0;
 
 		const loadStructure = async () => {
+			isLoadingStructure = true;
 			try {
 				let reqTable = new database.Table();
 				reqTable.Name = activeTab.table;
@@ -124,6 +126,8 @@
 				updateDatabaseInfo(db.data);
 			} catch (e: any) {
 				updateStatus(e?.message ?? 'Unknown Error', 'error');
+			} finally {
+				isLoadingStructure = false;
 			}
 		};
 
@@ -275,95 +279,101 @@
 
 		<!-- Structure Tab -->
 		<div use:melt={$tabContent('structure')} class="flex-1 overflow-auto p-4">
-			<div class="space-y-4">
-				<!-- Columns -->
-				<div>
-					<h3 class="mb-2 text-sm font-medium">columns</h3>
-					<div class="max-h-[35vh] overflow-auto rounded-md border">
-						<table class="w-full caption-bottom text-sm">
-							<thead class="[&_tr]:border-b">
-								<tr class="hover:bg-muted/50 border-b transition-colors">
-									<th
-										class="text-muted-foreground h-10 w-48 px-4 text-left align-middle font-medium"
-										>name</th
-									>
-									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-										>type</th
-									>
-									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-										>length</th
-									>
-									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-										>nullable</th
-									>
-									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-										>default</th
-									>
-									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-										>primary</th
-									>
-									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-										>foreign key</th
-									>
-								</tr>
-							</thead>
-							<tbody class="[&_tr:last-child]:border-0">
-								{#each columns as col (col.name)}
+			{#if isLoadingStructure}
+				<div class="flex h-full items-center justify-center py-20">
+					<Loader2 class="text-muted-foreground h-8 w-8 animate-spin" />
+				</div>
+			{:else}
+				<div class="space-y-4">
+					<!-- Columns -->
+					<div>
+						<h3 class="mb-2 text-sm font-medium">columns</h3>
+						<div class="max-h-[35vh] overflow-auto rounded-md border">
+							<table class="w-full caption-bottom text-sm">
+								<thead class="[&_tr]:border-b">
 									<tr class="hover:bg-muted/50 border-b transition-colors">
-										<td class="p-4 align-middle font-mono text-sm">{col.name}</td>
-										<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
-											>{col.data_type}</td
+										<th
+											class="text-muted-foreground h-10 w-48 px-4 text-left align-middle font-medium"
+											>name</th
 										>
-										<td class="p-4 align-middle">{col.length || '-'}</td>
-										<td class="p-4 align-middle">{col.nullable ? 'yes' : 'no'}</td>
-										<td class="max-w-32 truncate p-4 align-middle font-mono text-xs"
-											>{col.default || '-'}</td
+										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+											>type</th
 										>
-										<td class="p-4 align-middle">{col.is_primary_label || '-'}</td>
-										<td class="max-w-48 truncate p-4 align-middle font-mono text-xs"
-											>{col.foreign_key || '-'}</td
+										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+											>length</th
+										>
+										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+											>nullable</th
+										>
+										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+											>default</th
+										>
+										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+											>primary</th
+										>
+										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+											>foreign key</th
 										>
 									</tr>
-								{/each}
-							</tbody>
-						</table>
+								</thead>
+								<tbody class="[&_tr:last-child]:border-0">
+									{#each columns as col (col.name)}
+										<tr class="hover:bg-muted/50 border-b transition-colors">
+											<td class="p-4 align-middle font-mono text-sm">{col.name}</td>
+											<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
+												>{col.data_type}</td
+											>
+											<td class="p-4 align-middle">{col.length || '-'}</td>
+											<td class="p-4 align-middle">{col.nullable ? 'yes' : 'no'}</td>
+											<td class="max-w-32 truncate p-4 align-middle font-mono text-xs"
+												>{col.default || '-'}</td
+											>
+											<td class="p-4 align-middle">{col.is_primary_label || '-'}</td>
+											<td class="max-w-48 truncate p-4 align-middle font-mono text-xs"
+												>{col.foreign_key || '-'}</td
+											>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
 					</div>
-				</div>
 
-				<!-- Indices -->
-				<div>
-					<h3 class="mb-2 text-sm font-medium">indices</h3>
-					<div class="max-h-[25vh] overflow-auto rounded-md border">
-						<table class="w-full caption-bottom text-sm">
-							<thead class="[&_tr]:border-b">
-								<tr class="hover:bg-muted/50 border-b transition-colors">
-									<th
-										class="text-muted-foreground h-10 w-64 px-4 text-left align-middle font-medium"
-										>name</th
-									>
-									<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-										>definition</th
-									>
-								</tr>
-							</thead>
-							<tbody class="[&_tr:last-child]:border-0">
-								{#each indices as idx (idx.name)}
+					<!-- Indices -->
+					<div>
+						<h3 class="mb-2 text-sm font-medium">indices</h3>
+						<div class="max-h-[25vh] overflow-auto rounded-md border">
+							<table class="w-full caption-bottom text-sm">
+								<thead class="[&_tr]:border-b">
 									<tr class="hover:bg-muted/50 border-b transition-colors">
-										<td class="p-4 align-middle font-mono text-sm">{idx.name}</td>
-										<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
-											>{idx.definition}</td
+										<th
+											class="text-muted-foreground h-10 w-64 px-4 text-left align-middle font-medium"
+											>name</th
+										>
+										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
+											>definition</th
 										>
 									</tr>
-								{:else}
-									<tr>
-										<td colspan="2" class="text-muted-foreground p-4 text-center">no indices</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
+								</thead>
+								<tbody class="[&_tr:last-child]:border-0">
+									{#each indices as idx (idx.name)}
+										<tr class="hover:bg-muted/50 border-b transition-colors">
+											<td class="p-4 align-middle font-mono text-sm">{idx.name}</td>
+											<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
+												>{idx.definition}</td
+											>
+										</tr>
+									{:else}
+										<tr>
+											<td colspan="2" class="text-muted-foreground p-4 text-center">no indices</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
 					</div>
 				</div>
-			</div>
+			{/if}
 		</div>
 
 		<!-- Data Tab -->

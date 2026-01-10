@@ -22,12 +22,20 @@ export function DeleteRow(arg1, arg2, arg3) {
   return window['go']['db']['Service']['DeleteRow'](arg1, arg2, arg3);
 }
 
+export function DisconnectConnection(arg1) {
+  return window['go']['db']['Service']['DisconnectConnection'](arg1);
+}
+
 export function DropTable(arg1) {
   return window['go']['db']['Service']['DropTable'](arg1);
 }
 
 export function ExecuteQuery(arg1) {
   return window['go']['db']['Service']['ExecuteQuery'](arg1);
+}
+
+export function GetActiveConnections() {
+  return window['go']['db']['Service']['GetActiveConnections']();
 }
 
 export function GetCollectionData(arg1) {
@@ -76,6 +84,10 @@ export function SaveConnection(arg1) {
 
 export function Start(arg1) {
   return window['go']['db']['Service']['Start'](arg1);
+}
+
+export function SwitchConnection(arg1) {
+  return window['go']['db']['Service']['SwitchConnection'](arg1);
 }
 
 export function TruncateTable(arg1) {

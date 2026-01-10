@@ -45,6 +45,7 @@
 	// Import content components
 	import TableContent from '$lib/components/TableContent.svelte';
 	import QueryEditorContent from '$lib/components/QueryEditorContent.svelte';
+	import ConnectionPanel from '$lib/components/layout/ConnectionPanel.svelte';
 
 	const tabs = $derived(tabsStore.tabs);
 	const activeTabId = $derived(tabsStore.activeTabId);
@@ -275,6 +276,9 @@
 
 	<!-- Main Content -->
 	<div class="flex flex-1 overflow-hidden">
+		<!-- Connection Panel -->
+		<ConnectionPanel />
+
 		<!-- Sidebar -->
 		<AppSidebar onTableClick={handleTableClick} />
 

@@ -21,10 +21,12 @@
 		Server,
 		Palette,
 		Save,
-		AlertTriangle
+		AlertTriangle,
+		ArrowLeft
 	} from 'lucide-svelte';
 	import { fly } from 'svelte/transition';
 	import { onMount } from 'svelte';
+	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 
 	// Connection form state
 	let connectionName = $state('');
@@ -167,6 +169,7 @@
 
 	onMount(async () => {
 		await loadSavedConnections();
+		connectionStore.refreshConnections();
 	});
 
 	async function loadSavedConnections() {
@@ -301,6 +304,16 @@
 		<!-- Header -->
 		<div class="flex items-center justify-between border-b p-4">
 			<div class="flex items-center gap-2">
+				{#if connectionStore.connections.length > 0}
+					<button
+						type="button"
+						class="hover:bg-accent -ml-1 mr-1 rounded-md p-1.5 transition-colors"
+						onclick={() => goto('/workspace')}
+						title="Back to workspace"
+					>
+						<ArrowLeft class="h-4 w-4" />
+					</button>
+				{/if}
 				<img src="/logo.png" alt="RollingThunder" class="h-6 w-6" />
 				<span class="font-semibold">Connections</span>
 			</div>
