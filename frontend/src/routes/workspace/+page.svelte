@@ -429,7 +429,7 @@
 							{#if tab.kind === 'table'}
 								<TableContent />
 							{:else if tab.kind === 'query'}
-								<QueryEditorContent />
+								<QueryEditorContent {tab} />
 							{:else if tab.kind === 'createTable'}
 								<CreateTableContent />
 							{:else if tab.kind === 'schemaDiagram'}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Play, Loader2, History, Trash2, Clock, X } from 'lucide-svelte';
+	import { Play, Loader2, History, Trash2, Clock, X, RefreshCw } from 'lucide-svelte';
 	import { ExecuteQuery } from '$lib/wailsjs/go/db/Service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
 	import {
@@ -10,21 +10,30 @@
 		deleteQueryHistoryItem,
 		type QueryHistoryItem
 	} from '$lib/stores/queryHistory.svelte';
-	import {
-		getAllTables,
-		getAllColumns,
-		getSQLKeywords,
-		loadSchemaInfo
-	} from '$lib/stores/schema.svelte';
+	import { getSqlAutocompleteMetadata, loadSchemaInfo } from '$lib/stores/schema.svelte';
+	import { registerSqlCompletionProvider } from '$lib/sql/autocomplete';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import { database } from '$lib/wailsjs/go/models';
 	import type * as Monaco from 'monaco-editor';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
+	import type { Tab } from '$lib/models/Tab';
+
+	interface Props {
+		tab: Tab;
+	}
+
+	let { tab }: Props = $props();
 
 	let editorContainer: HTMLDivElement;
 	let editor: Monaco.editor.IStandaloneCodeEditor | null = null;
+	let editorModel: Monaco.editor.ITextModel | null = null;
 	let monaco: typeof Monaco | null = null;
 	let themeObserver: MutationObserver | null = null;
+	let completionRegistration: Monaco.IDisposable | null = null;
+	let contentChangeRegistration: Monaco.IDisposable | null = null;
+	let focusRegistration: Monaco.IDisposable | null = null;
+	let connectionSwitchHandler: (() => void) | null = null;
+	let destroyed = false;
 
 	let isRunning = $state(false);
 	let queryResults = $state<Record<string, any>[]>([]);
@@ -32,74 +41,43 @@
 	let errorMessage = $state<string>('');
 	let executedQuery = $state<string>('');
 	let showHistory = $state(false);
+	let autocompleteRefreshing = $state(false);
+	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata());
+
+	async function refreshAutocomplete(force = false, showSuggestions = false) {
+		autocompleteRefreshing = true;
+		try {
+			await loadSchemaInfo(force);
+			if (showSuggestions) {
+				editor?.trigger('metadata-refresh', 'editor.action.triggerSuggest', {});
+			}
+		} finally {
+			autocompleteRefreshing = false;
+		}
+	}
 
 	onMount(async () => {
-		// Load schema info for autocomplete
-		loadSchemaInfo();
+		const [, , monacoModule] = await Promise.all([
+			refreshAutocomplete(),
+			import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution'),
+			import('monaco-editor')
+		]);
+		if (destroyed) return;
 
-		// Dynamic import Monaco to avoid SSR issues
-		monaco = await import('monaco-editor');
-
-		// Configure SQL language with custom completions
-		monaco.languages.registerCompletionItemProvider('sql', {
-			provideCompletionItems: (model, position) => {
-				const word = model.getWordUntilPosition(position);
-				const range = {
-					startLineNumber: position.lineNumber,
-					endLineNumber: position.lineNumber,
-					startColumn: word.startColumn,
-					endColumn: word.endColumn
-				};
-
-				const suggestions: Monaco.languages.CompletionItem[] = [];
-
-				// Add SQL keywords
-				for (const keyword of getSQLKeywords()) {
-					suggestions.push({
-						label: keyword,
-						kind: monaco!.languages.CompletionItemKind.Keyword,
-						insertText: keyword,
-						range
-					});
-				}
-
-				// Add table names
-				for (const table of getAllTables()) {
-					suggestions.push({
-						label: table,
-						kind: monaco!.languages.CompletionItemKind.Class,
-						insertText: table,
-						detail: 'Table',
-						range
-					});
-				}
-
-				// Add column names
-				for (const column of getAllColumns()) {
-					suggestions.push({
-						label: column,
-						kind: monaco!.languages.CompletionItemKind.Field,
-						insertText: column,
-						detail: 'Column',
-						range
-					});
-				}
-
-				return { suggestions };
-			}
-		});
+		monaco = monacoModule;
+		completionRegistration = registerSqlCompletionProvider(monaco);
 
 		// Get initial SQL from tab if present
-		const activeTab = tabsStore.activeTab;
 		const initialSql =
-			activeTab?.sql ||
-			'-- Write your SQL query here\n-- Use semicolons to separate multiple queries\n-- Select text to run only that portion\n\nSELECT * FROM ';
+			tab.sql || '-- Press Ctrl+Space for schema-aware suggestions\n\nSELECT * FROM ';
 
 		const editorTheme = document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs';
+		const modelUri = monaco.Uri.parse(`inmemory://rollingthunder/query/${tab.id}.sql`);
+		monaco.editor.getModel(modelUri)?.dispose();
+		editorModel = monaco.editor.createModel(initialSql, 'sql', modelUri);
 
 		editor = monaco.editor.create(editorContainer, {
-			value: initialSql,
-			language: 'sql',
+			model: editorModel,
 			theme: editorTheme,
 			minimap: { enabled: false },
 			fontSize: 12,
@@ -109,8 +87,43 @@
 			automaticLayout: true,
 			scrollBeyondLastLine: false,
 			wordWrap: 'on',
-			padding: { top: 8, bottom: 8 }
+			padding: { top: 8, bottom: 8 },
+			quickSuggestions: {
+				other: true,
+				comments: false,
+				strings: false
+			},
+			quickSuggestionsDelay: 80,
+			suggestOnTriggerCharacters: true,
+			wordBasedSuggestions: 'off',
+			acceptSuggestionOnEnter: 'on',
+			snippetSuggestions: 'top',
+			suggestSelection: 'recentlyUsedByPrefix',
+			parameterHints: { enabled: true },
+			suggest: {
+				preview: true,
+				showKeywords: true,
+				showFunctions: true,
+				showFields: true,
+				showStructs: true,
+				showModules: true,
+				showSnippets: true
+			}
 		});
+
+		contentChangeRegistration = editor.onDidChangeModelContent(() => {
+			tabsStore.updateTab(tab.id, { sql: editor?.getValue() || '' });
+		});
+		focusRegistration = editor.onDidFocusEditorText(() => {
+			if (autocompleteMetadata.error || autocompleteMetadata.tables.length === 0) {
+				void refreshAutocomplete();
+			}
+		});
+
+		connectionSwitchHandler = () => {
+			void refreshAutocomplete(true);
+		};
+		window.addEventListener('connection-switched', connectionSwitchHandler);
 
 		themeObserver = new MutationObserver(() => {
 			monaco?.editor.setTheme(
@@ -129,8 +142,16 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
+		if (connectionSwitchHandler) {
+			window.removeEventListener('connection-switched', connectionSwitchHandler);
+		}
 		themeObserver?.disconnect();
+		focusRegistration?.dispose();
+		contentChangeRegistration?.dispose();
+		completionRegistration?.dispose();
 		editor?.dispose();
+		editorModel?.dispose();
 	});
 
 	// Get the query to execute - either selected text or current statement
@@ -329,10 +350,36 @@
 			</span>
 			<div>
 				<h3 class="text-[11px] font-bold">SQL editor</h3>
-				<p class="text-muted-foreground text-[9px]">Select a statement to run it in isolation</p>
+				<p
+					class="text-[9px] {autocompleteMetadata.error
+						? 'text-destructive'
+						: 'text-muted-foreground'}"
+					title={autocompleteMetadata.error || 'Schema-aware SQL autocomplete'}
+				>
+					{#if autocompleteRefreshing || autocompleteMetadata.isLoading}
+						Indexing database metadata…
+					{:else if autocompleteMetadata.error}
+						Autocomplete metadata unavailable
+					{:else}
+						{autocompleteMetadata.engine} autocomplete · {autocompleteMetadata.tables.length} tables
+					{/if}
+				</p>
 			</div>
 		</div>
 		<div class="flex items-center gap-1">
+			<button
+				class="rt-toolbar-button h-7 w-7 cursor-pointer disabled:cursor-wait disabled:opacity-50"
+				onclick={() => refreshAutocomplete(true, true)}
+				disabled={autocompleteRefreshing || autocompleteMetadata.isLoading}
+				title="Refresh SQL autocomplete metadata"
+				aria-label="Refresh SQL autocomplete metadata"
+			>
+				<RefreshCw
+					class="h-3 w-3 {autocompleteRefreshing || autocompleteMetadata.isLoading
+						? 'animate-spin'
+						: ''}"
+				/>
+			</button>
 			<button
 				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[10px]"
 				onclick={() => (showHistory = !showHistory)}

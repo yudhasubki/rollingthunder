@@ -1,82 +1,147 @@
 <div align="center">
-<a href="https://github.com/yudhasubki/rollingthunder/"><img src="build/appicon.png" width="120"/></a>
-</div>
-<h1 align="center">⚡ Rolling Thunder</h1>
-<div align="center">
-<strong>Rolling Thunder is a modern lightweight cross-platform database desktop manager available
-for Mac, Windows, and Linux.</strong>
+  <a href="https://github.com/yudhasubki/rollingthunder/">
+    <img src="build/appicon.png" width="112" alt="Rolling Thunder logo" />
+  </a>
 </div>
 
-**Status: Under Active Development**  
-Rolling Thunder is currently in its **early development phase** — the foundation is being laid.  
-It's **not ready for production use** yet, but stay tuned for updates!
+<h1 align="center">Rolling Thunder</h1>
 
-## 🚧 What is Rolling Thunder?
+<p align="center">
+  A focused, cross-platform database studio for exploring schemas, editing data, and running SQL
+  without leaving the desktop.
+</p>
 
-**Rolling Thunder** will be a sleek and efficient desktop app to help developers and DBAs manage their databases with ease. Built for performance, simplicity, and cross-platform compatibility.
+<p align="center">
+  Built with Go, Wails, Svelte 5, and Monaco Editor.
+</p>
 
-## ✨ Features
+> [!WARNING]
+> Rolling Thunder is under active development and is not ready for production-critical database
+> work. PostgreSQL is currently the only functional database backend. MySQL and SQLite are planned,
+> but their connection providers are intentionally disabled until their drivers reach feature
+> parity.
 
-### Connection Management
-- **Color-coded connections** - Visual distinction for different environments (prod/staging/dev)
-- **Save connections** - Persistent storage for quick access
-- **SSL support** - SSLMode, CA Certificate, Client Cert/Key
-- **Right-click context menu** - Quick delete with styled confirmation modal
+## What works today
 
-### Table Management
-- **Create tables** - Visual table designer with column definitions
-- **Drop/Truncate tables** - Right-click context menu with confirmation
-- **Auto-refresh** - Sidebar updates after table operations
+### Connections
 
-### Query Editor
-- **SQL editor** - Write and execute queries
-- **Results viewer** - View query results in table format
+- Save and edit reusable connection profiles.
+- Keep multiple database sessions open and switch between them.
+- Identify environments with profile colors.
+- Configure PostgreSQL SSL modes and client certificates.
+- Open connection management as a modal without leaving the workspace.
+- Select the database provider before filling in provider-specific settings.
 
-## Tech Stack
-- **Backend**: Go + Wails
-- **Frontend**: Svelte 5 + TypeScript
-- **UI**: Melt UI + Tailwind CSS
-- **Database**: PostgreSQL (MySQL, SQLite coming soon)
+### Database workspace
 
-## Getting Started
+- Browse PostgreSQL schemas and tables.
+- Search tables and switch schemas.
+- Inspect columns, constraints, relationships, indexes, and table DDL.
+- Open an interactive schema diagram.
+- Browse paginated table data and apply filters.
+- Stage row inserts, updates, and deletes before applying them.
+- Create, truncate, and drop tables with confirmation.
+- Keep table, query, diagram, and create-table tabs open together.
+
+### SQL editor
+
+- Monaco-powered SQL editing and syntax highlighting.
+- Execute the selected SQL or the statement under the cursor.
+- Query history, execution status, result grids, and activity-console feedback.
+- Schema-aware completion for schemas, tables, columns, and aliases.
+- Context-aware suggestions after `FROM`, `JOIN`, `WHERE`, `SET`, and qualified names such as
+  `customer.`.
+- Function, keyword, and snippet catalogs for PostgreSQL, MySQL, and SQLite dialects.
+- Lazy column metadata loading, including tables that were not part of the initial metadata warm-up.
+- Independent editor models for every query tab, without duplicate completion providers.
+
+The MySQL and SQLite completion catalogs are ready in the editor architecture, but they will become
+user-facing only after the corresponding database drivers ship.
+
+## Database support
+
+| Engine          | Connect and query | Object metadata    | Dialect completion       |
+| --------------- | ----------------- | ------------------ | ------------------------ |
+| PostgreSQL      | Available         | Schemas and tables | Available                |
+| MySQL / MariaDB | Planned           | Planned            | Completion catalog ready |
+| SQLite          | Planned           | Planned            | Completion catalog ready |
+
+## Known gaps
+
+Rolling Thunder currently has a table-first object explorer. It does not yet expose database views,
+materialized views, functions, procedures, triggers, sequences, or custom types.
+
+Table headers show the intended sorting interaction, but a stable server-side sorting pipeline is
+not implemented yet. Exporting table data or query results to CSV, JSON, or SQL is also not
+available. These are prioritized in the [project roadmap](ROADMAP.md).
+
+Other important limitations include:
+
+- PostgreSQL is the only real database driver.
+- Indexes can be inspected but not created or edited visually.
+- Existing tables cannot yet be altered from the structure editor.
+- Query cancellation, multiple result sets, and visual query plans are not implemented.
+- Saved credentials are not yet integrated with the operating-system keychain.
+
+## Tech stack
+
+- **Desktop runtime:** Wails 2
+- **Backend:** Go 1.23, pgx, and sqlx
+- **Frontend:** Svelte 5 and TypeScript
+- **UI:** Tailwind CSS, Melt UI, and Lucide
+- **SQL editor:** Monaco Editor
+- **Current database driver:** PostgreSQL
+
+## Getting started
+
+### Prerequisites
+
+- Go 1.23 or newer
+- Node.js and npm
+- Wails 2 CLI
+- A PostgreSQL database for the current build
+
+### Development
 
 ```bash
-# Clone the repository
 git clone https://github.com/yudhasubki/rollingthunder.git
 cd rollingthunder
 
-# Install dependencies
-cd frontend && npm install && cd ..
+cd frontend
+npm install
+cd ..
 
-# Run in development mode
 wails dev
+```
 
-# Build for production
+### Production build
+
+```bash
 wails build
+```
+
+### Local checks
+
+```bash
+go test ./...
+
+cd frontend
+npm run test:sql
+npm run build
 ```
 
 ## Roadmap
 
-### Completed
-- [x] Connection manager with colors & SSL
-- [x] Table browser with context menu
-- [x] Create/Drop/Truncate tables
-- [x] SQL query editor with syntax highlighting (Monaco Editor)
-- [x] Autocomplete for tables and columns
-- [x] Inline data editing (Create/Update/Delete rows)
+The next milestones cover data sorting and export, a complete database-object explorer, real MySQL
+and SQLite drivers, and production hardening. See [ROADMAP.md](ROADMAP.md) for priorities and
+acceptance criteria.
 
-### In Progress
-- [ ] Query history
-- [ ] DDL viewer & editor (ALTER table)
-- [ ] Multi Connection
+## Contributing
 
-### Planned
-- [ ] MySQL support
-- [ ] SQLite support
-- [ ] Export data (CSV, JSON, SQL)
-- [ ] Dark/Light theme toggle
-- [ ] Keyboard shortcuts
- 
+Issues and focused pull requests are welcome while the architecture is still evolving. Please
+include the target database engine, expected behavior, and reproduction steps for database-specific
+bugs.
+
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Rolling Thunder is available under the [MIT License](LICENSE).
