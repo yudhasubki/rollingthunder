@@ -13,7 +13,7 @@
 	} from 'lucide-svelte';
 	import { createDropdownMenu, melt } from '@melt-ui/svelte';
 	import { onMount } from 'svelte';
-	import { newQueryTab } from '$lib/stores/tabs.svelte';
+	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { fly } from 'svelte/transition';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 
@@ -88,6 +88,11 @@
 	function openConnectionManager() {
 		connOpen.set(false);
 		window.dispatchEvent(new CustomEvent('open-connection-manager'));
+	}
+
+	function openQueryTab() {
+		const connectionId = connectionStore.activeConnection?.id;
+		if (connectionId) tabsStore.newQueryTab(connectionId);
 	}
 </script>
 
@@ -252,7 +257,8 @@
 	<div class="flex shrink-0 items-center gap-1">
 		<button
 			class="rt-primary-button inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-xs font-semibold"
-			onclick={newQueryTab}
+			onclick={openQueryTab}
+			disabled={!connectionStore.activeConnection}
 		>
 			<TerminalSquare class="h-3.5 w-3.5" />
 			<span class="hidden sm:inline">New query</span>

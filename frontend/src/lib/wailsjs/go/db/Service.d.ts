@@ -7,41 +7,41 @@ import {context} from '../models';
 
 export function Connect(arg1:db.ConnectRequest):Promise<response.BaseResponse_rollingthunder_internal_db_ConnectResponse_>;
 
-export function CountCollectionData(arg1:database.Table):Promise<response.BaseResponse_int_>;
+export function CountCollectionData(arg1:string,arg2:database.Table):Promise<response.BaseResponse_int_>;
 
-export function CreateTable(arg1:database.Table,arg2:Array<database.ColumnDefinition>):Promise<response.BaseResponse_bool_>;
+export function CreateTable(arg1:string,arg2:database.Table,arg3:Array<database.ColumnDefinition>):Promise<response.BaseResponse_bool_>;
 
 export function DeleteConnection(arg1:string):Promise<response.BaseResponse_bool_>;
 
-export function DeleteRow(arg1:database.Table,arg2:string,arg3:any):Promise<response.BaseResponse_bool_>;
+export function DeleteRow(arg1:string,arg2:database.Table,arg3:string,arg4:any):Promise<response.BaseResponse_bool_>;
 
 export function DisconnectConnection(arg1:string):Promise<response.BaseResponse_bool_>;
 
-export function DropTable(arg1:database.Table):Promise<response.BaseResponse_bool_>;
+export function DropTable(arg1:string,arg2:database.Table):Promise<response.BaseResponse_bool_>;
 
-export function ExecuteQuery(arg1:string):Promise<response.BaseResponse___map_string_interface____>;
+export function ExecuteQuery(arg1:string,arg2:string):Promise<response.BaseResponse___map_string_interface____>;
 
 export function GetActiveConnections():Promise<response.BaseResponse___rollingthunder_internal_db_ConnectionInfo_>;
 
-export function GetCollectionData(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;
+export function GetCollectionData(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;
 
-export function GetCollectionStructures(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Structures_>;
+export function GetCollectionStructures(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Structures_>;
 
-export function GetCollections(arg1:Array<string>):Promise<response.BaseResponse___string_>;
+export function GetCollections(arg1:string,arg2:Array<string>):Promise<response.BaseResponse___string_>;
 
-export function GetDataTypes():Promise<response.BaseResponse___rollingthunder_pkg_database_DataType_>;
+export function GetDataTypes(arg1:string):Promise<response.BaseResponse___rollingthunder_pkg_database_DataType_>;
 
-export function GetDatabaseInfo():Promise<response.BaseResponse_rollingthunder_pkg_database_Info_>;
+export function GetDatabaseInfo(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_Info_>;
 
-export function GetIndices(arg1:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Indices_>;
+export function GetIndices(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Indices_>;
 
 export function GetSavedConnections():Promise<response.BaseResponse___rollingthunder_internal_db_SavedConnection_>;
 
-export function GetSchemas():Promise<response.BaseResponse___string_>;
+export function GetSchemas(arg1:string):Promise<response.BaseResponse___string_>;
 
-export function GetTableDDL(arg1:database.Table):Promise<response.BaseResponse_string_>;
+export function GetTableDDL(arg1:string,arg2:database.Table):Promise<response.BaseResponse_string_>;
 
-export function InsertRow(arg1:database.Table,arg2:Record<string, any>):Promise<response.BaseResponse_bool_>;
+export function InsertRow(arg1:string,arg2:database.Table,arg3:Record<string, any>):Promise<response.BaseResponse_bool_>;
 
 export function SaveConnection(arg1:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;
 
@@ -49,8 +49,8 @@ export function Start(arg1:context.Context):Promise<void>;
 
 export function SwitchConnection(arg1:string):Promise<response.BaseResponse_bool_>;
 
-export function TruncateTable(arg1:database.Table):Promise<response.BaseResponse_bool_>;
+export function TruncateTable(arg1:string,arg2:database.Table):Promise<response.BaseResponse_bool_>;
 
 export function UpdateConnection(arg1:string,arg2:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;
 
-export function UpdateRow(arg1:database.Table,arg2:Record<string, any>,arg3:string):Promise<response.BaseResponse_bool_>;
+export function UpdateRow(arg1:string,arg2:database.Table,arg3:Record<string, any>,arg4:string):Promise<response.BaseResponse_bool_>;

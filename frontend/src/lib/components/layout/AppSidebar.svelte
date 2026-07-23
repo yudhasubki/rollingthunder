@@ -38,10 +38,11 @@
 	import { fly } from 'svelte/transition';
 
 	interface Props {
+		connectionId: string;
 		onTableClick: (schema: string, table: string) => void;
 	}
 
-	let { onTableClick }: Props = $props();
+	let { connectionId, onTableClick }: Props = $props();
 
 	let schemas: string[] = $state([]);
 	let selectedSchema = $state<string>('');
@@ -119,13 +120,16 @@
 		if (action === 'drop') {
 			try {
 				const table = new database.Table({ Schema: selectedSchema, Name: tableName });
-				const response = await DropTable(table);
+				const response = await DropTable(connectionId, table);
 				if (response.errors?.length) {
 					updateStatus(response.errors[0].detail, 'error');
 				} else {
 					updateStatus(`DROP TABLE ${selectedSchema}.${tableName}`, 'info');
 					const tabId = tabsStore.tabs.find(
-						(t) => t.schema === selectedSchema && t.name === tableName
+						(t) =>
+							t.connectionId === connectionId &&
+							t.schema === selectedSchema &&
+							t.table === tableName
 					)?.id;
 					if (tabId) {
 						tabsStore.closeTab(tabId);
@@ -138,7 +142,7 @@
 		} else if (action === 'truncate') {
 			try {
 				const table = new database.Table({ Schema: selectedSchema, Name: tableName });
-				const response = await TruncateTable(table);
+				const response = await TruncateTable(connectionId, table);
 				if (response.errors?.length) {
 					updateStatus(response.errors[0].detail, 'error');
 				} else {
@@ -187,7 +191,7 @@
 	async function loadSchemas() {
 		loading = true;
 		try {
-			const response = await GetSchemas();
+			const response = await GetSchemas(connectionId);
 			schemas = response.data || [];
 			// Auto-select first schema
 			if (schemas.length > 0 && !selectedSchema) {
@@ -205,7 +209,7 @@
 		if (!selectedSchema) return;
 		loadingTables = true;
 		try {
-			const response = await GetCollections([selectedSchema]);
+			const response = await GetCollections(connectionId, [selectedSchema]);
 			tables = (response.data || []).sort((a, b) => a.localeCompare(b));
 		} catch (e: any) {
 			updateStatus(e?.message ?? 'Failed to load tables', 'error');
@@ -230,7 +234,7 @@
 		// Refresh schemas first, then reload tables
 		loading = true;
 		try {
-			const response = await GetSchemas();
+			const response = await GetSchemas(connectionId);
 			schemas = response.data || [];
 			// Keep the current schema if it still exists, otherwise select first
 			if (selectedSchema && schemas.includes(selectedSchema)) {
@@ -250,7 +254,7 @@
 	}
 
 	function newQuery() {
-		tabsStore.newQueryTab();
+		tabsStore.newQueryTab(connectionId);
 		updateStatus('', 'info');
 	}
 
@@ -259,7 +263,7 @@
 			updateStatus('Please select a schema first', 'error');
 			return;
 		}
-		tabsStore.newCreateTableTab(selectedSchema);
+		tabsStore.newCreateTableTab(connectionId, selectedSchema);
 	}
 
 	function openSchemaDiagram() {
@@ -267,7 +271,7 @@
 			updateStatus('Please select a schema first', 'error');
 			return;
 		}
-		tabsStore.newSchemaDiagramTab(selectedSchema);
+		tabsStore.newSchemaDiagramTab(connectionId, selectedSchema);
 		updateStatus(`Opening schema diagram for ${selectedSchema}…`, 'info');
 	}
 
@@ -301,7 +305,7 @@
 	}
 
 	function openQueryFromHistory(item: QueryHistoryItem) {
-		tabsStore.newQueryTabWithContent(item.query, 'History Query');
+		tabsStore.newQueryTabWithContent(connectionId, item.query, 'History Query');
 	}
 
 	function formatHistoryTime(date: Date): string {

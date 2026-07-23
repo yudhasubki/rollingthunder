@@ -4,7 +4,7 @@
 		stageDataUpdate,
 		stageDataDelete,
 		stageDataInsert,
-		stagedChanges
+		getStagedChanges
 	} from '$lib/stores/staged.svelte';
 	import {
 		Plus,
@@ -31,6 +31,7 @@
 	import { fly } from 'svelte/transition';
 
 	interface Props {
+		tabId: string;
 		columns: database.Structure[];
 		data: Record<string, any>[];
 		totalRows: number;
@@ -49,6 +50,7 @@
 	}
 
 	let {
+		tabId,
 		columns,
 		data,
 		totalRows,
@@ -65,6 +67,8 @@
 		loadingTitle = 'Loading table data',
 		loadingDescription = 'Waiting for the database…'
 	}: Props = $props();
+
+	const stagedChanges = $derived(getStagedChanges(tabId));
 
 	// Track menu position for manual positioning
 	let menuPosition = $state({ x: 0, y: 0 });
@@ -229,7 +233,7 @@
 			// For existing rows, stage as update if value changed
 			const oldValue = row[colName];
 			if (newValue !== oldValue?.toString()) {
-				stageDataUpdate(updatedRow);
+				stageDataUpdate(tabId, updatedRow);
 			}
 		}
 
@@ -258,12 +262,12 @@
 				newRow[col.name] = null;
 			}
 		});
-		stageDataInsert(newRow);
+		stageDataInsert(tabId, newRow);
 	}
 
 	function deleteSelectedRow() {
 		if (selectedRowIndex !== null && displayData[selectedRowIndex]) {
-			stageDataDelete(displayData[selectedRowIndex]);
+			stageDataDelete(tabId, displayData[selectedRowIndex]);
 			selectedRowIndex = null;
 		}
 	}
@@ -723,7 +727,7 @@
 					type="button"
 					class="rt-context-item rt-context-item--danger"
 					onclick={() => {
-						stageDataDelete(contextRow);
+						stageDataDelete(tabId, contextRow);
 						closeContextMenu();
 					}}
 					role="menuitem"

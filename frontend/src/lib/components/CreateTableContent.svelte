@@ -8,9 +8,14 @@
 	import { updateStatus } from '$lib/stores/status.svelte';
 	import { onMount } from 'svelte';
 	import DataTypeSelect from '$lib/components/ui/DataTypeSelect.svelte';
+	import type { Tab } from '$lib/models/Tab';
 
-	// Get current tab's schema
-	const schema = $derived(tabsStore.activeTab?.schema ?? 'public');
+	interface Props {
+		tab: Tab;
+	}
+
+	let { tab }: Props = $props();
+	const schema = $derived(tab.schema ?? 'public');
 
 	// Form state
 	let tableName = $state('');
@@ -52,12 +57,12 @@
 	// Load data types and register submit callback on mount
 	onMount(() => {
 		// Register submit callback - reads state values at call time, not capture time
-		setCreateTableSubmit(doSubmit);
+		setCreateTableSubmit(tab.id, doSubmit);
 
 		// Async data loading
 		(async () => {
 			try {
-				const response = await GetDataTypes();
+				const response = await GetDataTypes(tab.connectionId);
 				if (response.data) {
 					dataTypes = response.data;
 				}
@@ -79,7 +84,7 @@
 
 		// Cleanup
 		return () => {
-			setCreateTableSubmit(null);
+			setCreateTableSubmit(tab.id, null);
 		};
 	});
 
@@ -122,7 +127,7 @@
 				};
 			});
 
-			const response = await CreateTable(table, columnDefs);
+			const response = await CreateTable(tab.connectionId, table, columnDefs);
 			if (response.errors?.length) {
 				updateStatus(response.errors[0].detail, 'error');
 				return false;
@@ -130,11 +135,8 @@
 				updateStatus(`CREATE TABLE ${currentSchema}.${currentTableName}`, 'info');
 				// Add to sidebar immediately (optimistic update)
 				addTableToSidebar(currentTableName.trim());
-				const currentTabId = tabsStore.activeTabId;
-				if (currentTabId) {
-					tabsStore.closeTab(currentTabId);
-				}
-				tabsStore.newTableTab(currentSchema, currentTableName.trim());
+				tabsStore.closeTab(tab.id);
+				tabsStore.newTableTab(tab.connectionId, currentSchema, currentTableName.trim());
 				return true;
 			}
 		} catch (e: any) {
@@ -168,59 +170,6 @@
 			}
 			return { ...c, primaryKey: false };
 		});
-	}
-
-	async function handleSubmit(): Promise<boolean> {
-		if (!tableName.trim()) {
-			updateStatus('Table name is required', 'error');
-			return false;
-		}
-
-		const validColumns = columns.filter((c) => c.name.trim() && c.type);
-		if (validColumns.length === 0) {
-			updateStatus('At least one column with name and type is required', 'error');
-			return false;
-		}
-
-		loading = true;
-		updateStatus('Creating table...', 'info');
-
-		try {
-			const table = new database.Table({ schema, name: tableName.trim() });
-			const columnDefs = validColumns.map((c) => {
-				let finalType = c.type;
-				if (typeNeedsSize(c.type) && c.size) {
-					finalType = `${c.type}(${c.size})`;
-				}
-				return {
-					name: c.name.trim(),
-					type: finalType,
-					nullable: c.nullable,
-					default: c.defaultValue,
-					primaryKey: c.primaryKey,
-					unique: c.unique
-				};
-			});
-
-			const response = await CreateTable(table, columnDefs);
-			if (response.errors?.length) {
-				updateStatus(response.errors[0].detail, 'error');
-				return false;
-			} else {
-				updateStatus(`Table "${tableName}" created successfully`, 'success');
-				const currentTabId = tabsStore.activeTabId;
-				if (currentTabId) {
-					tabsStore.closeTab(currentTabId);
-				}
-				tabsStore.newTableTab(schema, tableName.trim());
-				return true;
-			}
-		} catch (e: any) {
-			updateStatus(e?.message ?? 'Failed to create table', 'error');
-			return false;
-		} finally {
-			loading = false;
-		}
 	}
 </script>
 

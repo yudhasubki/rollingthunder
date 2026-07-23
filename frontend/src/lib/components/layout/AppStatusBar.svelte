@@ -1,22 +1,23 @@
 <script lang="ts">
 	import { getSegments, getLevel, getDatabaseInfo } from '$lib/stores/status.svelte';
-	import { hasChanges, stagedChanges } from '$lib/stores/staged.svelte';
+	import { getStagedChanges, hasChanges } from '$lib/stores/staged.svelte';
+	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { CircleCheck, CircleAlert, CircleX, Database } from 'lucide-svelte';
 
 	const segments = $derived(getSegments());
 	const level = $derived(getLevel());
 	const dbInfo = $derived(getDatabaseInfo());
-	const changes = $derived(hasChanges());
-	const staged = $derived(stagedChanges);
+	const changes = $derived(hasChanges(tabsStore.activeTabId));
+	const staged = $derived(tabsStore.activeTabId ? getStagedChanges(tabsStore.activeTabId) : null);
 
 	const statusColor = $derived(
 		level === 'error' ? 'text-destructive' : level === 'warn' ? 'text-yellow-500' : 'text-green-500'
 	);
 
 	const changeCount = $derived(
-		(staged.data?.added?.length || 0) +
-			(staged.data?.updated?.length || 0) +
-			(staged.data?.deleted?.length || 0)
+		(staged?.data.added.length || 0) +
+			(staged?.data.updated.length || 0) +
+			(staged?.data.deleted.length || 0)
 	);
 </script>
 

@@ -42,12 +42,12 @@
 	let executedQuery = $state<string>('');
 	let showHistory = $state(false);
 	let autocompleteRefreshing = $state(false);
-	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata());
+	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata(tab.connectionId));
 
 	async function refreshAutocomplete(force = false, showSuggestions = false) {
 		autocompleteRefreshing = true;
 		try {
-			await loadSchemaInfo(force);
+			await loadSchemaInfo(tab.connectionId, force);
 			if (showSuggestions) {
 				editor?.trigger('metadata-refresh', 'editor.action.triggerSuggest', {});
 			}
@@ -72,7 +72,9 @@
 			tab.sql || '-- Press Ctrl+Space for schema-aware suggestions\n\nSELECT * FROM ';
 
 		const editorTheme = document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs';
-		const modelUri = monaco.Uri.parse(`inmemory://rollingthunder/query/${tab.id}.sql`);
+		const modelUri = monaco.Uri.parse(
+			`inmemory://rollingthunder/query/${encodeURIComponent(tab.connectionId)}/${tab.id}.sql`
+		);
 		monaco.editor.getModel(modelUri)?.dispose();
 		editorModel = monaco.editor.createModel(initialSql, 'sql', modelUri);
 
@@ -289,7 +291,7 @@
 		const startTime = Date.now();
 
 		try {
-			const response = await ExecuteQuery(query);
+			const response = await ExecuteQuery(tab.connectionId, query);
 
 			if (response.errors?.length) {
 				throw new Error(response.errors[0].detail);
@@ -512,6 +514,7 @@
 		{:else if queryResults.length > 0}
 			<div class="min-h-0 flex-1 overflow-hidden">
 				<DataGrid
+					tabId={tab.id}
 					columns={resultColumns}
 					data={queryResults}
 					totalRows={queryResults.length}

@@ -33,11 +33,14 @@ function findSchema(metadata: SqlAutocompleteMetadata, name: string): string | u
 	return metadata.schemas.find((schema) => normalizeIdentifier(schema) === normalized);
 }
 
-function resolveReferences(references: ParsedTableReference[]): ResolvedTableReference[] {
+function resolveReferences(
+	connectionId: string,
+	references: ParsedTableReference[]
+): ResolvedTableReference[] {
 	return references
 		.map((reference) => ({
 			reference,
-			table: resolveSqlTable(reference)
+			table: resolveSqlTable(connectionId, reference)
 		}))
 		.filter((item): item is ResolvedTableReference => Boolean(item.table));
 }
@@ -91,6 +94,7 @@ function addSuggestion(
 
 function buildCompletionItems(
 	monaco: typeof Monaco,
+	connectionId: string,
 	context: CompletionContext,
 	metadata: SqlAutocompleteMetadata,
 	range: Monaco.IRange
@@ -98,7 +102,7 @@ function buildCompletionItems(
 	const suggestions: Monaco.languages.CompletionItem[] = [];
 	const seen = new Set<string>();
 	const dialect = getSqlDialectDefinition(metadata.engine);
-	const references = resolveReferences(context.tableReferences);
+	const references = resolveReferences(connectionId, context.tableReferences);
 	const qualifierSchema = context.qualifier ? findSchema(metadata, context.qualifier) : undefined;
 	const qualifierTable =
 		context.qualifier && !qualifierSchema
@@ -304,6 +308,10 @@ async function provideCompletionItems(
 	position: Monaco.Position,
 	token: Monaco.CancellationToken
 ): Promise<Monaco.languages.CompletionList> {
+	const connectionMatch = model.uri.path.match(/^\/query\/([^/]+)\//);
+	const connectionId = connectionMatch ? decodeURIComponent(connectionMatch[1]) : '';
+	if (!connectionId) return { suggestions: [] };
+
 	const fullSql = model.getValue();
 	const cursorOffset = model.getOffsetAt(position);
 	const statement = getStatementAtCursor(fullSql, cursorOffset);
@@ -313,11 +321,11 @@ async function provideCompletionItems(
 		return { suggestions: [] };
 	}
 
-	await loadSchemaInfo();
+	await loadSchemaInfo(connectionId);
 	if (token.isCancellationRequested) return { suggestions: [] };
 
 	const context = analyzeCompletionContext(statement);
-	let metadata = getSqlAutocompleteMetadata();
+	let metadata = getSqlAutocompleteMetadata(connectionId);
 	const referencesToLoad: SqlTableReference[] = [...context.tableReferences];
 
 	if (context.qualifier && !findSchema(metadata, context.qualifier)) {
@@ -335,9 +343,9 @@ async function provideCompletionItems(
 	}
 
 	if (referencesToLoad.length > 0) {
-		await ensureColumnsForTables(referencesToLoad);
+		await ensureColumnsForTables(connectionId, referencesToLoad);
 		if (token.isCancellationRequested) return { suggestions: [] };
-		metadata = getSqlAutocompleteMetadata();
+		metadata = getSqlAutocompleteMetadata(connectionId);
 	}
 
 	const word = model.getWordUntilPosition(position);
@@ -349,7 +357,7 @@ async function provideCompletionItems(
 	};
 
 	return {
-		suggestions: buildCompletionItems(monaco, context, metadata, range)
+		suggestions: buildCompletionItems(monaco, connectionId, context, metadata, range)
 	};
 }
 

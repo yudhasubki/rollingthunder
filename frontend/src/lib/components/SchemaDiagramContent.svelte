@@ -22,6 +22,7 @@
 	} from 'lucide-svelte';
 
 	interface Props {
+		connectionId: string;
 		schema: string;
 	}
 
@@ -51,7 +52,7 @@
 		path: string;
 	}
 
-	let { schema }: Props = $props();
+	let { connectionId, schema }: Props = $props();
 
 	const nodeWidth = 244;
 	const columnHeight = 25;
@@ -173,7 +174,7 @@
 		const startedAt = performance.now();
 
 		try {
-			const tableResponse = await GetCollections([schema]);
+			const tableResponse = await GetCollections(connectionId, [schema]);
 			if (tableResponse.errors?.length) {
 				throw new Error(tableResponse.errors[0].detail);
 			}
@@ -190,7 +191,7 @@
 						const request = new database.Table();
 						request.Schema = schema;
 						request.Name = tableName;
-						const response = await GetCollectionStructures(request);
+						const response = await GetCollectionStructures(connectionId, request);
 						if (response.errors?.length) {
 							throw new Error(`${tableName}: ${response.errors[0].detail}`);
 						}
@@ -232,9 +233,9 @@
 	}
 
 	function openTable(tableName: string) {
-		const existing = tabsStore.findTableTab(schema, tableName);
+		const existing = tabsStore.findTableTab(connectionId, schema, tableName);
 		if (existing) tabsStore.setActive(existing.id);
-		else tabsStore.newTableTab(schema, tableName);
+		else tabsStore.newTableTab(connectionId, schema, tableName);
 	}
 </script>
 

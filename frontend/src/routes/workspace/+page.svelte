@@ -10,8 +10,8 @@
 	import {
 		hasChanges,
 		discardStagedChanges,
-		stagedChanges,
-		createTableState
+		getCreateTableSubmit,
+		getStagedChanges
 	} from '$lib/stores/staged.svelte';
 	import {
 		updateStatus,
@@ -21,13 +21,7 @@
 		toggleConsole,
 		clearConsoleLogs
 	} from '$lib/stores/status.svelte';
-	import {
-		GetDatabaseInfo,
-		InsertRow,
-		UpdateRow,
-		DeleteRow,
-		CreateTable
-	} from '$lib/wailsjs/go/db/Service';
+	import { GetDatabaseInfo, InsertRow, UpdateRow, DeleteRow } from '$lib/wailsjs/go/db/Service';
 	import { database } from '$lib/wailsjs/go/models';
 	import { onMount, tick } from 'svelte';
 	import { writable } from 'svelte/store';
@@ -56,11 +50,14 @@
 	import { goto } from '$app/navigation';
 
 	const tabs = $derived(tabsStore.tabs);
+	const allTabs = $derived(tabsStore.allTabs);
 	const activeTabId = $derived(tabsStore.activeTabId);
 	const activeTab = $derived(tabsStore.activeTab);
+	const activeConnectionId = $derived(connectionStore.activeConnection?.id ?? null);
+	const activeCreateTableSubmit = $derived(getCreateTableSubmit(activeTabId));
 	const hasUnsavedChanges = $derived(
-		hasChanges() ||
-			(tabsStore.activeTab?.kind === 'createTable' && createTableState.submit !== null)
+		hasChanges(activeTabId) ||
+			(activeTab?.kind === 'createTable' && activeCreateTableSubmit !== null)
 	);
 	const showChangeActions = $derived(
 		activeTab?.kind === 'table' || activeTab?.kind === 'createTable'
@@ -112,9 +109,7 @@
 	// Sync store -> melt-ui
 	$effect(() => {
 		const id = activeTabId;
-		if (id) {
-			tabValueStore.set(id);
-		}
+		tabValueStore.set(id ?? '');
 	});
 
 	$effect(() => {
@@ -148,12 +143,13 @@
 		}
 	});
 
-	onMount(() => {
-		const handleOpenConnectionManager = () => {
-			connectionManagerOpen = true;
-		};
+	$effect(() => {
+		const connectionId = activeConnectionId;
+		if (!connectionId) return;
 
-		GetDatabaseInfo().then((res) => {
+		let cancelled = false;
+		void GetDatabaseInfo(connectionId).then((res) => {
+			if (cancelled) return;
 			if (res.errors?.length > 0) {
 				updateStatus(res.errors[0].detail, 'error');
 				return;
@@ -161,6 +157,16 @@
 			updateDatabaseInfo(res.data);
 			updateStatus('', 'info');
 		});
+
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	onMount(() => {
+		const handleOpenConnectionManager = () => {
+			connectionManagerOpen = true;
+		};
 
 		// Keyboard shortcuts
 		function handleKeydown(e: KeyboardEvent) {
@@ -192,32 +198,40 @@
 	});
 
 	function handleTableClick(schema: string, table: string) {
-		const existingTab = tabsStore.findTableTab(schema, table);
+		const connectionId = activeConnectionId;
+		if (!connectionId) {
+			updateStatus('No active connection', 'error');
+			return;
+		}
+
+		const existingTab = tabsStore.findTableTab(connectionId, schema, table);
 		if (existingTab) {
 			tabsStore.setActive(existingTab.id);
 		} else {
-			tabsStore.newTableTab(schema, table);
+			tabsStore.newTableTab(connectionId, schema, table);
 		}
 		updateStatus('', 'info');
 	}
 
 	async function applyChanges() {
-		if (!tabsStore.activeTab) {
+		const targetTab = tabsStore.activeTab;
+		if (!targetTab) {
 			updateStatus('No active tab', 'error');
 			return;
 		}
 
 		// Handle createTable tab - use registered callback
-		if (tabsStore.activeTab.kind === 'createTable') {
-			if (createTableState.submit) {
-				await createTableState.submit();
+		if (targetTab.kind === 'createTable') {
+			const submit = getCreateTableSubmit(targetTab.id);
+			if (submit) {
+				await submit();
 			} else {
 				updateStatus('Create table form not ready', 'error');
 			}
 			return;
 		}
 
-		if (tabsStore.activeTab.kind !== 'table') {
+		if (targetTab.kind !== 'table') {
 			updateStatus('No active table selected', 'error');
 			return;
 		}
@@ -225,8 +239,9 @@
 		updateStatus('Applying changes...', 'info');
 
 		const table = new database.Table();
-		table.Schema = tabsStore.activeTab.schema;
-		table.Name = tabsStore.activeTab.table;
+		table.Schema = targetTab.schema;
+		table.Name = targetTab.table;
+		const stagedChanges = getStagedChanges(targetTab.id);
 
 		const primaryKey = 'id';
 
@@ -238,14 +253,14 @@
 						cleanData[key] = value;
 					}
 				}
-				const result = await InsertRow(table, cleanData);
+				const result = await InsertRow(targetTab.connectionId, table, cleanData);
 				if (result.errors?.length) {
 					throw new Error(result.errors[0].detail);
 				}
 			}
 
 			for (const row of stagedChanges.data.updated) {
-				const result = await UpdateRow(table, row, primaryKey);
+				const result = await UpdateRow(targetTab.connectionId, table, row, primaryKey);
 				if (result.errors?.length) {
 					throw new Error(result.errors[0].detail);
 				}
@@ -254,85 +269,26 @@
 			for (const row of stagedChanges.data.deleted) {
 				const primaryValue = row[primaryKey];
 				if (primaryValue !== undefined) {
-					const result = await DeleteRow(table, primaryKey, primaryValue);
+					const result = await DeleteRow(targetTab.connectionId, table, primaryKey, primaryValue);
 					if (result.errors?.length) {
 						throw new Error(result.errors[0].detail);
 					}
 				}
 			}
 
-			discardStagedChanges();
+			discardStagedChanges(targetTab.id);
 			updateStatus('Changes applied successfully', 'info');
 
-			const currentTab = tabsStore.activeTab;
-			if (currentTab) {
-				tabsStore.updateTab(currentTab.id, { ...currentTab });
-			}
+			tabsStore.updateTab(targetTab.id, { ...targetTab });
 		} catch (e: any) {
 			updateStatus(e?.message ?? 'Failed to apply changes', 'error');
 		}
 	}
 
-	// Types that require a size/length parameter
-	const typesWithSize = ['varchar', 'char', 'numeric', 'decimal'];
-	function typeNeedsSize(type: string): boolean {
-		return typesWithSize.some((t) => type.toLowerCase().startsWith(t));
-	}
-
-	async function applyCreateTable() {
-		const { schema, tableName, columns } = stagedChanges.createTable;
-
-		if (!tableName.trim()) {
-			updateStatus('Table name is required', 'error');
-			return;
-		}
-
-		const validColumns = columns.filter((c) => c.name.trim() && c.type);
-		if (validColumns.length === 0) {
-			updateStatus('At least one column with name and type is required', 'error');
-			return;
-		}
-
-		updateStatus('Creating table...', 'info');
-
-		try {
-			const table = new database.Table({ schema, name: tableName.trim() });
-			const columnDefs = validColumns.map((c) => {
-				let finalType = c.type;
-				if (typeNeedsSize(c.type) && c.size) {
-					finalType = `${c.type}(${c.size})`;
-				}
-				return {
-					name: c.name.trim(),
-					type: finalType,
-					nullable: c.nullable,
-					default: c.defaultValue,
-					primaryKey: c.primaryKey,
-					unique: c.unique
-				};
-			});
-
-			const response = await CreateTable(table, columnDefs);
-			if (response.errors?.length) {
-				updateStatus(response.errors[0].detail, 'error');
-			} else {
-				updateStatus(`Table "${tableName}" created successfully`, 'info');
-				// Close this tab and open the new table
-				const currentTabId = tabsStore.activeTabId;
-				if (currentTabId) {
-					tabsStore.closeTab(currentTabId);
-				}
-				tabsStore.newTableTab(schema, tableName.trim());
-				discardStagedChanges();
-			}
-		} catch (e: any) {
-			updateStatus(e?.message ?? 'Failed to create table', 'error');
-		}
-	}
-
 	function discardChanges() {
+		if (!activeTabId) return;
 		updateStatus('Discarding changes...', 'info');
-		discardStagedChanges();
+		discardStagedChanges(activeTabId);
 	}
 </script>
 
@@ -351,89 +307,98 @@
 		<ConnectionPanel />
 
 		<!-- Sidebar -->
-		<AppSidebar onTableClick={handleTableClick} />
+		{#if activeConnectionId}
+			<AppSidebar connectionId={activeConnectionId} onTableClick={handleTableClick} />
+		{/if}
 
 		<!-- Workspace -->
 		<main
 			class="rt-workspace flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--surface-raised)]"
 		>
-			{#if tabs.length > 0}
+			{#if allTabs.length > 0}
 				<div use:melt={$tabsRoot} class="flex min-h-0 flex-1 flex-col overflow-hidden">
-					<div
-						class="flex h-10 shrink-0 items-center justify-between border-b bg-[var(--surface-sunken)] px-2"
-					>
-						<div bind:this={tabStripElement} class="rt-tab-strip min-w-0 flex-1 overflow-x-auto">
-							<div use:melt={$tabsList} class="inline-flex h-10 items-center bg-transparent">
-								{#each tabs as tab (tab.id)}
-									<div
-										use:melt={$tabTrigger(tab.id)}
-										class="text-muted-foreground group hover:text-foreground data-[state=active]:border-b-primary data-[state=active]:text-foreground relative inline-flex h-10 max-w-[200px] min-w-[104px] cursor-pointer items-center gap-2 border-b-2 border-b-transparent px-3 text-[11px] font-semibold transition-colors hover:bg-[var(--surface-hover)] data-[state=active]:bg-[var(--surface-raised)]"
-									>
-										{#if tab.kind === 'table' || tab.kind === 'createTable'}
-											<Table2 class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0" />
-										{:else if tab.kind === 'schemaDiagram'}
-											<Workflow
-												class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0"
-											/>
-										{:else}
-											<Code class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0" />
-										{/if}
-										<span class="min-w-0 flex-1 truncate text-left">{tab.title}</span>
-										<button
-											type="button"
-											class="text-muted-foreground hover:bg-muted hover:text-foreground ml-auto shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-data-[state=active]:opacity-60"
-											onclick={(e) => {
-												e.stopPropagation();
-												tabsStore.closeTab(tab.id);
-											}}
-											aria-label="Close {tab.title}"
-											title="Close tab"
+					{#if tabs.length > 0}
+						<div
+							class="flex h-10 shrink-0 items-center justify-between border-b bg-[var(--surface-sunken)] px-2"
+						>
+							<div bind:this={tabStripElement} class="rt-tab-strip min-w-0 flex-1 overflow-x-auto">
+								<div use:melt={$tabsList} class="inline-flex h-10 items-center bg-transparent">
+									{#each tabs as tab (tab.id)}
+										<div
+											use:melt={$tabTrigger(tab.id)}
+											class="text-muted-foreground group hover:text-foreground data-[state=active]:border-b-primary data-[state=active]:text-foreground relative inline-flex h-10 max-w-[200px] min-w-[104px] cursor-pointer items-center gap-2 border-b-2 border-b-transparent px-3 text-[11px] font-semibold transition-colors hover:bg-[var(--surface-hover)] data-[state=active]:bg-[var(--surface-raised)]"
 										>
-											<X class="h-3 w-3" />
-										</button>
-									</div>
-								{/each}
+											{#if tab.kind === 'table' || tab.kind === 'createTable'}
+												<Table2
+													class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0"
+												/>
+											{:else if tab.kind === 'schemaDiagram'}
+												<Workflow
+													class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0"
+												/>
+											{:else}
+												<Code class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0" />
+											{/if}
+											<span class="min-w-0 flex-1 truncate text-left">{tab.title}</span>
+											<button
+												type="button"
+												class="text-muted-foreground hover:bg-muted hover:text-foreground ml-auto shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-data-[state=active]:opacity-60"
+												onclick={(e) => {
+													e.stopPropagation();
+													tabsStore.closeTab(tab.id);
+												}}
+												aria-label="Close {tab.title}"
+												title="Close tab"
+											>
+												<X class="h-3 w-3" />
+											</button>
+										</div>
+									{/each}
+								</div>
+							</div>
+
+							<div
+								class="flex h-8 min-w-[154px] flex-shrink-0 items-center justify-end gap-1 border-l pl-2"
+							>
+								<button
+									class="rt-primary-button inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:pointer-events-none disabled:opacity-35 disabled:shadow-none"
+									disabled={!canApplyChanges}
+									onclick={applyChanges}
+								>
+									<Save class="h-3 w-3" />
+									Apply
+								</button>
+								<button
+									class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[11px] disabled:pointer-events-none disabled:opacity-35"
+									disabled={!canApplyChanges}
+									onclick={discardChanges}
+								>
+									<RotateCcw class="h-3 w-3" />
+									Discard
+								</button>
 							</div>
 						</div>
-
-						<div
-							class="flex h-8 min-w-[154px] flex-shrink-0 items-center justify-end gap-1 border-l pl-2"
-						>
-							<button
-								class="rt-primary-button inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:pointer-events-none disabled:opacity-35 disabled:shadow-none"
-								disabled={!canApplyChanges}
-								onclick={applyChanges}
-							>
-								<Save class="h-3 w-3" />
-								Apply
-							</button>
-							<button
-								class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[11px] disabled:pointer-events-none disabled:opacity-35"
-								disabled={!canApplyChanges}
-								onclick={discardChanges}
-							>
-								<RotateCcw class="h-3 w-3" />
-								Discard
-							</button>
-						</div>
-					</div>
+					{/if}
 
 					<!-- Tab Content -->
-					{#each tabs as tab (tab.id)}
+					{#each allTabs as tab (tab.id)}
 						<div
 							use:melt={$tabContent(tab.id)}
 							class="min-h-0 flex-1 flex-col overflow-hidden p-0"
-							class:flex={tab.id === activeTabId}
-							class:hidden={tab.id !== activeTabId}
+							class:flex={tab.connectionId === activeConnectionId && tab.id === activeTabId}
+							class:hidden={tab.connectionId !== activeConnectionId || tab.id !== activeTabId}
 						>
 							{#if tab.kind === 'table'}
-								<TableContent />
+								<TableContent {tab} />
 							{:else if tab.kind === 'query'}
 								<QueryEditorContent {tab} />
 							{:else if tab.kind === 'createTable'}
-								<CreateTableContent />
+								<CreateTableContent {tab} />
 							{:else if tab.kind === 'schemaDiagram'}
-								<SchemaDiagramContent schema={tab.schema || 'public'} />
+								<SchemaDiagramContent
+									connectionId={tab.connectionId}
+									schema={tab.schema || 'public'}
+								/>
 							{:else}
 								<div class="text-muted-foreground flex flex-1 items-center justify-center">
 									Select a table or create a new query
@@ -441,6 +406,34 @@
 							{/if}
 						</div>
 					{/each}
+					{#if tabs.length === 0}
+						<div class="relative flex flex-1 items-center justify-center overflow-hidden">
+							<div class="rt-empty-grid pointer-events-none absolute inset-0 opacity-70"></div>
+							<div class="relative max-w-sm px-8 text-center">
+								<img
+									src="/logo.png"
+									alt="Rolling Thunder"
+									class="rt-brand-logo mx-auto mb-5 h-14 w-14 rounded-2xl"
+								/>
+								<h2 class="text-base font-bold tracking-[-0.01em]">Your workspace is ready</h2>
+								<p class="text-muted-foreground mt-1.5 text-xs leading-relaxed">
+									This connection has its own workspace. Open a table or start a query.
+								</p>
+								{#if activeConnectionId}
+									<div class="mt-5 flex items-center justify-center">
+										<button
+											type="button"
+											class="rt-primary-button inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold"
+											onclick={() => tabsStore.newQueryTab(activeConnectionId)}
+										>
+											<Code class="h-3.5 w-3.5" />
+											New query
+										</button>
+									</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
 				</div>
 			{:else}
 				<div class="relative flex flex-1 items-center justify-center overflow-hidden">
@@ -459,7 +452,7 @@
 							<button
 								type="button"
 								class="rt-primary-button inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold"
-								onclick={() => tabsStore.newQueryTab()}
+								onclick={() => activeConnectionId && tabsStore.newQueryTab(activeConnectionId)}
 							>
 								<Code class="h-3.5 w-3.5" />
 								New query

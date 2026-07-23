@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tabsStore } from '$lib/stores/tabs.svelte';
+	import type { Tab } from '$lib/models/Tab';
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import type { SortingState } from '@tanstack/table-core';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
@@ -7,12 +8,11 @@
 	import { database } from '$lib/wailsjs/go/models';
 	import { getColumnTypeLabel } from '$lib/table/cells';
 	import { getForeignRelation } from '$lib/table/relations';
-	import { updateStatus, updateDatabaseInfo } from '$lib/stores/status.svelte';
+	import { updateStatus } from '$lib/stores/status.svelte';
 	import {
 		CountCollectionData,
 		GetCollectionData,
 		GetCollectionStructures,
-		GetDatabaseInfo,
 		GetIndices,
 		GetTableDDL
 	} from '$lib/wailsjs/go/db/Service';
@@ -27,6 +27,12 @@
 		Link2,
 		X
 	} from 'lucide-svelte';
+
+	interface Props {
+		tab: Tab;
+	}
+
+	let { tab }: Props = $props();
 
 	// Filter types
 	interface FilterCondition {
@@ -121,11 +127,10 @@
 	}
 
 	$effect(() => {
-		const activeTab = tabsStore.activeTab;
-		if (!activeTab || activeTab.kind !== 'table') return;
+		if (tab.kind !== 'table' || !tab.schema || !tab.table) return;
 
 		updateStatus('', 'info');
-		const nextTableKey = `${activeTab.schema}.${activeTab.table}`;
+		const nextTableKey = `${tab.connectionId}:${tab.schema}.${tab.table}`;
 		if (activeTableKey !== nextTableKey) {
 			activeTableKey = nextTableKey;
 			currentPage = 0;
@@ -137,18 +142,16 @@
 			isLoadingStructure = true;
 			try {
 				let reqTable = new database.Table();
-				reqTable.Name = activeTab.table;
-				reqTable.Schema = activeTab.schema;
+				reqTable.Name = tab.table;
+				reqTable.Schema = tab.schema;
 
-				const [cols, idxs, db] = await Promise.all([
-					GetCollectionStructures(reqTable),
-					GetIndices(reqTable),
-					GetDatabaseInfo()
+				const [cols, idxs] = await Promise.all([
+					GetCollectionStructures(tab.connectionId, reqTable),
+					GetIndices(tab.connectionId, reqTable)
 				]);
 
 				if (cols.errors?.length) throw new Error(cols.errors[0].detail);
 				if (idxs.errors?.length) throw new Error(idxs.errors[0].detail);
-				if (db.errors?.length) throw new Error(db.errors[0].detail);
 
 				indices = idxs.data || [];
 				const primaryColumns = new Set(
@@ -165,7 +168,6 @@
 								is_primary_label: 'PRI'
 							})
 				);
-				updateDatabaseInfo(db.data);
 			} catch (e: any) {
 				updateStatus(e?.message ?? 'Unknown Error', 'error');
 			} finally {
@@ -177,25 +179,25 @@
 	});
 
 	$effect(() => {
-		const tab = $tabValue;
+		const subTab = $tabValue;
 		const page = currentPage;
-		const activeTab = tabsStore.activeTab;
 		const currentFilters = appliedFilters;
 		const currentSorting = sorting;
 
-		if (tab !== 'data' || !activeTab || activeTab.kind !== 'table') {
+		if (subTab !== 'data' || !tab.schema || !tab.table) {
 			dataRequestVersion += 1;
 			isLoadingData = false;
 			return;
 		}
 
-		const tableName = activeTab.table;
-		const schemaName = activeTab.schema;
+		const tableName = tab.table;
+		const schemaName = tab.schema;
+		const connectionId = tab.connectionId;
 
 		// Create a key from current load parameters
 		const filterKey = JSON.stringify(currentFilters.filter((f) => f.enabled));
 		const sortKey = JSON.stringify(currentSorting);
-		const loadKey = `${schemaName}.${tableName}:${page}:${filterKey}:${sortKey}`;
+		const loadKey = `${connectionId}:${schemaName}.${tableName}:${page}:${filterKey}:${sortKey}`;
 
 		// Skip if we already loaded this exact state
 		if (loadKey === lastLoadKey) {
@@ -250,7 +252,7 @@
 						})
 				);
 
-				const totalRes = await CountCollectionData(reqTable);
+				const totalRes = await CountCollectionData(connectionId, reqTable);
 				if (requestVersion !== dataRequestVersion) return;
 				if (totalRes.errors?.length) throw new Error(totalRes.errors[0].detail);
 
@@ -268,7 +270,7 @@
 					'info'
 				);
 
-				const dataRes = await GetCollectionData(reqTable);
+				const dataRes = await GetCollectionData(connectionId, reqTable);
 				if (requestVersion !== dataRequestVersion) return;
 
 				if (dataRes.errors?.length) throw new Error(dataRes.errors[0].detail);
@@ -304,34 +306,32 @@
 	}
 
 	function getColumnRelation(column: database.Structure) {
-		const fallbackSchema = tabsStore.activeTab?.kind === 'table' ? tabsStore.activeTab.schema : '';
-		return getForeignRelation(column, fallbackSchema);
+		return getForeignRelation(column, tab.schema || '');
 	}
 
 	function openForeignReference(column: database.Structure) {
 		const relation = getColumnRelation(column);
 		if (!relation) return;
 
-		const existing = tabsStore.findTableTab(relation.schema, relation.table);
+		const existing = tabsStore.findTableTab(tab.connectionId, relation.schema, relation.table);
 		if (existing) {
 			tabsStore.setActive(existing.id);
 		} else {
-			tabsStore.newTableTab(relation.schema, relation.table);
+			tabsStore.newTableTab(tab.connectionId, relation.schema, relation.table);
 		}
 		updateStatus(`Opened ${relation.schema}.${relation.table}`, 'info');
 	}
 
 	// Load DDL when DDL tab is selected
 	$effect(() => {
-		const tab = $tabValue;
-		const activeTab = tabsStore.activeTab;
+		const subTab = $tabValue;
 
-		if (tab !== 'ddl' || !activeTab || activeTab.kind !== 'table') {
+		if (subTab !== 'ddl' || !tab.schema || !tab.table) {
 			return;
 		}
 
-		const tableName = activeTab.table;
-		const schemaName = activeTab.schema;
+		const tableName = tab.table;
+		const schemaName = tab.schema;
 
 		const loadDDL = async () => {
 			isLoadingDDL = true;
@@ -340,7 +340,7 @@
 				reqTable.Name = tableName;
 				reqTable.Schema = schemaName;
 
-				const res = await GetTableDDL(reqTable);
+				const res = await GetTableDDL(tab.connectionId, reqTable);
 				if (res.errors?.length) throw new Error(res.errors[0].detail);
 				tableDDL = res.data || '';
 			} catch (e: any) {
@@ -382,8 +382,8 @@
 				</button>
 			</div>
 			<div class="text-muted-foreground flex items-center gap-2 text-[10px]">
-				{#if tabsStore.activeTab?.kind === 'table'}
-					<span class="font-mono">{tabsStore.activeTab.schema}.{tabsStore.activeTab.table}</span>
+				{#if tab.schema && tab.table}
+					<span class="font-mono">{tab.schema}.{tab.table}</span>
 					<span class="h-3 border-l"></span>
 				{/if}
 				<span>{columns.length} columns</span>
@@ -759,6 +759,7 @@
 			<!-- Data Grid -->
 			<div class="min-h-0 flex-1 overflow-hidden">
 				<DataGrid
+					tabId={tab.id}
 					{columns}
 					data={tableData}
 					totalRows={tableTotalData}
@@ -768,9 +769,7 @@
 					onPageChange={handlePageChange}
 					onSortingChange={handleSortingChange}
 					onAddFilter={addFilter}
-					detailTitle={tabsStore.activeTab?.kind === 'table'
-						? `${tabsStore.activeTab.schema}.${tabsStore.activeTab.table}`
-						: 'Table row'}
+					detailTitle={tab.schema && tab.table ? `${tab.schema}.${tab.table}` : 'Table row'}
 					loading={isLoadingData}
 					loadingTitle={dataLoadingTitle}
 					loadingDescription={dataLoadingDescription}

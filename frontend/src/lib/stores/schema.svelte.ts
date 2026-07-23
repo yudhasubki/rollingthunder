@@ -35,16 +35,61 @@ interface SchemaInfo {
 	loadedColumns: Record<string, boolean>;
 }
 
-let schemas = $state<string[]>([]);
-let schemaInfo = $state<Record<string, SchemaInfo>>({});
-let databaseInfo = $state<database.Info | null>(null);
-let isLoading = $state(false);
-let loadError = $state('');
+interface ConnectionSchemaState {
+	schemas: string[];
+	schemaInfo: Record<string, SchemaInfo>;
+	databaseInfo: database.Info | null;
+	isLoading: boolean;
+	loadError: string;
+}
 
-let loadGeneration = 0;
-let activeLoad: Promise<void> | null = null;
-let hasLoaded = false;
-const columnLoads = new Map<string, Promise<void>>();
+interface ConnectionSchemaRuntime {
+	generation: number;
+	activeLoad: Promise<void> | null;
+	hasLoaded: boolean;
+	columnLoads: Map<string, Promise<void>>;
+}
+
+const emptyConnectionState = (): ConnectionSchemaState => ({
+	schemas: [],
+	schemaInfo: {},
+	databaseInfo: null,
+	isLoading: false,
+	loadError: ''
+});
+
+let states = $state<Record<string, ConnectionSchemaState>>({});
+const runtimes = new Map<string, ConnectionSchemaRuntime>();
+
+function requireConnectionId(connectionId: string): string {
+	if (!connectionId) throw new Error('A connection ID is required for schema metadata');
+	return connectionId;
+}
+
+function getState(connectionId: string): ConnectionSchemaState {
+	return states[connectionId] ?? emptyConnectionState();
+}
+
+function ensureState(connectionId: string): ConnectionSchemaState {
+	const id = requireConnectionId(connectionId);
+	if (!states[id]) states[id] = emptyConnectionState();
+	return states[id];
+}
+
+function getRuntime(connectionId: string): ConnectionSchemaRuntime {
+	const id = requireConnectionId(connectionId);
+	let runtime = runtimes.get(id);
+	if (!runtime) {
+		runtime = {
+			generation: 0,
+			activeLoad: null,
+			hasLoaded: false,
+			columnLoads: new Map()
+		};
+		runtimes.set(id, runtime);
+	}
+	return runtime;
+}
 
 function normalizeName(value: string): string {
 	return value.replace(/^["`[]|["`\]]$/g, '').toLowerCase();
@@ -74,58 +119,65 @@ function makeEmptySchemaInfo(): SchemaInfo {
 }
 
 function setColumns(
+	connectionId: string,
 	schema: string,
 	table: string,
 	columns: database.Structure[],
 	generation: number
 ): void {
-	if (generation !== loadGeneration) return;
+	const runtime = getRuntime(connectionId);
+	if (generation !== runtime.generation) return;
 
-	const actualSchema = findNameCaseInsensitive(schemas, schema) ?? schema;
-	const current = schemaInfo[actualSchema] ?? makeEmptySchemaInfo();
+	const currentState = ensureState(connectionId);
+	const actualSchema = findNameCaseInsensitive(currentState.schemas, schema) ?? schema;
+	const current = currentState.schemaInfo[actualSchema] ?? makeEmptySchemaInfo();
 	const actualTable = findNameCaseInsensitive(current.tables, table) ?? table;
 
-	schemaInfo = {
-		...schemaInfo,
-		[actualSchema]: {
-			...current,
-			columns: {
-				...current.columns,
-				[actualTable]: columns
-			},
-			loadedColumns: {
-				...current.loadedColumns,
-				[actualTable]: true
+	states[connectionId] = {
+		...currentState,
+		schemaInfo: {
+			...currentState.schemaInfo,
+			[actualSchema]: {
+				...current,
+				columns: {
+					...current.columns,
+					[actualTable]: columns
+				},
+				loadedColumns: {
+					...current.loadedColumns,
+					[actualTable]: true
+				}
 			}
 		}
 	};
 }
 
-export function getSchemas(): string[] {
-	return schemas;
+export function getSchemas(connectionId: string): string[] {
+	return getState(connectionId).schemas;
 }
 
-export function getSchemaInfo(): Record<string, SchemaInfo> {
-	return schemaInfo;
+export function getSchemaInfo(connectionId: string): Record<string, SchemaInfo> {
+	return getState(connectionId).schemaInfo;
 }
 
-export function isSchemaLoading(): boolean {
-	return isLoading;
+export function isSchemaLoading(connectionId: string): boolean {
+	return getState(connectionId).isLoading;
 }
 
-export function getSchemaLoadError(): string {
-	return loadError;
+export function getSchemaLoadError(connectionId: string): string {
+	return getState(connectionId).loadError;
 }
 
-export function getDatabaseEngine(): string {
-	return databaseInfo?.engine || 'SQL';
+export function getDatabaseEngine(connectionId: string): string {
+	return getState(connectionId).databaseInfo?.engine || 'SQL';
 }
 
-export function getSqlAutocompleteMetadata(): SqlAutocompleteMetadata {
+export function getSqlAutocompleteMetadata(connectionId: string): SqlAutocompleteMetadata {
+	const state = getState(connectionId);
 	const tables: SqlTableMetadata[] = [];
 
-	for (const schema of schemas) {
-		const info = schemaInfo[schema];
+	for (const schema of state.schemas) {
+		const info = state.schemaInfo[schema];
 		if (!info) continue;
 
 		for (const table of info.tables) {
@@ -139,33 +191,40 @@ export function getSqlAutocompleteMetadata(): SqlAutocompleteMetadata {
 	}
 
 	return {
-		engine: databaseInfo?.engine || 'SQL',
-		dialect: normalizeSqlDialect(databaseInfo?.engine),
-		database: databaseInfo?.database || '',
-		schemas: [...schemas],
+		engine: state.databaseInfo?.engine || 'SQL',
+		dialect: normalizeSqlDialect(state.databaseInfo?.engine),
+		database: state.databaseInfo?.database || '',
+		schemas: [...state.schemas],
 		tables,
-		isLoading,
-		error: loadError
+		isLoading: state.isLoading,
+		error: state.loadError
 	};
 }
 
-export function getAllTables(): string[] {
-	return getSqlAutocompleteMetadata().tables.map((table) => `${table.schema}.${table.name}`);
+export function getAllTables(connectionId: string): string[] {
+	return getSqlAutocompleteMetadata(connectionId).tables.map(
+		(table) => `${table.schema}.${table.name}`
+	);
 }
 
-export function getColumnsForTable(schema: string, table: string): database.Structure[] {
-	const actualSchema = findNameCaseInsensitive(schemas, schema);
+export function getColumnsForTable(
+	connectionId: string,
+	schema: string,
+	table: string
+): database.Structure[] {
+	const state = getState(connectionId);
+	const actualSchema = findNameCaseInsensitive(state.schemas, schema);
 	if (!actualSchema) return [];
 
-	const info = schemaInfo[actualSchema];
+	const info = state.schemaInfo[actualSchema];
 	const actualTable = findNameCaseInsensitive(info?.tables || [], table);
 	return actualTable ? info.columns[actualTable] || [] : [];
 }
 
-export function getAllColumns(): string[] {
+export function getAllColumns(connectionId: string): string[] {
 	const columns = new Set<string>();
 
-	for (const table of getSqlAutocompleteMetadata().tables) {
+	for (const table of getSqlAutocompleteMetadata(connectionId).tables) {
 		for (const column of table.columns) {
 			columns.add(column.name);
 		}
@@ -174,8 +233,11 @@ export function getAllColumns(): string[] {
 	return [...columns];
 }
 
-export function resolveSqlTable(reference: SqlTableReference): SqlTableMetadata | null {
-	const metadata = getSqlAutocompleteMetadata();
+export function resolveSqlTable(
+	connectionId: string,
+	reference: SqlTableReference
+): SqlTableMetadata | null {
+	const metadata = getSqlAutocompleteMetadata(connectionId);
 	const normalizedTable = normalizeName(reference.table);
 	const normalizedSchema = reference.schema ? normalizeName(reference.schema) : '';
 
@@ -196,62 +258,74 @@ export function resolveSqlTable(reference: SqlTableReference): SqlTableMetadata 
 }
 
 export async function loadColumnsForTable(
+	connectionId: string,
 	schema: string,
 	table: string,
 	force = false
 ): Promise<void> {
-	const actualSchema = findNameCaseInsensitive(schemas, schema) ?? schema;
-	const info = schemaInfo[actualSchema];
+	const state = getState(connectionId);
+	const runtime = getRuntime(connectionId);
+	const actualSchema = findNameCaseInsensitive(state.schemas, schema) ?? schema;
+	const info = state.schemaInfo[actualSchema];
 	const actualTable = findNameCaseInsensitive(info?.tables || [], table) ?? table;
 
 	if (!force && info?.loadedColumns[actualTable]) return;
 
 	const key = getTableKey(actualSchema, actualTable);
-	const existing = columnLoads.get(key);
+	const existing = runtime.columnLoads.get(key);
 	if (existing && !force) return existing;
 
-	const generation = loadGeneration;
+	const generation = runtime.generation;
 	const task = (async () => {
 		try {
 			const request = new database.Table({
 				Schema: actualSchema,
 				Name: actualTable
 			});
-			const response = await GetCollectionStructures(request);
+			const response = await GetCollectionStructures(connectionId, request);
 			if (response.errors?.length) {
 				throw new Error(response.errors[0].detail);
 			}
-			setColumns(actualSchema, actualTable, response.data || [], generation);
+			setColumns(connectionId, actualSchema, actualTable, response.data || [], generation);
 		} catch (error) {
 			console.error(`Failed to load columns for ${actualSchema}.${actualTable}:`, error);
 		} finally {
-			if (columnLoads.get(key) === task) {
-				columnLoads.delete(key);
+			if (runtime.columnLoads.get(key) === task) {
+				runtime.columnLoads.delete(key);
 			}
 		}
 	})();
 
-	columnLoads.set(key, task);
+	runtime.columnLoads.set(key, task);
 	return task;
 }
 
-export async function ensureColumnsForTables(references: SqlTableReference[]): Promise<void> {
+export async function ensureColumnsForTables(
+	connectionId: string,
+	references: SqlTableReference[]
+): Promise<void> {
 	const uniqueTables = new Map<string, SqlTableMetadata>();
 
 	for (const reference of references) {
-		const table = resolveSqlTable(reference);
+		const table = resolveSqlTable(connectionId, reference);
 		if (table) {
 			uniqueTables.set(getTableKey(table.schema, table.name), table);
 		}
 	}
 
 	await Promise.all(
-		[...uniqueTables.values()].map((table) => loadColumnsForTable(table.schema, table.name))
+		[...uniqueTables.values()].map((table) =>
+			loadColumnsForTable(connectionId, table.schema, table.name)
+		)
 	);
 }
 
-async function discoverSchemaInfo(generation: number): Promise<void> {
-	const [databaseResponse, schemasResponse] = await Promise.all([GetDatabaseInfo(), GetSchemas()]);
+async function discoverSchemaInfo(connectionId: string, generation: number): Promise<void> {
+	const runtime = getRuntime(connectionId);
+	const [databaseResponse, schemasResponse] = await Promise.all([
+		GetDatabaseInfo(connectionId),
+		GetSchemas(connectionId)
+	]);
 
 	if (databaseResponse.errors?.length) {
 		throw new Error(databaseResponse.errors[0].detail);
@@ -266,7 +340,7 @@ async function discoverSchemaInfo(generation: number): Promise<void> {
 
 	if (nextSchemas.length === 0) {
 		nextSchemas = [getDefaultNamespace(nextDatabaseInfo)];
-		const response = await GetCollections([]);
+		const response = await GetCollections(connectionId, []);
 		if (response.errors?.length) {
 			throw new Error(response.errors[0].detail);
 		}
@@ -277,7 +351,7 @@ async function discoverSchemaInfo(generation: number): Promise<void> {
 	} else {
 		await Promise.all(
 			nextSchemas.map(async (schema) => {
-				const response = await GetCollections([schema]);
+				const response = await GetCollections(connectionId, [schema]);
 				nextSchemaInfo[schema] = {
 					...makeEmptySchemaInfo(),
 					tables: response.errors?.length ? [] : response.data || []
@@ -286,14 +360,18 @@ async function discoverSchemaInfo(generation: number): Promise<void> {
 		);
 	}
 
-	if (generation !== loadGeneration) return;
+	if (generation !== runtime.generation) return;
 
-	databaseInfo = nextDatabaseInfo;
-	schemas = nextSchemas;
-	schemaInfo = nextSchemaInfo;
-	hasLoaded = true;
+	states[connectionId] = {
+		databaseInfo: nextDatabaseInfo,
+		schemas: nextSchemas,
+		schemaInfo: nextSchemaInfo,
+		isLoading: true,
+		loadError: ''
+	};
+	runtime.hasLoaded = true;
 
-	const preferred = getSqlAutocompleteMetadata()
+	const preferred = getSqlAutocompleteMetadata(connectionId)
 		.tables.sort((left, right) => {
 			const preferredSchemas = ['public', 'main', nextDatabaseInfo?.database || ''];
 			const leftIndex = preferredSchemas.indexOf(left.schema);
@@ -304,53 +382,76 @@ async function discoverSchemaInfo(generation: number): Promise<void> {
 		})
 		.slice(0, 8);
 
-	void Promise.all(preferred.map((table) => loadColumnsForTable(table.schema, table.name)));
+	void Promise.all(
+		preferred.map((table) => loadColumnsForTable(connectionId, table.schema, table.name))
+	);
 }
 
-export async function loadSchemaInfo(force = false): Promise<void> {
-	if (activeLoad) return activeLoad;
-	if (hasLoaded && !force) return;
+export async function loadSchemaInfo(connectionId: string, force = false): Promise<void> {
+	ensureState(connectionId);
+	const runtime = getRuntime(connectionId);
+	if (runtime.activeLoad) return runtime.activeLoad;
+	if (runtime.hasLoaded && !force) return;
 
-	const generation = ++loadGeneration;
-	if (force) hasLoaded = false;
-	columnLoads.clear();
-	isLoading = true;
-	loadError = '';
+	const generation = ++runtime.generation;
+	if (force) runtime.hasLoaded = false;
+	runtime.columnLoads.clear();
+	states[connectionId] = {
+		...getState(connectionId),
+		isLoading: true,
+		loadError: ''
+	};
 
 	const task = (async () => {
 		try {
-			await discoverSchemaInfo(generation);
+			await discoverSchemaInfo(connectionId, generation);
 		} catch (error) {
-			if (generation === loadGeneration) {
-				loadError = error instanceof Error ? error.message : 'Could not load SQL metadata';
+			if (generation === runtime.generation) {
+				states[connectionId] = {
+					...getState(connectionId),
+					loadError: error instanceof Error ? error.message : 'Could not load SQL metadata'
+				};
 				console.error('Failed to load schema info:', error);
 			}
 		} finally {
-			if (generation === loadGeneration) {
-				isLoading = false;
+			if (generation === runtime.generation) {
+				states[connectionId] = {
+					...getState(connectionId),
+					isLoading: false
+				};
 			}
-			if (activeLoad === task) {
-				activeLoad = null;
+			if (runtime.activeLoad === task) {
+				runtime.activeLoad = null;
 			}
 		}
 	})();
 
-	activeLoad = task;
+	runtime.activeLoad = task;
 	return task;
 }
 
-export function resetSchemaInfo(): void {
-	loadGeneration += 1;
-	activeLoad = null;
-	columnLoads.clear();
-	schemas = [];
-	schemaInfo = {};
-	databaseInfo = null;
-	isLoading = false;
-	loadError = '';
-	hasLoaded = false;
+export function resetSchemaInfo(connectionId?: string): void {
+	if (connectionId) {
+		const runtime = runtimes.get(connectionId);
+		if (runtime) {
+			runtime.generation += 1;
+			runtime.activeLoad = null;
+			runtime.columnLoads.clear();
+		}
+		runtimes.delete(connectionId);
+		delete states[connectionId];
+		return;
+	}
+
+	for (const runtime of runtimes.values()) {
+		runtime.generation += 1;
+		runtime.activeLoad = null;
+		runtime.columnLoads.clear();
+	}
+	runtimes.clear();
+	states = {};
 }
 
-export function getSQLKeywords(): string[] {
-	return getSqlDialectDefinition(databaseInfo?.engine).keywords;
+export function getSQLKeywords(connectionId: string): string[] {
+	return getSqlDialectDefinition(getState(connectionId).databaseInfo?.engine).keywords;
 }

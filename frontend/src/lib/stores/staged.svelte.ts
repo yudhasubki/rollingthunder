@@ -1,101 +1,114 @@
-export const stagedChanges = $state({
-    data: {
-        added: [],
-        updated: [],
-        deleted: []
-    },
-    structure: {
-        added: [],
-        updated: [],
-        deleted: []
-    },
-    indices: {
-        added: [],
-        deleted: []
-    },
-    // For create table tab
-    createTable: {
-        schema: '',
-        tableName: '',
-        columns: [] as {
-            name: string;
-            type: string;
-            size: string;
-            nullable: boolean;
-            defaultValue: string;
-            primaryKey: boolean;
-            unique: boolean;
-        }[]
-    }
-});
+type StagedRow = Record<string, any>;
 
-export function stageDataAdd(row) {
-    stagedChanges.data.added.push(row);
+export interface TabStagedChanges {
+	data: {
+		added: StagedRow[];
+		updated: StagedRow[];
+		deleted: StagedRow[];
+	};
+	structure: {
+		added: StagedRow[];
+		updated: StagedRow[];
+		deleted: StagedRow[];
+	};
+	indices: {
+		added: StagedRow[];
+		deleted: StagedRow[];
+	};
 }
 
-export function stageDataInsert(row: Partial<any>) {
-    // Don't set ID - let database auto-generate it
-    stagedChanges.data.added.push({ ...row, _isNew: true });
+function createEmptyChanges(): TabStagedChanges {
+	return {
+		data: {
+			added: [],
+			updated: [],
+			deleted: []
+		},
+		structure: {
+			added: [],
+			updated: [],
+			deleted: []
+		},
+		indices: {
+			added: [],
+			deleted: []
+		}
+	};
 }
 
-export function updateStagedRow(index: number, data: Record<string, any>) {
-    // Update an existing staged row in-place
-    if (index >= 0 && index < stagedChanges.data.added.length) {
-        Object.assign(stagedChanges.data.added[index], data);
-    }
+const changesByTab = $state<Record<string, TabStagedChanges>>({});
+const createTableSubmits = $state<Record<string, (() => Promise<boolean>) | undefined>>({});
+
+export function getStagedChanges(tabId: string): TabStagedChanges {
+	return (tabId && changesByTab[tabId]) || createEmptyChanges();
 }
 
-export function stageDataUpdate(row) {
-    stagedChanges.data.updated.push(row);
+function ensureStagedChanges(tabId: string): TabStagedChanges {
+	if (!tabId) throw new Error('A tab ID is required to stage changes');
+	if (!changesByTab[tabId]) {
+		changesByTab[tabId] = createEmptyChanges();
+	}
+	return changesByTab[tabId];
 }
 
-export function stageDataDelete(row) {
-    stagedChanges.data.deleted.push(row);
+export function stageDataInsert(tabId: string, row: Partial<StagedRow>) {
+	ensureStagedChanges(tabId).data.added.push({ ...row, _isNew: true });
 }
 
-export function stageStructureAdd(col) {
-    stagedChanges.structure.added.push(col);
+export function stageDataUpdate(tabId: string, row: StagedRow) {
+	const staged = ensureStagedChanges(tabId).data.updated;
+	const rowId = row.id ?? row._id;
+	const existingIndex = staged.findIndex((candidate) => (candidate.id ?? candidate._id) === rowId);
+	if (rowId !== undefined && existingIndex >= 0) {
+		staged[existingIndex] = row;
+	} else {
+		staged.push(row);
+	}
 }
 
-export function setCreateTable(schema: string, tableName: string, columns: typeof stagedChanges.createTable.columns) {
-    stagedChanges.createTable.schema = schema;
-    stagedChanges.createTable.tableName = tableName;
-    stagedChanges.createTable.columns = columns;
+export function stageDataDelete(tabId: string, row: StagedRow) {
+	ensureStagedChanges(tabId).data.deleted.push(row);
 }
 
-export function discardStagedChanges() {
-    stagedChanges.data = { added: [], updated: [], deleted: [] };
-    stagedChanges.structure = { added: [], updated: [], deleted: [] };
-    stagedChanges.indices = { added: [], deleted: [] };
-    stagedChanges.createTable = { schema: '', tableName: '', columns: [] };
+export function stageStructureAdd(tabId: string, column: StagedRow) {
+	ensureStagedChanges(tabId).structure.added.push(column);
 }
 
-export function hasChanges() {
-    return (
-        stagedChanges.data.added.length > 0 ||
-        stagedChanges.data.updated.length > 0 ||
-        stagedChanges.data.deleted.length > 0 ||
-        stagedChanges.structure.added.length > 0 ||
-        stagedChanges.structure.updated.length > 0 ||
-        stagedChanges.structure.deleted.length > 0 ||
-        stagedChanges.indices.added.length > 0 ||
-        stagedChanges.indices.deleted.length > 0
-    );
+export function discardStagedChanges(tabId: string) {
+	if (!tabId) return;
+	changesByTab[tabId] = createEmptyChanges();
 }
 
-export function hasCreateTableChanges() {
-    return (
-        stagedChanges.createTable.tableName.trim() !== '' &&
-        stagedChanges.createTable.columns.some(c => c.name.trim() !== '')
-    );
+export function hasChanges(tabId: string | null | undefined) {
+	if (!tabId) return false;
+	const staged = getStagedChanges(tabId);
+	return (
+		staged.data.added.length > 0 ||
+		staged.data.updated.length > 0 ||
+		staged.data.deleted.length > 0 ||
+		staged.structure.added.length > 0 ||
+		staged.structure.updated.length > 0 ||
+		staged.structure.deleted.length > 0 ||
+		staged.indices.added.length > 0 ||
+		staged.indices.deleted.length > 0
+	);
 }
 
-// Callback for create table submit - set by CreateTableContent, called by workspace Apply
-// Using $state for reactivity
-export const createTableState = $state({
-    submit: null as (() => Promise<boolean>) | null
-});
+export function setCreateTableSubmit(tabId: string, submit: (() => Promise<boolean>) | null) {
+	if (!tabId) return;
+	if (submit) {
+		createTableSubmits[tabId] = submit;
+	} else {
+		delete createTableSubmits[tabId];
+	}
+}
 
-export function setCreateTableSubmit(fn: (() => Promise<boolean>) | null) {
-    createTableState.submit = fn;
+export function getCreateTableSubmit(tabId: string | null | undefined) {
+	return tabId ? (createTableSubmits[tabId] ?? null) : null;
+}
+
+export function clearTabState(tabId: string) {
+	if (!tabId) return;
+	delete changesByTab[tabId];
+	delete createTableSubmits[tabId];
 }

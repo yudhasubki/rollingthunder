@@ -10,11 +10,12 @@
 	import { onMount } from 'svelte';
 
 	interface Props {
+		connectionId: string;
 		schema: string;
 		onSuccess: () => void;
 	}
 
-	let { schema, onSuccess }: Props = $props();
+	let { connectionId, schema, onSuccess }: Props = $props();
 
 	// Dialog state
 	const openStore = writable(false);
@@ -57,7 +58,7 @@
 	// Load data types on mount
 	onMount(async () => {
 		try {
-			const response = await GetDataTypes();
+			const response = await GetDataTypes(connectionId);
 			if (response.data) {
 				dataTypes = response.data;
 			}
@@ -103,7 +104,7 @@
 
 		loading = true;
 		try {
-			const table = new database.Table({ schema, name: tableName.trim() });
+			const table = new database.Table({ Schema: schema, Name: tableName.trim() });
 			const columnDefs = validColumns.map((c) => ({
 				name: c.name.trim(),
 				type: c.type,
@@ -113,7 +114,7 @@
 				unique: c.unique
 			}));
 
-			const response = await CreateTable(table, columnDefs);
+			const response = await CreateTable(connectionId, table, columnDefs);
 			if (response.errors?.length) {
 				updateStatus(response.errors[0].detail, 'error');
 			} else {
@@ -148,7 +149,7 @@
 		<!-- Content -->
 		<div
 			use:melt={$content}
-			class="bg-background fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[700px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border shadow-lg"
+			class="bg-background fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[700px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-lg border shadow-lg"
 			transition:fly={{ duration: 200, y: 10 }}
 		>
 			<!-- Header -->
@@ -168,7 +169,7 @@
 						<span class="text-muted-foreground text-sm">{schema}.</span>
 						<input
 							type="text"
-							class="border-input bg-background focus:ring-primary h-9 flex-1 rounded-md border px-3 text-sm focus:outline-none focus:ring-2"
+							class="border-input bg-background focus:ring-primary h-9 flex-1 rounded-md border px-3 text-sm focus:ring-2 focus:outline-none"
 							placeholder="table_name"
 							bind:value={tableName}
 						/>
@@ -209,7 +210,7 @@
 								<!-- Name -->
 								<input
 									type="text"
-									class="border-input bg-background focus:ring-primary h-8 rounded-md border px-2 text-sm focus:outline-none focus:ring-1"
+									class="border-input bg-background focus:ring-primary h-8 rounded-md border px-2 text-sm focus:ring-1 focus:outline-none"
 									placeholder="column_name"
 									bind:value={col.name}
 								/>
@@ -228,7 +229,7 @@
 								<!-- Default -->
 								<input
 									type="text"
-									class="border-input bg-background focus:ring-primary h-8 rounded-md border px-2 text-xs focus:outline-none focus:ring-1"
+									class="border-input bg-background focus:ring-primary h-8 rounded-md border px-2 text-xs focus:ring-1 focus:outline-none"
 									placeholder="NULL"
 									bind:value={col.defaultValue}
 								/>

@@ -6,76 +6,76 @@ export function Connect(arg1) {
   return window['go']['db']['Service']['Connect'](arg1);
 }
 
-export function CountCollectionData(arg1) {
-  return window['go']['db']['Service']['CountCollectionData'](arg1);
+export function CountCollectionData(arg1, arg2) {
+  return window['go']['db']['Service']['CountCollectionData'](arg1, arg2);
 }
 
-export function CreateTable(arg1, arg2) {
-  return window['go']['db']['Service']['CreateTable'](arg1, arg2);
+export function CreateTable(arg1, arg2, arg3) {
+  return window['go']['db']['Service']['CreateTable'](arg1, arg2, arg3);
 }
 
 export function DeleteConnection(arg1) {
   return window['go']['db']['Service']['DeleteConnection'](arg1);
 }
 
-export function DeleteRow(arg1, arg2, arg3) {
-  return window['go']['db']['Service']['DeleteRow'](arg1, arg2, arg3);
+export function DeleteRow(arg1, arg2, arg3, arg4) {
+  return window['go']['db']['Service']['DeleteRow'](arg1, arg2, arg3, arg4);
 }
 
 export function DisconnectConnection(arg1) {
   return window['go']['db']['Service']['DisconnectConnection'](arg1);
 }
 
-export function DropTable(arg1) {
-  return window['go']['db']['Service']['DropTable'](arg1);
+export function DropTable(arg1, arg2) {
+  return window['go']['db']['Service']['DropTable'](arg1, arg2);
 }
 
-export function ExecuteQuery(arg1) {
-  return window['go']['db']['Service']['ExecuteQuery'](arg1);
+export function ExecuteQuery(arg1, arg2) {
+  return window['go']['db']['Service']['ExecuteQuery'](arg1, arg2);
 }
 
 export function GetActiveConnections() {
   return window['go']['db']['Service']['GetActiveConnections']();
 }
 
-export function GetCollectionData(arg1) {
-  return window['go']['db']['Service']['GetCollectionData'](arg1);
+export function GetCollectionData(arg1, arg2) {
+  return window['go']['db']['Service']['GetCollectionData'](arg1, arg2);
 }
 
-export function GetCollectionStructures(arg1) {
-  return window['go']['db']['Service']['GetCollectionStructures'](arg1);
+export function GetCollectionStructures(arg1, arg2) {
+  return window['go']['db']['Service']['GetCollectionStructures'](arg1, arg2);
 }
 
-export function GetCollections(arg1) {
-  return window['go']['db']['Service']['GetCollections'](arg1);
+export function GetCollections(arg1, arg2) {
+  return window['go']['db']['Service']['GetCollections'](arg1, arg2);
 }
 
-export function GetDataTypes() {
-  return window['go']['db']['Service']['GetDataTypes']();
+export function GetDataTypes(arg1) {
+  return window['go']['db']['Service']['GetDataTypes'](arg1);
 }
 
-export function GetDatabaseInfo() {
-  return window['go']['db']['Service']['GetDatabaseInfo']();
+export function GetDatabaseInfo(arg1) {
+  return window['go']['db']['Service']['GetDatabaseInfo'](arg1);
 }
 
-export function GetIndices(arg1) {
-  return window['go']['db']['Service']['GetIndices'](arg1);
+export function GetIndices(arg1, arg2) {
+  return window['go']['db']['Service']['GetIndices'](arg1, arg2);
 }
 
 export function GetSavedConnections() {
   return window['go']['db']['Service']['GetSavedConnections']();
 }
 
-export function GetSchemas() {
-  return window['go']['db']['Service']['GetSchemas']();
+export function GetSchemas(arg1) {
+  return window['go']['db']['Service']['GetSchemas'](arg1);
 }
 
-export function GetTableDDL(arg1) {
-  return window['go']['db']['Service']['GetTableDDL'](arg1);
+export function GetTableDDL(arg1, arg2) {
+  return window['go']['db']['Service']['GetTableDDL'](arg1, arg2);
 }
 
-export function InsertRow(arg1, arg2) {
-  return window['go']['db']['Service']['InsertRow'](arg1, arg2);
+export function InsertRow(arg1, arg2, arg3) {
+  return window['go']['db']['Service']['InsertRow'](arg1, arg2, arg3);
 }
 
 export function SaveConnection(arg1) {
@@ -90,14 +90,14 @@ export function SwitchConnection(arg1) {
   return window['go']['db']['Service']['SwitchConnection'](arg1);
 }
 
-export function TruncateTable(arg1) {
-  return window['go']['db']['Service']['TruncateTable'](arg1);
+export function TruncateTable(arg1, arg2) {
+  return window['go']['db']['Service']['TruncateTable'](arg1, arg2);
 }
 
 export function UpdateConnection(arg1, arg2) {
   return window['go']['db']['Service']['UpdateConnection'](arg1, arg2);
 }
 
-export function UpdateRow(arg1, arg2, arg3) {
-  return window['go']['db']['Service']['UpdateRow'](arg1, arg2, arg3);
+export function UpdateRow(arg1, arg2, arg3, arg4) {
+  return window['go']['db']['Service']['UpdateRow'](arg1, arg2, arg3, arg4);
 }
