@@ -9,10 +9,12 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Multiple active connections and an in-workspace connection switcher
 - [x] Schema and table explorer
 - [x] Structure, data, indexes, and DDL views
+- [x] Schema-qualified primary/foreign-key metadata with navigable relation links
 - [x] Schema diagram
 - [x] Staged row insert, update, and delete workflows
 - [x] Table creation, truncation, and deletion
 - [x] Stable PostgreSQL server-side sorting with multi-column priority
+- [x] Typed data-grid previews with sticky headers, sticky edge columns, and resizable columns
 - [x] Searchable row-detail drawer for table data and query results
 - [x] Multi-tab workspace with query history
 - [x] Context-aware SQL completion for schemas, tables, aliases, and columns

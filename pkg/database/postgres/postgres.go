@@ -149,6 +149,7 @@ func (p *Postgres) GetIndices(table database.Table) (database.Indices, error) {
 		i.relname AS index_name,
 		a.attname AS column_name,
 		ix.indisunique AS is_unique,
+		ix.indisprimary AS is_primary,
 		am.amname AS algorithm
 	FROM
 		pg_class t
@@ -163,7 +164,7 @@ func (p *Postgres) GetIndices(table database.Table) (database.Indices, error) {
 		i.relname, cols.ord;
 	`
 
-	ref := fmt.Sprintf("%s.%s", table.Schema, table.Name)
+	ref := quotePostgresQualifiedIdentifier(table.Schema, table.Name)
 
 	var indices Indices
 	err := p.conn.Select(&indices, query, ref)
@@ -178,6 +179,7 @@ func (p *Postgres) GetIndices(table database.Table) (database.Indices, error) {
 			idx = &database.Index{
 				Name:      index.IndexName,
 				IsUnique:  index.IsUnique,
+				IsPrimary: index.IsPrimary,
 				Algorithm: index.Algorithm,
 			}
 			indexMap[index.IndexName] = idx
@@ -193,41 +195,37 @@ func (p *Postgres) GetIndices(table database.Table) (database.Indices, error) {
 	return result, nil
 }
 
-func (p *Postgres) GetForeignKey(table database.Table) (Constraints, error) {
-	constraintQuery := `
-		SELECT
-			a.attname AS column,
-			c.contype AS type,
-			f.relname AS foreign_table,
-			fa.attname AS foreign_column
-		FROM pg_constraint c
-		JOIN pg_class f ON f.oid = c.confrelid
-		JOIN unnest(c.conkey) WITH ORDINALITY AS ck(attnum, ord) ON TRUE
-		JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ck.attnum
-		JOIN unnest(c.confkey) WITH ORDINALITY AS fk(attnum, ord) ON fk.ord = ck.ord
-		JOIN pg_attribute fa ON fa.attrelid = c.confrelid AND fa.attnum = fk.attnum
-		WHERE c.conrelid = $1::regclass AND c.contype = 'f'
-	`
-
-	var constraints []Constraint
-	err := p.conn.Select(&constraints, constraintQuery, fmt.Sprintf("%s.%s", table.Schema, table.Name))
-	if err != nil {
-		return nil, err
-	}
-
-	return constraints, nil
-}
-
 func (p *Postgres) GetConstraints(table database.Table) (Constraints, error) {
 	const query = `
-		SELECT a.attname AS column, c.contype AS type,
-		       confrelid::regclass::text AS foreign_table
-		FROM pg_attribute a
-		JOIN pg_constraint c ON c.conrelid = a.attrelid AND a.attnum = ANY(c.conkey)
-		WHERE c.conrelid = $1::regclass AND c.contype IN ('p', 'u', 'f')`
+		SELECT
+			a.attname AS column,
+			c.contype::text AS type,
+			foreign_namespace.nspname AS foreign_schema,
+			foreign_table.relname AS foreign_table,
+			CASE
+				WHEN c.contype = 'f' THEN foreign_attribute.attname
+			END AS foreign_column
+		FROM pg_constraint c
+		JOIN unnest(c.conkey) WITH ORDINALITY AS local_key(attnum, ord) ON TRUE
+		JOIN pg_attribute a
+			ON a.attrelid = c.conrelid
+			AND a.attnum = local_key.attnum
+		LEFT JOIN pg_class foreign_table
+			ON c.contype = 'f'
+			AND foreign_table.oid = c.confrelid
+		LEFT JOIN pg_namespace foreign_namespace
+			ON foreign_namespace.oid = foreign_table.relnamespace
+		LEFT JOIN unnest(c.confkey) WITH ORDINALITY AS foreign_key(attnum, ord)
+			ON foreign_key.ord = local_key.ord
+		LEFT JOIN pg_attribute foreign_attribute
+			ON foreign_attribute.attrelid = c.confrelid
+			AND foreign_attribute.attnum = foreign_key.attnum
+		WHERE c.conrelid = $1::regclass
+			AND c.contype IN ('p', 'u', 'f')
+		ORDER BY c.oid, local_key.ord`
 
 	var out []Constraint
-	ref := fmt.Sprintf("%s.%s", table.Schema, table.Name)
+	ref := quotePostgresQualifiedIdentifier(table.Schema, table.Name)
 	err := p.conn.Select(&out, query, ref)
 
 	return out, err
@@ -238,6 +236,17 @@ func (p *Postgres) getCollectionStructures(table database.Table) (Columns, error
 		query = `SELECT
 			c.column_name,
 			c.data_type,
+			c.udt_schema,
+			c.udt_name,
+			EXISTS (
+				SELECT 1
+				FROM pg_type enum_type
+				JOIN pg_namespace enum_namespace
+					ON enum_namespace.oid = enum_type.typnamespace
+				WHERE enum_namespace.nspname = c.udt_schema
+					AND enum_type.typname = c.udt_name
+					AND enum_type.typtype = 'e'
+			) AS is_enum,
 			c.is_nullable,
 			c.character_maximum_length,
 			c.column_default,
@@ -268,20 +277,9 @@ func (p *Postgres) getCollectionStructures(table database.Table) (Columns, error
 }
 
 func (p *Postgres) GetCollectionStructures(table database.Table) (database.Structures, error) {
-	foreignKeys, err := p.GetForeignKey(table)
-	if err != nil {
-		return nil, err
-	}
-
 	constraints, err := p.GetConstraints(table)
 	if err != nil {
 		return nil, err
-	}
-	constraints = append(constraints, foreignKeys...)
-
-	cMap := map[string]Constraint{}
-	for _, c := range constraints {
-		cMap[c.Column] = c
 	}
 
 	rows, err := p.getCollectionStructures(table)
@@ -291,39 +289,82 @@ func (p *Postgres) GetCollectionStructures(table database.Table) (database.Struc
 
 	out := make(database.Structures, 0, len(rows))
 	for _, r := range rows {
-		dataType := r.DataType
-		if v, exist := Types[dataType]; exist {
-			dataType = v
-		}
-
 		info := database.Structure{
 			Name:      r.ColumnName,
-			DataType:  dataType,
 			Length:    r.MaxLength,
 			Nullable:  r.IsNullable == "YES",
 			Default:   r.ColumnDefault,
 			IsAutoInc: r.ColumnDefault != nil && strings.HasPrefix(*r.ColumnDefault, "nextval("),
 		}
 
-		if constraint, exist := cMap[r.ColumnName]; exist {
-			switch constraint.Type {
-			case "p":
-				info.IsPrimary = true
-				info.IsPrimaryLabel = "PRI"
-			case "u":
-				info.IsUnique = true
-			case "f":
-				if constraint.IsForeign() {
-					key := fmt.Sprintf("%s(%s)", *constraint.ForeignTable, *constraint.ForeignCol)
-					info.ForeignKey = &key
-				}
-			}
-		}
-
+		applyColumnType(&info, r)
+		applyColumnConstraints(&info, r.IsPrimary, constraints)
 		out = append(out, info)
 	}
 
 	return out, nil
+}
+
+func applyColumnType(info *database.Structure, column Column) {
+	dataType := column.DataType
+	if value, exists := Types[dataType]; exists {
+		dataType = value
+	}
+	info.DataType = dataType
+
+	if column.IsEnum {
+		info.DataType = "enum"
+		info.IsEnum = true
+	}
+
+	if column.IsEnum || strings.EqualFold(column.DataType, "USER-DEFINED") {
+		if column.UDTSchema != "" {
+			typeSchema := column.UDTSchema
+			info.TypeSchema = &typeSchema
+		}
+		if column.UDTName != "" {
+			typeName := column.UDTName
+			info.TypeName = &typeName
+		}
+	}
+}
+
+func applyColumnConstraints(info *database.Structure, isPrimary bool, constraints Constraints) {
+	if isPrimary {
+		info.IsPrimary = true
+		info.IsPrimaryLabel = "PRI"
+	}
+
+	for _, constraint := range constraints {
+		if constraint.Column != info.Name {
+			continue
+		}
+
+		switch constraint.Type {
+		case "p":
+			info.IsPrimary = true
+			info.IsPrimaryLabel = "PRI"
+		case "u":
+			info.IsUnique = true
+		case "f":
+			if constraint.IsForeign() {
+				info.ForeignSchema = constraint.ForeignSchema
+				info.ForeignTable = constraint.ForeignTable
+				info.ForeignColumn = constraint.ForeignCol
+
+				key := fmt.Sprintf("%s(%s)", *constraint.ForeignTable, *constraint.ForeignCol)
+				if constraint.ForeignSchema != nil && *constraint.ForeignSchema != "" {
+					key = fmt.Sprintf(
+						"%s.%s(%s)",
+						*constraint.ForeignSchema,
+						*constraint.ForeignTable,
+						*constraint.ForeignCol,
+					)
+				}
+				info.ForeignKey = &key
+			}
+		}
+	}
 }
 
 func (p *Postgres) GetDatabaseInfo() (database.Info, error) {
@@ -369,25 +410,22 @@ func (p *Postgres) GetCollectionData(table database.Table) (database.Structures,
 
 	structures := make(database.Structures, 0, len(columns))
 	for _, column := range columns {
-		dataType := column.DataType
-		if value, exists := Types[dataType]; exists {
-			dataType = value
-		}
 		primaryLabel := ""
 		if column.IsPrimary {
 			primaryLabel = "PRI"
 		}
 
-		structures = append(structures, database.Structure{
+		structure := database.Structure{
 			Name:           column.ColumnName,
-			DataType:       dataType,
 			Length:         column.MaxLength,
 			Nullable:       column.IsNullable == "YES",
 			Default:        column.ColumnDefault,
 			IsPrimary:      column.IsPrimary,
 			IsPrimaryLabel: primaryLabel,
 			IsAutoInc:      column.ColumnDefault != nil && strings.HasPrefix(*column.ColumnDefault, "nextval("),
-		})
+		}
+		applyColumnType(&structure, column)
+		structures = append(structures, structure)
 	}
 
 	orderClause, err := buildPostgresOrderClause(table.Sorts, structures)

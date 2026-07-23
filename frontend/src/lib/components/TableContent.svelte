@@ -5,6 +5,8 @@
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import { database } from '$lib/wailsjs/go/models';
+	import { getColumnTypeLabel } from '$lib/table/cells';
+	import { getForeignRelation } from '$lib/table/relations';
 	import { updateStatus, updateDatabaseInfo } from '$lib/stores/status.svelte';
 	import {
 		CountCollectionData,
@@ -59,7 +61,9 @@
 	let appliedFilters = $state<FilterCondition[]>([]);
 	let sorting = $state<SortingState>([]);
 	const primaryKeyCount = $derived(columns.filter((column) => column.is_primary).length);
-	const relationCount = $derived(columns.filter((column) => column.foreign_key).length);
+	const relationCount = $derived(
+		columns.filter((column) => getColumnRelation(column) !== null).length
+	);
 	const nullableCount = $derived(columns.filter((column) => column.nullable).length);
 
 	// DDL state
@@ -146,8 +150,21 @@
 				if (idxs.errors?.length) throw new Error(idxs.errors[0].detail);
 				if (db.errors?.length) throw new Error(db.errors[0].detail);
 
-				columns = cols.data || [];
 				indices = idxs.data || [];
+				const primaryColumns = new Set(
+					indices
+						.filter((index) => index.is_primary || /_pkey$/i.test(index.name))
+						.flatMap((index) => index.columns || [])
+				);
+				columns = (cols.data || []).map((column) =>
+					column.is_primary || !primaryColumns.has(column.name)
+						? column
+						: new database.Structure({
+								...column,
+								is_primary: true,
+								is_primary_label: 'PRI'
+							})
+				);
 				updateDatabaseInfo(db.data);
 			} catch (e: any) {
 				updateStatus(e?.message ?? 'Unknown Error', 'error');
@@ -286,6 +303,24 @@
 		currentPage = 0;
 	}
 
+	function getColumnRelation(column: database.Structure) {
+		const fallbackSchema = tabsStore.activeTab?.kind === 'table' ? tabsStore.activeTab.schema : '';
+		return getForeignRelation(column, fallbackSchema);
+	}
+
+	function openForeignReference(column: database.Structure) {
+		const relation = getColumnRelation(column);
+		if (!relation) return;
+
+		const existing = tabsStore.findTableTab(relation.schema, relation.table);
+		if (existing) {
+			tabsStore.setActive(existing.id);
+		} else {
+			tabsStore.newTableTab(relation.schema, relation.table);
+		}
+		updateStatus(`Opened ${relation.schema}.${relation.table}`, 'info');
+	}
+
 	// Load DDL when DDL tab is selected
 	$effect(() => {
 		const tab = $tabValue;
@@ -370,104 +405,188 @@
 					<section
 						class="grid shrink-0 grid-cols-4 divide-x overflow-hidden rounded-lg border bg-[var(--surface-raised)]"
 					>
-						<div class="flex items-center gap-3 px-4 py-3">
-							<Table2 class="text-muted-foreground h-4 w-4" />
-							<div>
-								<div class="text-[13px] font-bold">{columns.length}</div>
-								<div class="text-muted-foreground mt-0.5 text-[8px]">
+						<div class="flex min-h-12 items-center gap-2.5 px-3">
+							<span
+								class="bg-muted text-muted-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+							>
+								<Table2 class="h-3.5 w-3.5" />
+							</span>
+							<div class="min-w-0">
+								<div class="text-[11px] font-semibold tabular-nums">{columns.length}</div>
+								<div class="text-muted-foreground truncate text-[8px]">
 									Columns · {nullableCount} nullable
 								</div>
 							</div>
 						</div>
-						<div class="flex items-center gap-3 px-4 py-3">
-							<KeyRound class="text-muted-foreground h-4 w-4" />
-							<div>
-								<div class="text-[13px] font-bold">{primaryKeyCount}</div>
-								<div class="text-muted-foreground mt-0.5 text-[8px]">Primary keys</div>
+						<div class="flex min-h-12 items-center gap-2.5 px-3">
+							<span
+								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-500/10 text-amber-500"
+							>
+								<KeyRound class="h-3.5 w-3.5" />
+							</span>
+							<div class="min-w-0">
+								<div class="text-[11px] font-semibold tabular-nums">{primaryKeyCount}</div>
+								<div class="text-muted-foreground truncate text-[8px]">Primary keys</div>
 							</div>
 						</div>
-						<div class="flex items-center gap-3 px-4 py-3">
-							<Link2 class="text-muted-foreground h-4 w-4" />
-							<div>
-								<div class="text-[13px] font-bold">{relationCount}</div>
-								<div class="text-muted-foreground mt-0.5 text-[8px]">Relations</div>
+						<div class="flex min-h-12 items-center gap-2.5 px-3">
+							<span
+								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sky-500/10 text-sky-500"
+							>
+								<Link2 class="h-3.5 w-3.5" />
+							</span>
+							<div class="min-w-0">
+								<div class="text-[11px] font-semibold tabular-nums">{relationCount}</div>
+								<div class="text-muted-foreground truncate text-[8px]">Foreign keys</div>
 							</div>
 						</div>
-						<div class="flex items-center gap-3 px-4 py-3">
-							<KeyRound class="text-muted-foreground h-4 w-4" />
-							<div>
-								<div class="text-[13px] font-bold">{indices.length}</div>
-								<div class="text-muted-foreground mt-0.5 text-[8px]">Indexes</div>
+						<div class="flex min-h-12 items-center gap-2.5 px-3">
+							<span
+								class="bg-muted text-muted-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+							>
+								<KeyRound class="h-3.5 w-3.5" />
+							</span>
+							<div class="min-w-0">
+								<div class="text-[11px] font-semibold tabular-nums">{indices.length}</div>
+								<div class="text-muted-foreground truncate text-[8px]">Indexes</div>
 							</div>
 						</div>
 					</section>
 
 					<div class="space-y-3">
 						<section class="min-w-0 overflow-hidden rounded-lg border bg-[var(--surface-raised)]">
-							<div class="flex h-11 items-center justify-between border-b px-3.5">
-								<div>
-									<h3 class="text-[11px] font-bold">Columns</h3>
-									<p class="text-muted-foreground mt-0.5 text-[8px]">
-										Types, constraints, defaults, and relationships
-									</p>
+							<div class="flex h-9 items-center justify-between border-b px-3">
+								<div class="flex items-center gap-2">
+									<Table2 class="text-muted-foreground h-3.5 w-3.5" />
+									<h3 class="text-[10px] font-semibold">Columns</h3>
 								</div>
-								<span class="text-muted-foreground text-[9px]">{columns.length} total</span>
+								<span
+									class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[8px] tabular-nums"
+									>{columns.length}</span
+								>
 							</div>
 							<div class="overflow-x-auto">
-								<table class="w-full caption-bottom">
-									<thead>
+								<table class="w-full min-w-[840px] table-fixed caption-bottom">
+									<thead class="bg-muted/35">
 										<tr class="border-b">
-											<th class="h-8 w-[28%] px-3.5 text-left">Column</th>
-											<th class="h-8 w-[20%] px-3.5 text-left">Type</th>
-											<th class="h-8 w-[24%] px-3.5 text-left">Constraints</th>
-											<th class="h-8 px-3.5 text-left">Default / relation</th>
+											<th class="h-7 w-[28%] px-3 text-left text-[8px]">Column</th>
+											<th class="h-7 w-[18%] px-3 text-left text-[8px]">Data type</th>
+											<th class="h-7 w-[28%] px-3 text-left text-[8px]">Properties</th>
+											<th class="h-7 px-3 text-left text-[8px]">Default / reference</th>
 										</tr>
 									</thead>
 									<tbody>
 										{#each columns as col (col.name)}
-											<tr class="border-b last:border-b-0">
-												<td class="px-3.5 py-2.5">
-													<div class="flex items-center gap-2">
-														{#if col.is_primary}
-															<KeyRound class="h-3.5 w-3.5 shrink-0 text-amber-500" />
-														{:else if col.foreign_key}
-															<Link2 class="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-														{:else}
-															<span class="bg-muted-foreground/35 h-1.5 w-1.5 shrink-0 rounded-full"
-															></span>
-														{/if}
+											{@const relation = getColumnRelation(col)}
+											<tr
+												class="h-11 border-b transition-colors last:border-b-0 hover:bg-[var(--surface-hover)]"
+											>
+												<td class="h-11 px-3">
+													<div class="flex min-w-0 items-center gap-2">
+														<span
+															class="bg-muted flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+														>
+															{#if col.is_primary}
+																<KeyRound class="h-3 w-3 text-amber-500" />
+															{:else if relation}
+																<Link2 class="h-3 w-3 text-sky-500" />
+															{:else}
+																<span class="bg-muted-foreground/40 h-1.5 w-1.5 rounded-full"
+																></span>
+															{/if}
+														</span>
 														<span class="truncate font-mono text-[10px] font-semibold"
 															>{col.name}</span
 														>
 													</div>
 												</td>
-												<td class="px-3.5 py-2.5 font-mono text-[9px]">
-													{col.data_type}{col.length ? `(${col.length})` : ''}
-												</td>
-												<td class="text-muted-foreground px-3.5 py-2.5 text-[8px]">
-													{#if col.is_primary}<span class="text-foreground font-semibold"
-															>primary key</span
-														><span class="px-1">·</span>{/if}
-													<span>{col.nullable ? 'nullable' : 'required'}</span>
-													{#if col.foreign_key}<span class="px-1">·</span><span>foreign key</span
-														>{/if}
-												</td>
-												<td class="px-3.5 py-2.5">
-													{#if col.foreign_key}
-														<div
-															class="text-muted-foreground flex items-center gap-1.5 truncate font-mono text-[8px]"
+												<td class="h-11 px-3">
+													<div
+														class="flex min-w-0 items-center gap-1.5"
+														title={getColumnTypeLabel(col)}
+													>
+														<span
+															class="inline-flex max-w-full shrink-0 rounded px-1.5 py-1 font-mono text-[8px] {col.is_enum
+																? 'bg-violet-500/10 font-semibold text-violet-600 dark:text-violet-400'
+																: 'bg-muted text-muted-foreground'}"
 														>
-															<Link2 class="h-3 w-3 shrink-0" />
-															<span class="truncate">{col.foreign_key}</span>
-														</div>
-													{/if}
-													{#if col.default}
-														<div class="text-muted-foreground mt-0.5 truncate font-mono text-[8px]">
-															default {col.default}
-														</div>
-													{:else if !col.foreign_key}
-														<span class="text-muted-foreground text-[9px]">—</span>
-													{/if}
+															{col.is_enum
+																? 'ENUM'
+																: `${col.data_type}${col.length ? `(${col.length})` : ''}`}
+														</span>
+														{#if col.is_enum && col.type_name}
+															<span class="text-muted-foreground truncate font-mono text-[7px]">
+																{col.type_schema ? `${col.type_schema}.` : ''}{col.type_name}
+															</span>
+														{/if}
+													</div>
+												</td>
+												<td class="h-11 px-3">
+													<div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
+														{#if col.is_primary}
+															<span
+																class="inline-flex h-5 shrink-0 items-center gap-1 rounded bg-amber-500/10 px-1.5 text-[7px] font-semibold text-amber-600 dark:text-amber-400"
+															>
+																<KeyRound class="h-2.5 w-2.5" />
+																PK
+															</span>
+														{/if}
+														{#if relation}
+															<span
+																class="inline-flex h-5 shrink-0 items-center gap-1 rounded bg-sky-500/10 px-1.5 text-[7px] font-semibold text-sky-600 dark:text-sky-400"
+															>
+																<Link2 class="h-2.5 w-2.5" />
+																FK
+															</span>
+														{/if}
+														{#if col.is_unique && !col.is_primary}
+															<span
+																class="bg-muted text-muted-foreground inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[7px] font-medium"
+																>UNIQUE</span
+															>
+														{/if}
+														{#if col.is_autoinc}
+															<span
+																class="bg-muted text-muted-foreground inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[7px] font-medium"
+																>AUTO</span
+															>
+														{/if}
+														<span class="text-muted-foreground truncate text-[8px]">
+															{col.nullable ? 'Nullable' : 'Required'}
+														</span>
+													</div>
+												</td>
+												<td class="h-11 px-3">
+													<div
+														class="text-muted-foreground flex min-w-0 items-center gap-2 overflow-hidden font-mono text-[8px]"
+													>
+														{#if relation}
+															<button
+																type="button"
+																class="inline-flex min-w-0 cursor-pointer items-center gap-1 text-sky-600 transition-colors hover:text-sky-500 hover:underline dark:text-sky-400"
+																title={`Open ${relation.schema}.${relation.table}`}
+																aria-label={`Open referenced table ${relation.schema}.${relation.table}`}
+																onclick={() => openForeignReference(col)}
+															>
+																<Link2 class="h-3 w-3 shrink-0" />
+																<span class="truncate"
+																	>{relation.schema}.{relation.table}{relation.column
+																		? `.${relation.column}`
+																		: ''}</span
+																>
+															</button>
+														{/if}
+														{#if col.default}
+															{#if relation}
+																<span class="h-3 shrink-0 border-l"></span>
+															{/if}
+															<span class="truncate" title={`Default ${col.default}`}>
+																default {col.default}
+															</span>
+														{:else if !relation}
+															<span>—</span>
+														{/if}
+													</div>
 												</td>
 											</tr>
 										{:else}
@@ -483,24 +602,35 @@
 						</section>
 
 						<section class="overflow-hidden rounded-lg border bg-[var(--surface-raised)]">
-							<div class="flex h-11 items-center justify-between border-b px-3.5">
-								<div>
-									<h3 class="text-[11px] font-bold">Indexes</h3>
-									<p class="text-muted-foreground mt-0.5 text-[8px]">Lookup and uniqueness rules</p>
+							<div class="flex h-9 items-center justify-between border-b px-3">
+								<div class="flex items-center gap-2">
+									<KeyRound class="text-muted-foreground h-3.5 w-3.5" />
+									<h3 class="text-[10px] font-semibold">Indexes</h3>
 								</div>
-								<span class="text-muted-foreground text-[9px]">{indices.length}</span>
+								<span
+									class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[8px] tabular-nums"
+									>{indices.length}</span
+								>
 							</div>
 							<div>
 								{#each indices as idx (idx.name)}
 									<div class="flex min-h-14 items-start gap-2.5 border-b px-3 py-3 last:border-b-0">
-										<KeyRound class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
+										<KeyRound
+											class="mt-0.5 h-3.5 w-3.5 shrink-0 {idx.is_primary
+												? 'text-amber-500'
+												: 'text-muted-foreground'}"
+										/>
 										<div class="min-w-0 flex-1">
 											<div class="truncate font-mono text-[9px] font-semibold">{idx.name}</div>
 											<div class="text-muted-foreground mt-1 truncate font-mono text-[8px]">
 												{idx.columns?.join(', ') || 'No columns'}
 											</div>
 											<div class="text-muted-foreground mt-1 text-[8px]">
-												{idx.algorithm || 'default'} · {idx.is_unique ? 'unique' : 'non-unique'}
+												{idx.algorithm || 'default'} · {idx.is_primary
+													? 'primary'
+													: idx.is_unique
+														? 'unique'
+														: 'non-unique'}
 											</div>
 										</div>
 									</div>
@@ -627,7 +757,7 @@
 			{/if}
 
 			<!-- Data Grid -->
-			<div class="min-h-0 flex-1 overflow-auto">
+			<div class="min-h-0 flex-1 overflow-hidden">
 				<DataGrid
 					{columns}
 					data={tableData}

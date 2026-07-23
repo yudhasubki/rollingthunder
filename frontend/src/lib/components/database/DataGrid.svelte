@@ -13,6 +13,8 @@
 		ArrowUp,
 		ArrowDown,
 		ArrowUpDown,
+		ChevronLeft,
+		ChevronRight,
 		Filter,
 		Loader2,
 		PanelRightOpen,
@@ -20,8 +22,11 @@
 		X
 	} from 'lucide-svelte';
 	import { database } from '$lib/wailsjs/go/models';
+	import DataCellValue from '$lib/components/database/DataCellValue.svelte';
 	import RowDetailDrawer from '$lib/components/database/RowDetailDrawer.svelte';
 	import { getContextMenuPosition } from '$lib/utils/contextMenu';
+	import { getColumnTypeLabel, getDefaultColumnWidth } from '$lib/table/cells';
+	import { getForeignRelation } from '$lib/table/relations';
 	import { getNextSortingState } from '$lib/table/sorting';
 	import { fly } from 'svelte/transition';
 
@@ -36,6 +41,7 @@
 		onSortingChange?: (sorting: SortingState) => void;
 		onAddFilter?: () => void;
 		detailTitle?: string;
+		gridTitle?: string;
 		readonly?: boolean;
 		loading?: boolean;
 		loadingTitle?: string;
@@ -53,6 +59,7 @@
 		onSortingChange,
 		onAddFilter,
 		detailTitle = 'Table row',
+		gridTitle = 'Data rows',
 		readonly = false,
 		loading = false,
 		loadingTitle = 'Loading table data',
@@ -79,6 +86,19 @@
 	let editValue = $state<string>('');
 	let selectedRowIndex = $state<number | null>(null);
 	let previousData = data;
+	let columnWidths = $state<Record<string, number>>({});
+	let resizingColumn = $state<string | null>(null);
+	let resizeStartX = 0;
+	let resizeStartWidth = 0;
+	let resizePointerId: number | null = null;
+
+	const rowNumberWidth = 40;
+	const actionColumnWidth = 36;
+	const tablePixelWidth = $derived(
+		rowNumberWidth +
+			actionColumnWidth +
+			columns.reduce((total, column) => total + getColumnWidth(column), 0)
+	);
 
 	function handleSortClick(event: MouseEvent, column: string) {
 		if (!onSortingChange) return;
@@ -87,6 +107,73 @@
 
 	function getSortIndex(column: string): number {
 		return sorting.findIndex((sort) => sort.id === column);
+	}
+
+	function getColumnWidth(column: database.Structure): number {
+		return (
+			columnWidths[column.name] ?? getDefaultColumnWidth(column.name, getColumnTypeLabel(column))
+		);
+	}
+
+	function getColumnMetadataTitle(column: database.Structure): string {
+		const relation = getForeignRelation(column);
+		const metadata = [getColumnTypeLabel(column)];
+
+		if (column.is_primary) metadata.push('Primary key');
+		if (relation) {
+			const target = `${relation.schema ? `${relation.schema}.` : ''}${relation.table}${
+				relation.column ? `.${relation.column}` : ''
+			}`;
+			metadata.push(`Foreign key → ${target}`);
+		}
+		if (!column.nullable) metadata.push('Required');
+
+		return `${column.name}\n${metadata.join(' · ')}`;
+	}
+
+	function setColumnWidth(column: database.Structure, width: number) {
+		columnWidths = {
+			...columnWidths,
+			[column.name]: Math.min(560, Math.max(96, Math.round(width)))
+		};
+	}
+
+	function startColumnResize(event: PointerEvent, column: database.Structure) {
+		event.preventDefault();
+		event.stopPropagation();
+		resizingColumn = column.name;
+		resizeStartX = event.clientX;
+		resizeStartWidth = getColumnWidth(column);
+		resizePointerId = event.pointerId;
+		(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+	}
+
+	function handleResizePointerMove(event: PointerEvent) {
+		if (!resizingColumn || event.pointerId !== resizePointerId) return;
+		const column = columns.find((candidate) => candidate.name === resizingColumn);
+		if (!column) return;
+		setColumnWidth(column, resizeStartWidth + event.clientX - resizeStartX);
+	}
+
+	function finishColumnResize(event: PointerEvent) {
+		if (event.pointerId !== resizePointerId) return;
+		resizingColumn = null;
+		resizePointerId = null;
+	}
+
+	function resetColumnWidth(event: MouseEvent, column: database.Structure) {
+		event.preventDefault();
+		event.stopPropagation();
+		const nextWidths = { ...columnWidths };
+		delete nextWidths[column.name];
+		columnWidths = nextWidths;
+	}
+
+	function handleResizeKeydown(event: KeyboardEvent, column: database.Structure) {
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		event.preventDefault();
+		event.stopPropagation();
+		setColumnWidth(column, getColumnWidth(column) + (event.key === 'ArrowRight' ? 16 : -16));
 	}
 
 	$effect(() => {
@@ -99,18 +186,20 @@
 	});
 
 	function getRowClass(row: Record<string, any>, rowIndex: number): string {
-		const rowId = row.id || row._id || rowIndex;
-		if (stagedChanges.data.added.some((r: any) => r.id === rowId || r._isNew)) {
+		const rowId = row.id ?? row._id ?? rowIndex;
+		if (
+			row._isNew ||
+			stagedChanges.data.added.some(
+				(candidate: any) =>
+					candidate === row || (!candidate._isNew && (candidate.id ?? candidate._id) === rowId)
+			)
+		)
 			return 'row-added';
-		}
 		if (stagedChanges.data.updated.some((r: any) => r.id === rowId)) {
 			return 'row-updated';
 		}
 		if (stagedChanges.data.deleted.some((r: any) => r.id === rowId)) {
 			return 'row-deleted';
-		}
-		if (selectedRowIndex === rowIndex) {
-			return 'bg-accent';
 		}
 		return '';
 	}
@@ -232,200 +321,341 @@
 	const lastVisibleRow = $derived(Math.min((currentPage + 1) * pageSize, totalRows));
 </script>
 
-<div class="flex h-full min-h-0 flex-col">
-	<!-- Toolbar -->
-	<div class="mb-2 flex h-8 flex-shrink-0 items-center justify-between">
-		<div class="flex items-center gap-2">
-			<span class="text-[10px] font-bold">Data rows</span>
-			<span class="text-muted-foreground text-[9px]">{totalRows.toLocaleString()} total</span>
-			{#if onSortingChange && sorting.length > 0}
-				<span
-					class="bg-muted text-muted-foreground inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[8px] font-semibold"
-					title={sorting
-						.map((sort, index) => `${index + 1}. ${sort.id} ${sort.desc ? 'DESC' : 'ASC'}`)
-						.join('\n')}
-				>
-					{sorting.length === 1
-						? `${sorting[0].id} · ${sorting[0].desc ? 'DESC' : 'ASC'}`
-						: `${sorting.length} sort levels`}
-					<button
-						type="button"
-						class="hover:text-foreground -mr-0.5 inline-flex h-4 w-4 items-center justify-center rounded"
-						onclick={() => onSortingChange?.([])}
-						title="Clear sorting"
-						aria-label="Clear sorting"
-					>
-						<X class="h-2.5 w-2.5" />
-					</button>
-				</span>
-			{/if}
-		</div>
-		<div class="flex items-center gap-1">
-			{#if onAddFilter}
-				<button
-					class="rt-toolbar-button border-border h-7 cursor-pointer gap-1.5 px-2.5 text-[10px] font-semibold"
-					onclick={onAddFilter}
-				>
-					<Filter class="h-3 w-3" />
-					Filter
-				</button>
-			{/if}
-			<button
-				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[10px] disabled:pointer-events-none disabled:opacity-40"
-				disabled={selectedRowIndex === null}
-				onclick={(event) => openSelectedRowDetails(event.currentTarget)}
-				title={selectedRowIndex === null ? 'Select a row to inspect it' : 'Open row details'}
-			>
-				<PanelRightOpen class="h-3 w-3" />
-				Details
-			</button>
-			{#if !readonly}
-				<button
-					class="rt-toolbar-button border-border h-7 cursor-pointer gap-1.5 px-2.5 text-[10px] font-semibold"
-					onclick={addNewRow}
-				>
-					<Plus class="h-3 w-3" />
-					Add row
-				</button>
-				<button
-					class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[10px] disabled:pointer-events-none disabled:opacity-40"
-					disabled={selectedRowIndex === null}
-					onclick={deleteSelectedRow}
-				>
-					<Trash2 class="h-3 w-3" />
-					Delete
-				</button>
-			{/if}
-		</div>
-	</div>
+<svelte:window
+	onpointermove={handleResizePointerMove}
+	onpointerup={finishColumnResize}
+	onpointercancel={finishColumnResize}
+/>
 
-	<!-- Data Grid -->
+<div class="flex h-full min-h-0 flex-col">
 	<div
-		class="max-h-[calc(100vh-300px)] min-h-0 flex-1 overflow-auto rounded-lg border bg-[var(--surface-raised)]"
+		class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-[var(--surface-raised)] shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
 	>
-		<table class="w-full caption-bottom text-xs">
-			<thead class="[&_tr]:border-b">
-				<tr class="border-b">
-					<th class="text-muted-foreground h-9 w-8 px-2 text-left align-middle font-medium">#</th>
-					{#each columns as col (col.name)}
-						<th
-							class="text-muted-foreground h-9 px-3 text-left align-middle font-mono text-[10px] font-medium"
+		<!-- Toolbar -->
+		<div
+			class="flex min-h-12 flex-shrink-0 items-center justify-between gap-4 overflow-x-auto border-b px-3"
+		>
+			<div class="flex shrink-0 items-center gap-2.5">
+				<span
+					class="bg-muted text-muted-foreground flex h-7 w-7 items-center justify-center rounded-md"
+				>
+					<Rows3 class="h-3.5 w-3.5" />
+				</span>
+				<span class="flex flex-col">
+					<span class="text-[10px] leading-tight font-semibold">{gridTitle}</span>
+					<span class="text-muted-foreground mt-0.5 text-[8px] leading-tight"
+						>{totalRows.toLocaleString()} rows</span
+					>
+				</span>
+				{#if onSortingChange && sorting.length > 0}
+					<span
+						class="bg-muted/70 text-muted-foreground inline-flex h-6 max-w-52 items-center gap-1.5 rounded-md px-2 text-[8px] font-medium"
+						title={sorting
+							.map((sort, index) => `${index + 1}. ${sort.id} ${sort.desc ? 'DESC' : 'ASC'}`)
+							.join('\n')}
+					>
+						<span class="truncate">
+							{sorting.length === 1
+								? `${sorting[0].id} · ${sorting[0].desc ? 'DESC' : 'ASC'}`
+								: `${sorting.length} sort levels`}
+						</span>
+						<button
+							type="button"
+							class="hover:text-foreground -mr-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded"
+							onclick={() => onSortingChange?.([])}
+							title="Clear sorting"
+							aria-label="Clear sorting"
 						>
-							{#if onSortingChange}
-								<button
-									type="button"
-									class="group hover:text-foreground flex items-center gap-1 transition-colors"
-									onclick={(event) => handleSortClick(event, col.name)}
-									title="Click to sort · Shift-click to add another column"
-									aria-label={`Sort by ${col.name}`}
-									aria-pressed={getSortIndex(col.name) >= 0}
-								>
-									{col.name}
-									{#if getSortIndex(col.name) >= 0}
-										{#if sorting[getSortIndex(col.name)]?.desc}
-											<ArrowDown class="h-3 w-3" />
-										{:else}
-											<ArrowUp class="h-3 w-3" />
-										{/if}
-										{#if sorting.length > 1}
-											<span
-												class="bg-primary/10 text-primary inline-flex h-3.5 min-w-3.5 items-center justify-center rounded px-1 font-sans text-[7px] font-bold"
-											>
-												{getSortIndex(col.name) + 1}
-											</span>
-										{/if}
-									{:else}
-										<ArrowUpDown
-											class="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-50"
-										/>
-									{/if}
-								</button>
-							{:else}
-								<span>{col.name}</span>
-							{/if}
-						</th>
-					{/each}
-				</tr>
-			</thead>
-			<tbody class="[&_tr:last-child]:border-0">
-				{#if loading}
-					<tr class="hover:!bg-transparent">
-						<td colspan={columns.length + 1} class="h-44 px-6 text-center">
-							<div class="mx-auto flex max-w-sm flex-col items-center">
-								<span
-									class="bg-primary/10 text-primary flex h-10 w-10 items-center justify-center rounded-lg"
-								>
-									<Loader2 class="h-5 w-5 animate-spin" />
-								</span>
-								<p class="mt-3 text-[11px] font-bold">{loadingTitle}</p>
-								<p class="text-muted-foreground mt-1 text-[9px]">{loadingDescription}</p>
-								<div
-									class="rt-loading-progress bg-muted mt-4 h-1 w-full max-w-56 overflow-hidden rounded-full"
-								></div>
-							</div>
-						</td>
-					</tr>
-				{:else if displayData.length === 0}
+							<X class="h-2.5 w-2.5" />
+						</button>
+					</span>
+				{/if}
+			</div>
+
+			<div class="flex shrink-0 items-center gap-1">
+				{#if onAddFilter}
+					<button
+						class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium"
+						onclick={onAddFilter}
+					>
+						<Filter class="h-3 w-3" />
+						Filter
+					</button>
+				{/if}
+				<button
+					class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium disabled:pointer-events-none disabled:opacity-40"
+					disabled={selectedRowIndex === null}
+					onclick={(event) => openSelectedRowDetails(event.currentTarget)}
+					title={selectedRowIndex === null ? 'Select a row to inspect it' : 'Open row details'}
+				>
+					<PanelRightOpen class="h-3 w-3" />
+					Details
+				</button>
+				{#if !readonly}
+					<button
+						class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium"
+						onclick={addNewRow}
+					>
+						<Plus class="h-3 w-3" />
+						Add row
+					</button>
+					<button
+						class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium disabled:pointer-events-none disabled:opacity-40"
+						disabled={selectedRowIndex === null}
+						onclick={deleteSelectedRow}
+					>
+						<Trash2 class="h-3 w-3" />
+						Delete
+					</button>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Data Grid -->
+		<div class="data-grid-scroll min-h-0 flex-1 overflow-auto">
+			<table
+				class="data-grid-table caption-bottom border-separate border-spacing-0 text-xs"
+				style="width: max(100%, {tablePixelWidth}px); table-layout: fixed;"
+			>
+				<thead>
 					<tr>
-						<td colspan={columns.length + 1} class="text-muted-foreground h-28 text-center">
-							<p class="text-[10px] font-semibold">No rows to display</p>
-							<p class="mt-1 text-[9px]">Try adjusting the current filters.</p>
-						</td>
-					</tr>
-				{:else}
-					{#each displayData as row, rowIndex (rowIndex)}
-						<tr
-							class="border-b transition-colors {getRowClass(row, rowIndex)} cursor-pointer"
-							onclick={() => selectRow(rowIndex)}
-							oncontextmenu={(e) => handleContextMenu(e, row, rowIndex)}
+						<th
+							class="column-header-cell frozen-edge frozen-edge--left row-number-cell text-muted-foreground h-9 border-r border-b px-0 text-center align-middle font-mono text-[9px] font-semibold"
+							style="width: {rowNumberWidth}px; min-width: {rowNumberWidth}px; max-width: {rowNumberWidth}px;"
+							aria-label="Row number"
 						>
-							<td class="text-muted-foreground w-8 p-2 text-center align-middle text-[10px]">
-								<button
-									type="button"
-									class="hover:bg-accent hover:text-foreground inline-flex h-6 min-w-6 items-center justify-center rounded px-1 transition-colors"
-									onclick={(event) => {
-										event.stopPropagation();
-										selectedRowIndex = rowIndex;
-										openRowDetails(row, rowIndex, event.currentTarget);
-									}}
-									title="Open row details"
-									aria-label={`Open details for row ${currentPage * pageSize + rowIndex + 1}`}
-								>
-									{currentPage * pageSize + rowIndex + 1}
-								</button>
-							</td>
-							{#each columns as col (col.name)}
-								<td class="p-0 align-middle">
-									{#if editingCell?.rowIndex === rowIndex && editingCell?.colName === col.name}
-										<input
-											class="bg-background focus:ring-primary h-full w-full border-0 px-3 py-2 font-mono text-[11px] outline-none focus:ring-2"
-											value={editValue}
-											oninput={(e) => (editValue = e.currentTarget.value)}
-											onblur={() => saveEdit(row, rowIndex)}
-											onkeydown={(e) => handleKeydown(e, row, rowIndex)}
-										/>
-									{:else}
+							#
+						</th>
+						{#each columns as col (col.name)}
+							{@const sortIndex = getSortIndex(col.name)}
+							<th
+								class="column-header-cell text-muted-foreground relative h-9 border-r border-b p-0 text-left align-middle tracking-normal normal-case"
+								style="width: {getColumnWidth(col)}px;"
+								aria-sort={sortIndex < 0
+									? 'none'
+									: sorting[sortIndex]?.desc
+										? 'descending'
+										: 'ascending'}
+							>
+								<div class="flex h-full min-w-0 items-center px-3 pr-4">
+									{#if onSortingChange}
 										<button
 											type="button"
-											class="hover:bg-accent/70 block w-full px-3 py-2 text-left font-mono text-[11px]"
-											ondblclick={() => startEdit(rowIndex, col.name, row[col.name])}
+											class="group/sort flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
+											onclick={(event) => handleSortClick(event, col.name)}
+											title={`${getColumnMetadataTitle(col)}\nClick to sort · Shift-click to add another column`}
+											aria-label={`Sort by ${col.name}`}
+											aria-pressed={sortIndex >= 0}
 										>
-											<span class="block max-w-48 truncate">
-												{#if row[col.name] !== null && row[col.name] !== undefined}
-													{row[col.name]}
-												{:else}
-													<span class="text-muted-foreground italic">NULL</span>
-												{/if}
+											<span
+												class="text-foreground min-w-0 truncate font-mono text-[9px] font-semibold"
+											>
+												{col.name}
 											</span>
+											{#if sortIndex >= 0}
+												{#if sorting[sortIndex]?.desc}
+													<ArrowDown class="text-primary h-3 w-3 shrink-0" />
+												{:else}
+													<ArrowUp class="text-primary h-3 w-3 shrink-0" />
+												{/if}
+												{#if sorting.length > 1}
+													<span
+														class="bg-primary/10 text-primary inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded px-1 font-sans text-[7px] font-semibold"
+													>
+														{sortIndex + 1}
+													</span>
+												{/if}
+											{:else}
+												<ArrowUpDown
+													class="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/sort:opacity-35"
+												/>
+											{/if}
 										</button>
+									{:else}
+										<span
+											class="text-foreground min-w-0 flex-1 truncate font-mono text-[9px] font-semibold"
+											title={getColumnMetadataTitle(col)}
+										>
+											{col.name}
+										</span>
 									{/if}
-								</td>
-							{/each}
+								</div>
+								<button
+									type="button"
+									class="hover:bg-primary/35 focus:bg-primary/45 absolute inset-y-1 right-0 z-10 w-1.5 cursor-col-resize rounded-full transition-colors focus:outline-none {resizingColumn ===
+									col.name
+										? 'bg-primary/55'
+										: 'bg-transparent'}"
+									onpointerdown={(event) => startColumnResize(event, col)}
+									ondblclick={(event) => resetColumnWidth(event, col)}
+									onkeydown={(event) => handleResizeKeydown(event, col)}
+									aria-label={`Resize ${col.name} column`}
+									title="Drag to resize · Double-click to reset"
+								></button>
+							</th>
+						{/each}
+						<th
+							class="column-header-cell frozen-edge frozen-edge--right detail-action-cell text-muted-foreground h-9 border-b px-0 text-center align-middle"
+							style="width: {actionColumnWidth}px; min-width: {actionColumnWidth}px; max-width: {actionColumnWidth}px;"
+							aria-label="Row actions"
+						>
+							<PanelRightOpen class="mx-auto h-3 w-3 opacity-65" />
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#if loading}
+						<tr class="hover:!bg-transparent">
+							<td colspan={columns.length + 2} class="h-44 px-6 text-center">
+								<div class="mx-auto flex max-w-sm flex-col items-center">
+									<span
+										class="bg-primary/10 text-primary flex h-10 w-10 items-center justify-center rounded-lg"
+									>
+										<Loader2 class="h-5 w-5 animate-spin" />
+									</span>
+									<p class="mt-3 text-[11px] font-semibold">{loadingTitle}</p>
+									<p class="text-muted-foreground mt-1 text-[9px]">{loadingDescription}</p>
+									<div
+										class="rt-loading-progress bg-muted mt-4 h-1 w-full max-w-56 overflow-hidden rounded-full"
+									></div>
+								</div>
+							</td>
 						</tr>
-					{/each}
-				{/if}
-			</tbody>
-		</table>
+					{:else if displayData.length === 0}
+						<tr>
+							<td colspan={columns.length + 2} class="text-muted-foreground h-32 text-center">
+								<div class="mx-auto flex max-w-xs flex-col items-center">
+									<span
+										class="bg-muted flex h-8 w-8 items-center justify-center rounded-md opacity-80"
+									>
+										<Rows3 class="h-3.5 w-3.5" />
+									</span>
+									<p class="text-foreground mt-2.5 text-[10px] font-semibold">No rows to display</p>
+									<p class="mt-1 text-[8px]">The current result set is empty.</p>
+								</div>
+							</td>
+						</tr>
+					{:else}
+						{#each displayData as row, rowIndex (rowIndex)}
+							<tr
+								class="data-row group cursor-pointer transition-colors {getRowClass(row, rowIndex)}"
+								data-selected={selectedRowIndex === rowIndex}
+								aria-selected={selectedRowIndex === rowIndex}
+								onclick={() => selectRow(rowIndex)}
+								oncontextmenu={(event) => handleContextMenu(event, row, rowIndex)}
+							>
+								<td
+									class="frozen-edge frozen-edge--left row-number-cell text-muted-foreground h-10 border-r border-b p-0 text-center align-middle text-[9px]"
+									style="width: {rowNumberWidth}px; min-width: {rowNumberWidth}px; max-width: {rowNumberWidth}px;"
+								>
+									{#if selectedRowIndex === rowIndex}
+										<span
+											class="bg-primary absolute inset-y-1.5 left-0 w-0.5 rounded-r"
+											aria-hidden="true"
+										></span>
+									{/if}
+									<button
+										type="button"
+										class="hover:bg-accent hover:text-foreground inline-flex h-6 min-w-6 items-center justify-center rounded px-1 font-mono tabular-nums transition-colors"
+										onclick={(event) => {
+											event.stopPropagation();
+											selectedRowIndex = rowIndex;
+											openRowDetails(row, rowIndex, event.currentTarget);
+										}}
+										title="Open row details"
+										aria-label={`Open details for row ${currentPage * pageSize + rowIndex + 1}`}
+									>
+										{currentPage * pageSize + rowIndex + 1}
+									</button>
+								</td>
+								{#each columns as col (col.name)}
+									<td
+										class="h-10 overflow-hidden border-r border-b p-0 align-middle"
+										style="width: {getColumnWidth(col)}px;"
+									>
+										{#if editingCell?.rowIndex === rowIndex && editingCell?.colName === col.name}
+											<input
+												class="bg-background focus:ring-primary h-10 w-full border-0 px-3 font-mono text-[10px] outline-none focus:ring-1 focus:ring-inset"
+												value={editValue}
+												oninput={(event) => (editValue = event.currentTarget.value)}
+												onblur={() => saveEdit(row, rowIndex)}
+												onkeydown={(event) => handleKeydown(event, row, rowIndex)}
+											/>
+										{:else}
+											<button
+												type="button"
+												class="hover:bg-accent/45 flex h-10 w-full min-w-0 items-center overflow-hidden px-3 text-left transition-colors"
+												ondblclick={() => !readonly && startEdit(rowIndex, col.name, row[col.name])}
+												title={readonly ? 'Read-only result' : 'Double-click to edit'}
+											>
+												<DataCellValue value={row[col.name]} dataType={getColumnTypeLabel(col)} />
+											</button>
+										{/if}
+									</td>
+								{/each}
+								<td
+									class="frozen-edge frozen-edge--right detail-action-cell h-10 border-b p-0 text-center align-middle"
+									style="width: {actionColumnWidth}px; min-width: {actionColumnWidth}px; max-width: {actionColumnWidth}px;"
+								>
+									<button
+										type="button"
+										class="hover:bg-accent hover:text-foreground inline-flex h-6 w-6 items-center justify-center rounded transition-all {selectedRowIndex ===
+										rowIndex
+											? 'opacity-100'
+											: 'opacity-35 group-hover:opacity-100 focus:opacity-100'}"
+										onclick={(event) => {
+											event.stopPropagation();
+											selectedRowIndex = rowIndex;
+											openRowDetails(row, rowIndex, event.currentTarget);
+										}}
+										title="Open row details"
+										aria-label={`Open details for row ${currentPage * pageSize + rowIndex + 1}`}
+									>
+										<PanelRightOpen class="h-3 w-3" />
+									</button>
+								</td>
+							</tr>
+						{/each}
+					{/if}
+				</tbody>
+			</table>
+		</div>
+
+		<!-- Pagination -->
+		<div class="flex min-h-10 flex-shrink-0 items-center justify-between gap-3 border-t px-3">
+			<span class="text-muted-foreground text-[8px]">
+				Showing
+				<span class="text-foreground font-medium tabular-nums"
+					>{firstVisibleRow.toLocaleString()}–{lastVisibleRow.toLocaleString()}</span
+				>
+				of <span class="tabular-nums">{totalRows.toLocaleString()}</span>
+			</span>
+			<div class="flex items-center gap-1">
+				<span class="text-muted-foreground mr-1 text-[8px] tabular-nums">
+					Page <span class="text-foreground font-medium">{currentPage + 1}</span> of {totalPages}
+				</span>
+				<button
+					type="button"
+					class="rt-toolbar-button h-6 w-6 cursor-pointer p-0 disabled:pointer-events-none disabled:opacity-35"
+					disabled={currentPage === 0}
+					onclick={() => onPageChange(currentPage - 1)}
+					title="Previous page"
+					aria-label="Previous page"
+				>
+					<ChevronLeft class="h-3 w-3" />
+				</button>
+				<button
+					type="button"
+					class="rt-toolbar-button h-6 w-6 cursor-pointer p-0 disabled:pointer-events-none disabled:opacity-35"
+					disabled={currentPage + 1 >= totalPages}
+					onclick={() => onPageChange(currentPage + 1)}
+					title="Next page"
+					aria-label="Next page"
+				>
+					<ChevronRight class="h-3 w-3" />
+				</button>
+			</div>
+		</div>
 	</div>
 
 	<!-- Context Menu -->
@@ -521,35 +751,6 @@
 		></button>
 	{/if}
 
-	<!-- Pagination -->
-	<div class="mt-2 flex h-8 flex-shrink-0 items-center justify-between">
-		<span class="text-muted-foreground text-[10px]">
-			Showing <span class="text-foreground font-semibold"
-				>{firstVisibleRow.toLocaleString()}–{lastVisibleRow.toLocaleString()}</span
-			>
-			of {totalRows.toLocaleString()}
-		</span>
-		<div class="flex items-center gap-1">
-			<button
-				class="rt-toolbar-button h-7 cursor-pointer px-2.5 text-[10px] disabled:pointer-events-none disabled:opacity-40"
-				disabled={currentPage === 0}
-				onclick={() => onPageChange(currentPage - 1)}
-			>
-				Previous
-			</button>
-			<span class="text-muted-foreground px-2 text-[10px]">
-				Page <span class="text-foreground font-semibold">{currentPage + 1}</span> / {totalPages}
-			</span>
-			<button
-				class="rt-toolbar-button h-7 cursor-pointer px-2.5 text-[10px] disabled:pointer-events-none disabled:opacity-40"
-				disabled={currentPage + 1 >= totalPages}
-				onclick={() => onPageChange(currentPage + 1)}
-			>
-				Next
-			</button>
-		</div>
-	</div>
-
 	<RowDetailDrawer
 		open={detailOpen}
 		row={detailRow}
@@ -559,3 +760,96 @@
 		onClose={closeRowDetails}
 	/>
 </div>
+
+<style>
+	.data-grid-scroll {
+		isolation: isolate;
+		scrollbar-gutter: stable;
+	}
+
+	.data-grid-table th {
+		letter-spacing: normal;
+		text-transform: none;
+	}
+
+	.data-grid-table thead {
+		position: -webkit-sticky;
+		position: sticky;
+		top: 0;
+		z-index: 30;
+		background: color-mix(in oklab, var(--surface-sunken) 62%, var(--surface-raised));
+	}
+
+	.data-grid-table .column-header-cell {
+		background: color-mix(in oklab, var(--surface-sunken) 62%, var(--surface-raised));
+	}
+
+	.data-grid-table .frozen-edge {
+		position: -webkit-sticky;
+		position: sticky;
+		background: var(--surface-raised);
+		background-clip: padding-box;
+	}
+
+	.data-grid-table .frozen-edge--left {
+		left: 0;
+		box-shadow:
+			1px 0 0 var(--border),
+			8px 0 14px -13px rgb(0 0 0 / 55%);
+	}
+
+	.data-grid-table .frozen-edge--right {
+		right: 0;
+		box-shadow:
+			-1px 0 0 var(--border),
+			-8px 0 14px -13px rgb(0 0 0 / 55%);
+	}
+
+	.data-grid-table thead .frozen-edge {
+		z-index: 2;
+		background: color-mix(in oklab, var(--surface-sunken) 62%, var(--surface-raised));
+	}
+
+	.data-grid-table tbody .frozen-edge {
+		z-index: 3;
+	}
+
+	.data-grid-table tbody tr.data-row:not(.row-added):not(.row-updated):not(.row-deleted) {
+		background: var(--surface-raised);
+	}
+
+	.data-grid-table
+		tbody
+		tr.data-row:not(.row-added):not(.row-updated):not(.row-deleted)
+		.frozen-edge {
+		background: var(--surface-raised);
+	}
+
+	.data-grid-table tbody tr.row-added .frozen-edge {
+		background: color-mix(in oklab, var(--color-green-500) 10%, var(--surface-raised));
+	}
+
+	.data-grid-table tbody tr.row-updated .frozen-edge {
+		background: color-mix(in oklab, var(--color-yellow-500) 10%, var(--surface-raised));
+	}
+
+	.data-grid-table tbody tr.row-deleted .frozen-edge {
+		background: color-mix(in oklab, var(--color-red-500) 10%, var(--surface-raised));
+	}
+
+	.data-grid-table tbody tr.data-row:hover {
+		background: var(--surface-hover);
+	}
+
+	.data-grid-table tbody tr.data-row:hover .frozen-edge {
+		background: var(--surface-hover);
+	}
+
+	.data-grid-table tbody tr.data-row[data-selected='true'] {
+		background: color-mix(in srgb, var(--primary) 6%, var(--surface-raised));
+	}
+
+	.data-grid-table tbody tr.data-row[data-selected='true'] .frozen-edge {
+		background: color-mix(in srgb, var(--primary) 6%, var(--surface-raised));
+	}
+</style>

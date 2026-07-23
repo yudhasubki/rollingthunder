@@ -518,6 +518,7 @@
 					currentPage={0}
 					pageSize={100}
 					onPageChange={() => {}}
+					gridTitle="Query results"
 					detailTitle="Query result"
 					readonly={true}
 				/>

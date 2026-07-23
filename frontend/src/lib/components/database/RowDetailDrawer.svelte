@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { database } from '$lib/wailsjs/go/models';
+	import { getColumnTypeLabel } from '$lib/table/cells';
 	import { Check, Copy, Database, FileJson2, Rows3, Search, X } from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
@@ -35,11 +36,14 @@
 		return orderedNames
 			.filter((name, index, names) => names.indexOf(name) === index)
 			.filter((name) => !normalizedSearch || name.toLowerCase().includes(normalizedSearch))
-			.map((name) => ({
-				name,
-				type: columnMap.get(name)?.data_type || inferValueType(row[name]),
-				value: row[name]
-			}));
+			.map((name) => {
+				const column = columnMap.get(name);
+				return {
+					name,
+					type: column ? getColumnTypeLabel(column) : inferValueType(row[name]),
+					value: row[name]
+				};
+			});
 	});
 
 	$effect(() => {

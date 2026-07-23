@@ -4,6 +4,8 @@
 	import { database } from '$lib/wailsjs/go/models';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import { getColumnTypeLabel } from '$lib/table/cells';
+	import { getForeignRelation } from '$lib/table/relations';
 	import {
 		AlertCircle,
 		Columns3,
@@ -115,11 +117,11 @@
 
 		for (const source of positionedTables) {
 			source.columns.forEach((column, columnIndex) => {
-				if (!column.foreign_key) return;
-				const match = column.foreign_key.match(/^(.+?)\((.+)\)$/);
-				if (!match) return;
+				const relation = getForeignRelation(column, schema);
+				if (!relation || relation.schema !== schema) return;
 
-				const [, targetTableName, targetColumnName] = match;
+				const targetTableName = relation.table;
+				const targetColumnName = relation.column;
 				const target = tableMap.get(targetTableName);
 				if (!target) return;
 
@@ -428,7 +430,7 @@
 										<span class="flex h-4 w-4 shrink-0 items-center justify-center">
 											{#if column.is_primary}
 												<KeyRound class="h-3 w-3 text-amber-500" />
-											{:else if column.foreign_key}
+											{:else if getForeignRelation(column, schema)}
 												<Link2 class="text-primary h-3 w-3" />
 											{:else}
 												<span class="bg-muted-foreground/35 h-1.5 w-1.5 rounded-full"></span>
@@ -438,7 +440,7 @@
 											{column.name}
 										</span>
 										<span class="text-muted-foreground max-w-20 truncate font-mono text-[7px]">
-											{column.data_type}
+											{getColumnTypeLabel(column)}
 										</span>
 									</div>
 								{/each}

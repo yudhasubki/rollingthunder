@@ -76,6 +76,7 @@ export namespace database {
 	    name: string;
 	    columns: string[];
 	    is_unique: boolean;
+	    is_primary: boolean;
 	    algorithm: string;
 	
 	    static createFrom(source: any = {}) {
@@ -87,6 +88,7 @@ export namespace database {
 	        this.name = source["name"];
 	        this.columns = source["columns"];
 	        this.is_unique = source["is_unique"];
+	        this.is_primary = source["is_primary"];
 	        this.algorithm = source["algorithm"];
 	    }
 	}
@@ -110,11 +112,11 @@ export namespace database {
 	    Column: string;
 	    Direction: string;
 	    Nulls: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Sort(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Column = source["Column"];
@@ -125,6 +127,9 @@ export namespace database {
 	export class Structure {
 	    name: string;
 	    data_type: string;
+	    type_schema?: string;
+	    type_name?: string;
+	    is_enum?: boolean;
 	    length?: number;
 	    nullable: boolean;
 	    default?: string;
@@ -133,6 +138,9 @@ export namespace database {
 	    is_unique?: boolean;
 	    is_autoinc?: boolean;
 	    foreign_key?: string;
+	    foreign_schema?: string;
+	    foreign_table?: string;
+	    foreign_column?: string;
 	    comment?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -143,6 +151,9 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.data_type = source["data_type"];
+	        this.type_schema = source["type_schema"];
+	        this.type_name = source["type_name"];
+	        this.is_enum = source["is_enum"];
 	        this.length = source["length"];
 	        this.nullable = source["nullable"];
 	        this.default = source["default"];
@@ -151,6 +162,9 @@ export namespace database {
 	        this.is_unique = source["is_unique"];
 	        this.is_autoinc = source["is_autoinc"];
 	        this.foreign_key = source["foreign_key"];
+	        this.foreign_schema = source["foreign_schema"];
+	        this.foreign_table = source["foreign_table"];
+	        this.foreign_column = source["foreign_column"];
 	        this.comment = source["comment"];
 	    }
 	}
@@ -175,7 +189,7 @@ export namespace database {
 	        this.Filter = source["Filter"];
 	        this.Sorts = this.convertValues(source["Sorts"], Sort);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -802,3 +816,4 @@ export namespace response {
 	}
 
 }
+

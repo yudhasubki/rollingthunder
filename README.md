@@ -37,9 +37,12 @@
 - Browse PostgreSQL schemas and tables.
 - Search tables and switch schemas.
 - Inspect columns, constraints, relationships, indexes, and table DDL.
+- Identify primary and foreign keys explicitly and open referenced tables directly from Structure.
 - Open an interactive schema diagram.
 - Browse paginated table data with filters and server-side sorting.
 - Use single-column sorting or Shift-click headers for prioritized multi-column sorting.
+- Read typed cell previews with explicit `NULL`, boolean, JSON, date/time, and binary states.
+- Keep row numbers, actions, and headers visible while scrolling, and resize columns when needed.
 - Inspect table rows and query results in a searchable right-side detail drawer.
 - Copy individual field values or the complete row as formatted JSON.
 - Stage row inserts, updates, and deletes before applying them.
