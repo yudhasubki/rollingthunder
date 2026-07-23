@@ -6,9 +6,23 @@
 		stageDataInsert,
 		stagedChanges
 	} from '$lib/stores/staged.svelte';
-	import { Plus, Trash2, Copy, ArrowUp, ArrowDown, Filter, Loader2, Rows3 } from 'lucide-svelte';
+	import {
+		Plus,
+		Trash2,
+		Copy,
+		ArrowUp,
+		ArrowDown,
+		ArrowUpDown,
+		Filter,
+		Loader2,
+		PanelRightOpen,
+		Rows3,
+		X
+	} from 'lucide-svelte';
 	import { database } from '$lib/wailsjs/go/models';
+	import RowDetailDrawer from '$lib/components/database/RowDetailDrawer.svelte';
 	import { getContextMenuPosition } from '$lib/utils/contextMenu';
+	import { getNextSortingState } from '$lib/table/sorting';
 	import { fly } from 'svelte/transition';
 
 	interface Props {
@@ -18,7 +32,10 @@
 		currentPage: number;
 		pageSize: number;
 		onPageChange: (page: number) => void;
+		sorting?: SortingState;
+		onSortingChange?: (sorting: SortingState) => void;
 		onAddFilter?: () => void;
+		detailTitle?: string;
 		readonly?: boolean;
 		loading?: boolean;
 		loadingTitle?: string;
@@ -32,7 +49,10 @@
 		currentPage,
 		pageSize,
 		onPageChange,
+		sorting = [],
+		onSortingChange,
 		onAddFilter,
+		detailTitle = 'Table row',
 		readonly = false,
 		loading = false,
 		loadingTitle = 'Loading table data',
@@ -46,6 +66,10 @@
 	// Track which row is being right-clicked
 	let contextRow = $state<Record<string, any> | null>(null);
 	let contextRowIndex = $state<number | null>(null);
+	let detailOpen = $state(false);
+	let detailRow = $state<Record<string, any> | null>(null);
+	let detailRowIndex = $state<number | null>(null);
+	let detailTrigger: HTMLElement | null = null;
 
 	// Merge staged added rows with existing data for display
 	const displayData = $derived([...stagedChanges.data.added.filter((r: any) => r._isNew), ...data]);
@@ -54,9 +78,25 @@
 	let editingCell = $state<{ rowIndex: number; colName: string } | null>(null);
 	let editValue = $state<string>('');
 	let selectedRowIndex = $state<number | null>(null);
+	let previousData = data;
 
-	// Sorting state
-	let sorting = $state<SortingState>([]);
+	function handleSortClick(event: MouseEvent, column: string) {
+		if (!onSortingChange) return;
+		onSortingChange(getNextSortingState(sorting, column, event.shiftKey));
+	}
+
+	function getSortIndex(column: string): number {
+		return sorting.findIndex((sort) => sort.id === column);
+	}
+
+	$effect(() => {
+		const currentData = data;
+		if (currentData === previousData) return;
+
+		previousData = currentData;
+		selectedRowIndex = null;
+		closeRowDetails(false);
+	});
 
 	function getRowClass(row: Record<string, any>, rowIndex: number): string {
 		const rowId = row.id || row._id || rowIndex;
@@ -143,12 +183,41 @@
 		selectedRowIndex = selectedRowIndex === rowIndex ? null : rowIndex;
 	}
 
+	function openRowDetails(
+		row: Record<string, any>,
+		rowIndex: number,
+		trigger?: HTMLElement | null
+	) {
+		detailRow = row;
+		detailRowIndex = rowIndex;
+		detailTrigger = trigger || null;
+		detailOpen = true;
+		closeContextMenu();
+	}
+
+	function openSelectedRowDetails(trigger: HTMLElement) {
+		if (selectedRowIndex === null || !displayData[selectedRowIndex]) return;
+		openRowDetails(displayData[selectedRowIndex], selectedRowIndex, trigger);
+	}
+
+	function closeRowDetails(restoreFocus = true) {
+		detailOpen = false;
+		detailRow = null;
+		detailRowIndex = null;
+
+		const trigger = detailTrigger;
+		detailTrigger = null;
+		if (restoreFocus && trigger?.isConnected) {
+			requestAnimationFrame(() => trigger.focus());
+		}
+	}
+
 	function handleContextMenu(e: MouseEvent, row: Record<string, any>, rowIndex: number) {
 		e.preventDefault();
 		contextRow = row;
 		contextRowIndex = rowIndex;
 		selectedRowIndex = rowIndex;
-		menuPosition = getContextMenuPosition(e, 236, readonly ? 126 : 210);
+		menuPosition = getContextMenuPosition(e, 236, readonly ? 164 : 248);
 		contextMenuOpen = true;
 	}
 
@@ -169,6 +238,27 @@
 		<div class="flex items-center gap-2">
 			<span class="text-[10px] font-bold">Data rows</span>
 			<span class="text-muted-foreground text-[9px]">{totalRows.toLocaleString()} total</span>
+			{#if onSortingChange && sorting.length > 0}
+				<span
+					class="bg-muted text-muted-foreground inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[8px] font-semibold"
+					title={sorting
+						.map((sort, index) => `${index + 1}. ${sort.id} ${sort.desc ? 'DESC' : 'ASC'}`)
+						.join('\n')}
+				>
+					{sorting.length === 1
+						? `${sorting[0].id} · ${sorting[0].desc ? 'DESC' : 'ASC'}`
+						: `${sorting.length} sort levels`}
+					<button
+						type="button"
+						class="hover:text-foreground -mr-0.5 inline-flex h-4 w-4 items-center justify-center rounded"
+						onclick={() => onSortingChange?.([])}
+						title="Clear sorting"
+						aria-label="Clear sorting"
+					>
+						<X class="h-2.5 w-2.5" />
+					</button>
+				</span>
+			{/if}
 		</div>
 		<div class="flex items-center gap-1">
 			{#if onAddFilter}
@@ -180,6 +270,15 @@
 					Filter
 				</button>
 			{/if}
+			<button
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[10px] disabled:pointer-events-none disabled:opacity-40"
+				disabled={selectedRowIndex === null}
+				onclick={(event) => openSelectedRowDetails(event.currentTarget)}
+				title={selectedRowIndex === null ? 'Select a row to inspect it' : 'Open row details'}
+			>
+				<PanelRightOpen class="h-3 w-3" />
+				Details
+			</button>
 			{#if !readonly}
 				<button
 					class="rt-toolbar-button border-border h-7 cursor-pointer gap-1.5 px-2.5 text-[10px] font-semibold"
@@ -212,31 +311,38 @@
 						<th
 							class="text-muted-foreground h-9 px-3 text-left align-middle font-mono text-[10px] font-medium"
 						>
-							<button
-								type="button"
-								class="hover:text-foreground flex items-center gap-1"
-								onclick={() => {
-									const existing = sorting.find((s) => s.id === col.name);
-									if (existing) {
-										if (existing.desc) {
-											sorting = sorting.filter((s) => s.id !== col.name);
-										} else {
-											sorting = sorting.map((s) => (s.id === col.name ? { ...s, desc: true } : s));
-										}
-									} else {
-										sorting = [...sorting, { id: col.name, desc: false }];
-									}
-								}}
-							>
-								{col.name}
-								{#if sorting.find((s) => s.id === col.name)}
-									{#if sorting.find((s) => s.id === col.name)?.desc}
-										<ArrowDown class="h-3 w-3" />
+							{#if onSortingChange}
+								<button
+									type="button"
+									class="group hover:text-foreground flex items-center gap-1 transition-colors"
+									onclick={(event) => handleSortClick(event, col.name)}
+									title="Click to sort · Shift-click to add another column"
+									aria-label={`Sort by ${col.name}`}
+									aria-pressed={getSortIndex(col.name) >= 0}
+								>
+									{col.name}
+									{#if getSortIndex(col.name) >= 0}
+										{#if sorting[getSortIndex(col.name)]?.desc}
+											<ArrowDown class="h-3 w-3" />
+										{:else}
+											<ArrowUp class="h-3 w-3" />
+										{/if}
+										{#if sorting.length > 1}
+											<span
+												class="bg-primary/10 text-primary inline-flex h-3.5 min-w-3.5 items-center justify-center rounded px-1 font-sans text-[7px] font-bold"
+											>
+												{getSortIndex(col.name) + 1}
+											</span>
+										{/if}
 									{:else}
-										<ArrowUp class="h-3 w-3" />
+										<ArrowUpDown
+											class="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-50"
+										/>
 									{/if}
-								{/if}
-							</button>
+								</button>
+							{:else}
+								<span>{col.name}</span>
+							{/if}
 						</th>
 					{/each}
 				</tr>
@@ -274,7 +380,19 @@
 							oncontextmenu={(e) => handleContextMenu(e, row, rowIndex)}
 						>
 							<td class="text-muted-foreground w-8 p-2 text-center align-middle text-[10px]">
-								{currentPage * pageSize + rowIndex + 1}
+								<button
+									type="button"
+									class="hover:bg-accent hover:text-foreground inline-flex h-6 min-w-6 items-center justify-center rounded px-1 transition-colors"
+									onclick={(event) => {
+										event.stopPropagation();
+										selectedRowIndex = rowIndex;
+										openRowDetails(row, rowIndex, event.currentTarget);
+									}}
+									title="Open row details"
+									aria-label={`Open details for row ${currentPage * pageSize + rowIndex + 1}`}
+								>
+									{currentPage * pageSize + rowIndex + 1}
+								</button>
 							</td>
 							{#each columns as col (col.name)}
 								<td class="p-0 align-middle">
@@ -328,6 +446,18 @@
 					<span class="rt-context-meta">Data row actions</span>
 				</span>
 			</div>
+			<button
+				type="button"
+				class="rt-context-item"
+				onclick={(event) => openRowDetails(contextRow, contextRowIndex, event.currentTarget)}
+				role="menuitem"
+			>
+				<span class="rt-context-item-icon">
+					<PanelRightOpen class="h-3.5 w-3.5" />
+				</span>
+				<span class="rt-context-label">View row details</span>
+				<span class="text-muted-foreground text-[9px] font-semibold">Drawer</span>
+			</button>
 			<button
 				type="button"
 				class="rt-context-item"
@@ -419,4 +549,13 @@
 			</button>
 		</div>
 	</div>
+
+	<RowDetailDrawer
+		open={detailOpen}
+		row={detailRow}
+		{columns}
+		rowNumber={detailRowIndex === null ? null : currentPage * pageSize + detailRowIndex + 1}
+		title={detailTitle}
+		onClose={closeRowDetails}
+	/>
 </div>

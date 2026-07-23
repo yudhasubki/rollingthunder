@@ -236,14 +236,26 @@ func (p *Postgres) GetConstraints(table database.Table) (Constraints, error) {
 func (p *Postgres) getCollectionStructures(table database.Table) (Columns, error) {
 	var (
 		query = `SELECT
-			column_name,
-			data_type,
-			is_nullable,
-			character_maximum_length,
-			column_default
-		FROM information_schema.columns
-		WHERE table_schema = $1 AND table_name = $2
-		ORDER BY ordinal_position`
+			c.column_name,
+			c.data_type,
+			c.is_nullable,
+			c.character_maximum_length,
+			c.column_default,
+			EXISTS (
+				SELECT 1
+				FROM information_schema.table_constraints tc
+				JOIN information_schema.key_column_usage kcu
+					ON tc.constraint_catalog = kcu.constraint_catalog
+					AND tc.constraint_schema = kcu.constraint_schema
+					AND tc.constraint_name = kcu.constraint_name
+				WHERE tc.constraint_type = 'PRIMARY KEY'
+					AND tc.table_schema = c.table_schema
+					AND tc.table_name = c.table_name
+					AND kcu.column_name = c.column_name
+			) AS is_primary
+		FROM information_schema.columns c
+		WHERE c.table_schema = $1 AND c.table_name = $2
+		ORDER BY c.ordinal_position`
 	)
 
 	var rows Columns
@@ -331,7 +343,10 @@ func (p *Postgres) GetDatabaseInfo() (database.Info, error) {
 
 func (p *Postgres) CountCollectionData(table database.Table) (int, error) {
 	var result int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", table.Schema, table.Name)
+	query := fmt.Sprintf(
+		"SELECT COUNT(*) FROM %s",
+		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
+	)
 	if table.Filter != "" {
 		query += fmt.Sprintf(" WHERE %s", table.Filter)
 	}
@@ -340,16 +355,12 @@ func (p *Postgres) CountCollectionData(table database.Table) (int, error) {
 }
 
 func (p *Postgres) GetCollectionData(table database.Table) (database.Structures, []map[string]interface{}, error) {
-	query := fmt.Sprintf(`SELECT * FROM %s.%s`, table.Schema, table.Name)
-	if table.Filter != "" {
-		query += fmt.Sprintf(" WHERE %s", table.Filter)
+	if table.Limit < 0 {
+		return nil, nil, fmt.Errorf("table limit cannot be negative")
 	}
-	query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
-	rows, err := p.conn.Queryx(query)
-	if err != nil {
-		return nil, nil, err
+	if table.Offset < 0 {
+		return nil, nil, fmt.Errorf("table offset cannot be negative")
 	}
-	defer rows.Close()
 
 	columns, err := p.getCollectionStructures(table)
 	if err != nil {
@@ -359,20 +370,45 @@ func (p *Postgres) GetCollectionData(table database.Table) (database.Structures,
 	structures := make(database.Structures, 0, len(columns))
 	for _, column := range columns {
 		dataType := column.DataType
-		if v, exist := Types[dataType]; exist {
-			dataType = v
+		if value, exists := Types[dataType]; exists {
+			dataType = value
+		}
+		primaryLabel := ""
+		if column.IsPrimary {
+			primaryLabel = "PRI"
 		}
 
-		structure := database.Structure{
-			Name:      column.ColumnName,
-			DataType:  dataType,
-			Length:    column.MaxLength,
-			Nullable:  column.IsNullable == "YES",
-			Default:   column.ColumnDefault,
-			IsAutoInc: column.ColumnDefault != nil && strings.HasPrefix(*column.ColumnDefault, "nextval("),
-		}
-		structures = append(structures, structure)
+		structures = append(structures, database.Structure{
+			Name:           column.ColumnName,
+			DataType:       dataType,
+			Length:         column.MaxLength,
+			Nullable:       column.IsNullable == "YES",
+			Default:        column.ColumnDefault,
+			IsPrimary:      column.IsPrimary,
+			IsPrimaryLabel: primaryLabel,
+			IsAutoInc:      column.ColumnDefault != nil && strings.HasPrefix(*column.ColumnDefault, "nextval("),
+		})
 	}
+
+	orderClause, err := buildPostgresOrderClause(table.Sorts, structures)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	query := fmt.Sprintf(
+		`SELECT * FROM %s`,
+		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
+	)
+	if table.Filter != "" {
+		query += fmt.Sprintf(" WHERE %s", table.Filter)
+	}
+	query += orderClause
+	query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
+	rows, err := p.conn.Queryx(query)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
 
 	var results []map[string]interface{}
 	for rows.Next() {
@@ -382,8 +418,11 @@ func (p *Postgres) GetCollectionData(table database.Table) (database.Structures,
 		}
 		results = append(results, row)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("error reading rows: %w", err)
+	}
 
-	return structures, results, err
+	return structures, results, nil
 }
 
 // InsertRow inserts a new row into the table

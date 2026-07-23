@@ -6,6 +6,7 @@ type Column struct {
 	IsNullable    string  `db:"is_nullable"`
 	MaxLength     *int    `db:"character_maximum_length"`
 	ColumnDefault *string `db:"column_default"`
+	IsPrimary     bool    `db:"is_primary"`
 }
 
 type Columns []Column

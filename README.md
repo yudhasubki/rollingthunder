@@ -38,7 +38,10 @@
 - Search tables and switch schemas.
 - Inspect columns, constraints, relationships, indexes, and table DDL.
 - Open an interactive schema diagram.
-- Browse paginated table data and apply filters.
+- Browse paginated table data with filters and server-side sorting.
+- Use single-column sorting or Shift-click headers for prioritized multi-column sorting.
+- Inspect table rows and query results in a searchable right-side detail drawer.
+- Copy individual field values or the complete row as formatted JSON.
 - Stage row inserts, updates, and deletes before applying them.
 - Create, truncate, and drop tables with confirmation.
 - Keep table, query, diagram, and create-table tabs open together.
@@ -71,9 +74,8 @@ user-facing only after the corresponding database drivers ship.
 Rolling Thunder currently has a table-first object explorer. It does not yet expose database views,
 materialized views, functions, procedures, triggers, sequences, or custom types.
 
-Table headers show the intended sorting interaction, but a stable server-side sorting pipeline is
-not implemented yet. Exporting table data or query results to CSV, JSON, or SQL is also not
-available. These are prioritized in the [project roadmap](ROADMAP.md).
+Exporting table data or query results to CSV, JSON, or SQL is not available yet. This is the next
+data-workflow priority in the [project roadmap](ROADMAP.md).
 
 Other important limitations include:
 
@@ -126,7 +128,7 @@ wails build
 go test ./...
 
 cd frontend
-npm run test:sql
+npm test
 npm run build
 ```
 

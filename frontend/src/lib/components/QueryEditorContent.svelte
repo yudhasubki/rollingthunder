@@ -518,6 +518,7 @@
 					currentPage={0}
 					pageSize={100}
 					onPageChange={() => {}}
+					detailTitle="Query result"
 					readonly={true}
 				/>
 			</div>

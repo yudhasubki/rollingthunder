@@ -12,6 +12,8 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Schema diagram
 - [x] Staged row insert, update, and delete workflows
 - [x] Table creation, truncation, and deletion
+- [x] Stable PostgreSQL server-side sorting with multi-column priority
+- [x] Searchable row-detail drawer for table data and query results
 - [x] Multi-tab workspace with query history
 - [x] Context-aware SQL completion for schemas, tables, aliases, and columns
 - [x] PostgreSQL, MySQL, and SQLite keyword/function completion catalogs
@@ -25,12 +27,12 @@ This milestone closes the biggest gaps in daily table and query-result work.
 
 ### Server-side sorting
 
-- [ ] Add a typed sort model to the database-driver interface.
-- [ ] Support single and multi-column sorting.
-- [ ] Preserve sorting while filtering and paginating.
-- [ ] Handle `NULLS FIRST` / `NULLS LAST` where an engine supports it.
-- [ ] Quote identifiers through the active driver instead of concatenating raw SQL.
-- [ ] Show active sort order and priority in the data-grid header.
+- [x] Add a typed sort model to the database-driver interface.
+- [x] Support single and multi-column sorting.
+- [x] Preserve sorting while filtering and paginating.
+- [x] Handle `NULLS FIRST` / `NULLS LAST` where an engine supports it.
+- [x] Quote identifiers through the active driver instead of concatenating raw SQL.
+- [x] Show active sort order and priority in the data-grid header.
 
 Sorting is complete when changing pages cannot reorder rows unpredictably and every driver has
 explicit, tested ordering behavior.

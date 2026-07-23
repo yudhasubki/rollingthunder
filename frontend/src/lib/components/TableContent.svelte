@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { createTabs, melt } from '@melt-ui/svelte';
+	import type { SortingState } from '@tanstack/table-core';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import { database } from '$lib/wailsjs/go/models';
@@ -56,6 +57,7 @@
 	let isLoadingStructure = $state(false);
 	let filters = $state<FilterCondition[]>([]);
 	let appliedFilters = $state<FilterCondition[]>([]);
+	let sorting = $state<SortingState>([]);
 	const primaryKeyCount = $derived(columns.filter((column) => column.is_primary).length);
 	const relationCount = $derived(columns.filter((column) => column.foreign_key).length);
 	const nullableCount = $derived(columns.filter((column) => column.nullable).length);
@@ -66,6 +68,8 @@
 
 	// Track last loaded state to prevent duplicate loads
 	let lastLoadKey = '';
+	let activeTableKey = '';
+	let dataRequestVersion = 0;
 
 	const tableLimit = 100;
 	let currentPage = $state(0);
@@ -117,7 +121,13 @@
 		if (!activeTab || activeTab.kind !== 'table') return;
 
 		updateStatus('', 'info');
-		currentPage = 0;
+		const nextTableKey = `${activeTab.schema}.${activeTab.table}`;
+		if (activeTableKey !== nextTableKey) {
+			activeTableKey = nextTableKey;
+			currentPage = 0;
+			sorting = [];
+			lastLoadKey = '';
+		}
 
 		const loadStructure = async () => {
 			isLoadingStructure = true;
@@ -154,8 +164,11 @@
 		const page = currentPage;
 		const activeTab = tabsStore.activeTab;
 		const currentFilters = appliedFilters;
+		const currentSorting = sorting;
 
 		if (tab !== 'data' || !activeTab || activeTab.kind !== 'table') {
+			dataRequestVersion += 1;
+			isLoadingData = false;
 			return;
 		}
 
@@ -164,7 +177,8 @@
 
 		// Create a key from current load parameters
 		const filterKey = JSON.stringify(currentFilters.filter((f) => f.enabled));
-		const loadKey = `${schemaName}.${tableName}:${page}:${filterKey}`;
+		const sortKey = JSON.stringify(currentSorting);
+		const loadKey = `${schemaName}.${tableName}:${page}:${filterKey}:${sortKey}`;
 
 		// Skip if we already loaded this exact state
 		if (loadKey === lastLoadKey) {
@@ -195,6 +209,7 @@
 		};
 
 		const doLoadData = async () => {
+			const requestVersion = ++dataRequestVersion;
 			lastLoadKey = loadKey; // Set before async to prevent re-entry
 			isLoadingData = true;
 			const startedAt = performance.now();
@@ -209,8 +224,17 @@
 				reqTable.Limit = tableLimit;
 				reqTable.Offset = offset;
 				reqTable.Filter = buildFilterClause();
+				reqTable.Sorts = currentSorting.map(
+					(sort) =>
+						new database.Sort({
+							Column: sort.id,
+							Direction: sort.desc ? 'desc' : 'asc',
+							Nulls: 'last'
+						})
+				);
 
 				const totalRes = await CountCollectionData(reqTable);
+				if (requestVersion !== dataRequestVersion) return;
 				if (totalRes.errors?.length) throw new Error(totalRes.errors[0].detail);
 
 				tableTotalData = totalRes.data || 0;
@@ -228,6 +252,7 @@
 				);
 
 				const dataRes = await GetCollectionData(reqTable);
+				if (requestVersion !== dataRequestVersion) return;
 
 				if (dataRes.errors?.length) throw new Error(dataRes.errors[0].detail);
 
@@ -238,11 +263,14 @@
 					'success'
 				);
 			} catch (e: any) {
+				if (requestVersion !== dataRequestVersion) return;
 				console.error('[TableContent] Error loading data:', e);
 				updateStatus(e?.message ?? 'Failed fetching data', 'error');
 				lastLoadKey = ''; // Reset on error to allow retry
 			} finally {
-				isLoadingData = false;
+				if (requestVersion === dataRequestVersion) {
+					isLoadingData = false;
+				}
 			}
 		};
 
@@ -251,6 +279,11 @@
 
 	function handlePageChange(page: number) {
 		currentPage = page;
+	}
+
+	function handleSortingChange(nextSorting: SortingState) {
+		sorting = nextSorting;
+		currentPage = 0;
 	}
 
 	// Load DDL when DDL tab is selected
@@ -601,8 +634,13 @@
 					totalRows={tableTotalData}
 					{currentPage}
 					pageSize={tableLimit}
+					{sorting}
 					onPageChange={handlePageChange}
+					onSortingChange={handleSortingChange}
 					onAddFilter={addFilter}
+					detailTitle={tabsStore.activeTab?.kind === 'table'
+						? `${tabsStore.activeTab.schema}.${tabsStore.activeTab.table}`
+						: 'Table row'}
 					loading={isLoadingData}
 					loadingTitle={dataLoadingTitle}
 					loadingDescription={dataLoadingDescription}
