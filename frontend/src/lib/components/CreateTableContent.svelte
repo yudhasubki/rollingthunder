@@ -226,30 +226,41 @@
 
 <div class="flex h-full flex-col overflow-hidden">
 	<!-- Header -->
-	<div class="bg-muted/30 flex items-center gap-3 border-b px-4 py-3">
-		<Table2 class="text-primary h-5 w-5" />
-		<h1 class="text-lg font-semibold">Create New Table</h1>
-		<span class="text-muted-foreground text-sm">in {schema}</span>
+	<div class="flex h-12 shrink-0 items-center gap-3 border-b bg-[var(--surface-raised)] px-4">
+		<span class="bg-primary/10 text-primary flex h-8 w-8 items-center justify-center rounded-lg">
+			<Table2 class="h-4 w-4" />
+		</span>
+		<div>
+			<h1 class="text-xs font-bold">Create new table</h1>
+			<p class="text-muted-foreground mt-0.5 font-mono text-[9px]">{schema}</p>
+		</div>
 		{#if !isValid}
-			<span class="text-muted-foreground ml-auto text-xs"
-				>Fill table name and at least one column to enable Apply</span
+			<span class="text-muted-foreground ml-auto text-[9px]"
+				>Add a table name and at least one valid column</span
 			>
 		{/if}
 	</div>
 
 	<!-- Content -->
-	<div class="flex-1 overflow-auto p-4">
-		<div class="mx-auto max-w-4xl space-y-6">
+	<div class="flex-1 overflow-auto bg-[var(--background)] p-4">
+		<div class="mx-auto max-w-4xl space-y-3">
 			<!-- Table Name -->
-			<div class="rounded-lg border p-4">
-				<label class="mb-2 block text-sm font-medium">Table Name</label>
+			<div class="rounded-lg border bg-[var(--surface-raised)] p-4 shadow-sm">
+				<div class="mb-3">
+					<label for="new-table-name" class="block text-xs font-bold">Table name</label>
+					<p class="text-muted-foreground mt-0.5 text-[9px]">
+						Choose a clear, schema-friendly name.
+					</p>
+				</div>
 				<div class="flex items-center gap-2">
-					<span class="text-muted-foreground bg-muted rounded px-2 py-1.5 font-mono text-sm"
+					<span
+						class="text-muted-foreground bg-muted flex h-9 items-center rounded-md border px-2.5 font-mono text-xs"
 						>{schema}.</span
 					>
 					<input
+						id="new-table-name"
 						type="text"
-						class="border-input bg-background focus:ring-primary h-9 flex-1 rounded-md border px-3 font-mono text-sm focus:outline-none focus:ring-2"
+						class="rt-input h-9 flex-1 px-3 font-mono text-xs"
 						placeholder="my_table_name"
 						bind:value={tableName}
 						autocapitalize="off"
@@ -260,41 +271,43 @@
 			</div>
 
 			<!-- Columns -->
-			<div class="rounded-lg border p-4">
-				<div class="mb-4 flex items-center justify-between">
-					<label class="text-sm font-medium">Columns</label>
+			<div class="overflow-hidden rounded-lg border bg-[var(--surface-raised)] shadow-sm">
+				<div class="flex h-11 items-center justify-between border-b px-4">
+					<div>
+						<span class="text-xs font-bold">Columns</span>
+						<span class="text-muted-foreground ml-1.5 text-[9px]">{columns.length} defined</span>
+					</div>
 					<button
 						type="button"
-						class="bg-primary/10 text-primary hover:bg-primary/20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors"
+						class="bg-primary/10 text-primary hover:bg-primary/20 inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--brand-border)] px-2.5 text-[10px] font-bold transition-colors"
 						onclick={addColumn}
 					>
-						<Plus class="h-4 w-4" />
-						Add Column
+						<Plus class="h-3 w-3" />
+						Add column
 					</button>
 				</div>
 
 				<!-- Column Table -->
 				<div class="overflow-x-auto">
-					<table class="w-full text-sm">
+					<table class="w-full text-xs">
 						<thead>
 							<tr class="border-b">
-								<th class="px-2 py-2 text-left font-medium">Name</th>
-								<th class="px-2 py-2 text-left font-medium">Type</th>
-								<th class="px-2 py-2 text-left font-medium">Default</th>
-								<th class="px-2 py-2 text-center font-medium" title="Allow NULL values">Nullable</th
-								>
-								<th class="px-2 py-2 text-center font-medium" title="Primary Key">PK</th>
-								<th class="px-2 py-2 text-center font-medium">Unique</th>
+								<th class="h-9 px-3 text-left font-medium">Name</th>
+								<th class="h-9 px-3 text-left font-medium">Type</th>
+								<th class="h-9 px-3 text-left font-medium">Default</th>
+								<th class="h-9 px-3 text-center font-medium" title="Allow NULL values">Nullable</th>
+								<th class="h-9 px-3 text-center font-medium" title="Primary Key">PK</th>
+								<th class="h-9 px-3 text-center font-medium">Unique</th>
 								<th class="w-10"></th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each columns as col (col.id)}
 								<tr class="border-b last:border-0">
-									<td class="px-2 py-2">
+									<td class="px-3 py-2">
 										<input
 											type="text"
-											class="border-input bg-background focus:ring-primary h-8 w-full min-w-32 rounded-md border px-2 font-mono text-sm focus:outline-none focus:ring-1"
+											class="rt-input h-8 w-full min-w-32 px-2 font-mono text-[11px]"
 											placeholder="column_name"
 											bind:value={col.name}
 											autocapitalize="off"
@@ -302,7 +315,7 @@
 											spellcheck="false"
 										/>
 									</td>
-									<td class="px-2 py-2">
+									<td class="px-3 py-2">
 										<div class="flex items-center gap-1">
 											<div class="min-w-32">
 												<DataTypeSelect
@@ -315,7 +328,7 @@
 												<span class="text-muted-foreground">(</span>
 												<input
 													type="text"
-													class="border-input bg-background focus:ring-primary h-8 w-16 rounded-md border px-2 text-center font-mono text-sm focus:outline-none focus:ring-1"
+													class="rt-input h-8 w-16 px-2 text-center font-mono text-[11px]"
 													placeholder="255"
 													bind:value={col.size}
 													autocapitalize="off"
@@ -326,10 +339,10 @@
 											{/if}
 										</div>
 									</td>
-									<td class="px-2 py-2">
+									<td class="px-3 py-2">
 										<input
 											type="text"
-											class="border-input bg-background focus:ring-primary h-8 w-full min-w-24 rounded-md border px-2 font-mono text-xs focus:outline-none focus:ring-1"
+											class="rt-input h-8 w-full min-w-24 px-2 font-mono text-[11px]"
 											placeholder="NULL"
 											bind:value={col.defaultValue}
 											autocapitalize="off"
@@ -337,7 +350,7 @@
 											spellcheck="false"
 										/>
 									</td>
-									<td class="px-2 py-2 text-center">
+									<td class="px-3 py-2 text-center">
 										<input
 											type="checkbox"
 											class="accent-primary h-4 w-4 rounded disabled:opacity-50"
@@ -345,7 +358,7 @@
 											disabled={col.primaryKey}
 										/>
 									</td>
-									<td class="px-2 py-2 text-center">
+									<td class="px-3 py-2 text-center">
 										<input
 											type="checkbox"
 											class="accent-primary h-4 w-4 rounded"
@@ -353,14 +366,14 @@
 											onchange={(e) => setPrimaryKey(col.id, e.currentTarget.checked)}
 										/>
 									</td>
-									<td class="px-2 py-2 text-center">
+									<td class="px-3 py-2 text-center">
 										<input
 											type="checkbox"
 											class="accent-primary h-4 w-4 rounded"
 											bind:checked={col.unique}
 										/>
 									</td>
-									<td class="px-2 py-2">
+									<td class="px-3 py-2">
 										<button
 											type="button"
 											class="hover:bg-destructive/10 hover:text-destructive inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-30"
@@ -378,9 +391,11 @@
 				</div>
 
 				<!-- Help text -->
-				<div class="bg-muted/50 text-muted-foreground mt-4 rounded-md p-3 text-xs">
-					<p><strong>Tips:</strong></p>
-					<ul class="mt-1 list-inside list-disc space-y-0.5">
+				<div
+					class="text-muted-foreground border-t bg-[var(--surface-sunken)] px-4 py-3 text-[10px]"
+				>
+					<p class="font-bold">Quick tips</p>
+					<ul class="mt-1 list-inside list-disc space-y-0.5 leading-relaxed">
 						<li>
 							Use <code class="bg-muted rounded px-1">serial</code> or
 							<code class="bg-muted rounded px-1">bigserial</code> for auto-increment IDs

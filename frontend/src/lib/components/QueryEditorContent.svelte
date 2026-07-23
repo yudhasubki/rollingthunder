@@ -24,6 +24,7 @@
 	let editorContainer: HTMLDivElement;
 	let editor: Monaco.editor.IStandaloneCodeEditor | null = null;
 	let monaco: typeof Monaco | null = null;
+	let themeObserver: MutationObserver | null = null;
 
 	let isRunning = $state(false);
 	let queryResults = $state<Record<string, any>[]>([]);
@@ -94,19 +95,31 @@
 			activeTab?.sql ||
 			'-- Write your SQL query here\n-- Use semicolons to separate multiple queries\n-- Select text to run only that portion\n\nSELECT * FROM ';
 
-		// Create editor with dark theme
+		const editorTheme = document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs';
+
 		editor = monaco.editor.create(editorContainer, {
 			value: initialSql,
 			language: 'sql',
-			theme: 'vs-dark',
+			theme: editorTheme,
 			minimap: { enabled: false },
-			fontSize: 14,
+			fontSize: 12,
 			fontFamily: 'JetBrains Mono, monospace',
+			lineHeight: 20,
 			lineNumbers: 'on',
 			automaticLayout: true,
 			scrollBeyondLastLine: false,
 			wordWrap: 'on',
 			padding: { top: 8, bottom: 8 }
+		});
+
+		themeObserver = new MutationObserver(() => {
+			monaco?.editor.setTheme(
+				document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs'
+			);
+		});
+		themeObserver.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['class']
 		});
 
 		// Add keyboard shortcut for run (Ctrl+Enter or Cmd+Enter)
@@ -116,6 +129,7 @@
 	});
 
 	onDestroy(() => {
+		themeObserver?.disconnect();
 		editor?.dispose();
 	});
 
@@ -306,32 +320,37 @@
 	}
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+<div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)] p-3">
 	<!-- Toolbar -->
-	<div class="mb-2 flex items-center justify-between">
+	<div class="mb-2 flex h-8 shrink-0 items-center justify-between">
 		<div class="flex items-center gap-2">
-			<h3 class="text-sm font-medium">SQL Query</h3>
-			<span class="text-muted-foreground text-xs"> (select text to run specific query) </span>
+			<span class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-md">
+				<Play class="h-3 w-3" fill="currentColor" />
+			</span>
+			<div>
+				<h3 class="text-[11px] font-bold">SQL editor</h3>
+				<p class="text-muted-foreground text-[9px]">Select a statement to run it in isolation</p>
+			</div>
 		</div>
-		<div class="flex items-center gap-2">
+		<div class="flex items-center gap-1">
 			<button
-				class="hover:bg-accent hover:text-accent-foreground border-input inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border bg-transparent px-3 text-sm transition-colors"
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[10px]"
 				onclick={() => (showHistory = !showHistory)}
 			>
-				<History class="h-3.5 w-3.5" />
+				<History class="h-3 w-3" />
 				History
 			</button>
 			<button
-				class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50"
+				class="rt-primary-button inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[10px] font-bold disabled:pointer-events-none disabled:opacity-50"
 				onclick={handleRun}
 				disabled={isRunning}
 			>
 				{#if isRunning}
-					<Loader2 class="h-3.5 w-3.5 animate-spin" />
-					Running...
+					<Loader2 class="h-3 w-3 animate-spin" />
+					Running…
 				{:else}
-					<Play class="h-3.5 w-3.5" />
-					Run <span class="text-primary-foreground/70 text-xs">(Ctrl+Enter)</span>
+					<Play class="h-3 w-3" fill="currentColor" />
+					Run <span class="text-primary-foreground/70 text-[9px]">⌘ ↵</span>
 				{/if}
 			</button>
 		</div>
@@ -339,9 +358,11 @@
 
 	<!-- History Panel (slide-out) -->
 	{#if showHistory}
-		<div class="bg-muted/30 mb-2 max-h-60 overflow-auto rounded-lg border p-2">
+		<div
+			class="mb-2 max-h-52 overflow-auto rounded-lg border bg-[var(--surface-raised)] p-2 shadow-sm"
+		>
 			<div class="mb-2 flex items-center justify-between">
-				<span class="text-sm font-medium">Query History</span>
+				<span class="text-[11px] font-bold">Query history</span>
 				<div class="flex items-center gap-1">
 					{#if getQueryHistory().length > 0}
 						<button
@@ -361,7 +382,7 @@
 				</div>
 			</div>
 			{#if getQueryHistory().length === 0}
-				<div class="text-muted-foreground py-4 text-center text-sm">No query history yet</div>
+				<div class="text-muted-foreground py-4 text-center text-[11px]">No query history yet</div>
 			{:else}
 				<div class="space-y-1">
 					{#each getQueryHistory() as item (item.id)}
@@ -380,10 +401,10 @@
 								{/if}
 							</div>
 							<div class="min-w-0 flex-1">
-								<div class="truncate font-mono text-xs">
+								<div class="truncate font-mono text-[10px]">
 									{item.query.substring(0, 80)}{item.query.length > 80 ? '...' : ''}
 								</div>
-								<div class="text-muted-foreground mt-0.5 flex items-center gap-2 text-xs">
+								<div class="text-muted-foreground mt-0.5 flex items-center gap-2 text-[9px]">
 									<span class="flex items-center gap-1">
 										<Clock class="h-3 w-3" />
 										{formatTimestamp(item.timestamp)}
@@ -397,7 +418,7 @@
 								</div>
 							</div>
 							<button
-								class="invisible shrink-0 rounded p-1 hover:bg-red-100 hover:text-red-600 group-hover:visible"
+								class="invisible shrink-0 rounded p-1 group-hover:visible hover:bg-red-100 hover:text-red-600"
 								onclick={(e) => {
 									e.stopPropagation();
 									deleteQueryHistoryItem(item.id);
@@ -414,28 +435,30 @@
 	{/if}
 
 	<!-- Editor -->
-	<div class="h-48 flex-shrink-0 overflow-hidden rounded-md border">
+	<div class="h-52 flex-shrink-0 overflow-hidden rounded-lg border bg-[var(--code-bg)] shadow-sm">
 		<div bind:this={editorContainer} class="h-full w-full"></div>
 	</div>
 
 	<!-- Results -->
-	<div class="mt-4 flex min-h-0 flex-1 flex-col">
-		<div class="mb-2 flex items-center justify-between">
-			<h4 class="text-muted-foreground text-sm font-medium">
+	<div class="mt-3 flex min-h-0 flex-1 flex-col">
+		<div class="mb-2 flex h-6 items-center justify-between">
+			<h4 class="text-[11px] font-bold">
 				Results
 				{#if queryResults.length > 0}
-					<span class="text-xs">({queryResults.length} rows)</span>
+					<span class="bg-muted text-muted-foreground ml-1 rounded px-1.5 py-0.5 text-[9px]"
+						>{queryResults.length} rows</span
+					>
 				{/if}
 			</h4>
 			{#if executedQuery && !errorMessage}
-				<span class="text-muted-foreground max-w-md truncate font-mono text-xs">
-					{executedQuery.split('\n')[0]}...
+				<span class="text-muted-foreground max-w-md truncate font-mono text-[9px]">
+					{executedQuery.split('\n')[0]}…
 				</span>
 			{/if}
 		</div>
 
 		{#if errorMessage}
-			<div class="rounded-md border border-red-500/50 bg-red-500/10 p-4 text-sm text-red-500">
+			<div class="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-500">
 				<strong>Error:</strong>
 				{errorMessage}
 			</div>
@@ -453,9 +476,13 @@
 			</div>
 		{:else}
 			<div
-				class="text-muted-foreground flex h-32 items-center justify-center rounded-md border border-dashed"
+				class="text-muted-foreground relative flex h-32 items-center justify-center overflow-hidden rounded-lg border border-dashed bg-[var(--surface-raised)] text-xs"
 			>
-				Run a query to see results
+				<div class="rt-empty-grid pointer-events-none absolute inset-0 opacity-60"></div>
+				<div class="relative flex flex-col items-center gap-2">
+					<Play class="h-4 w-4 opacity-50" />
+					<span>Run a query to see results</span>
+				</div>
 			</div>
 		{/if}
 	</div>

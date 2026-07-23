@@ -25,6 +25,7 @@ export namespace database {
 	export class Config {
 	    name: string;
 	    color: string;
+	    driver: string;
 	    host: string;
 	    port: string;
 	    user: string;
@@ -43,6 +44,7 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.color = source["color"];
+	        this.driver = source["driver"];
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.user = source["user"];

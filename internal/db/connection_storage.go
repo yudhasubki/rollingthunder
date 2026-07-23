@@ -55,6 +55,9 @@ func (s *Service) GetSavedConnections() response.BaseResponse[[]SavedConnection]
 func (s *Service) SaveConnection(config database.Config) response.BaseResponse[SavedConnection] {
 	storage := NewConnectionStorage()
 	connections, _ := storage.Load()
+	if config.Driver == "" {
+		config.Driver = "postgres"
+	}
 
 	// Generate new ID
 	conn := SavedConnection{
@@ -80,6 +83,9 @@ func (s *Service) SaveConnection(config database.Config) response.BaseResponse[S
 func (s *Service) UpdateConnection(id string, config database.Config) response.BaseResponse[SavedConnection] {
 	storage := NewConnectionStorage()
 	connections, _ := storage.Load()
+	if config.Driver == "" {
+		config.Driver = "postgres"
+	}
 
 	var updated *SavedConnection
 	for i, c := range connections {

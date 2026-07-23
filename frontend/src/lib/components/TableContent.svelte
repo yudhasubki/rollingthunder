@@ -13,7 +13,17 @@
 		GetIndices,
 		GetTableDDL
 	} from '$lib/wailsjs/go/db/Service';
-	import { LayoutGrid, Table2, Plus, Minus, Filter, Search, Code, Loader2 } from 'lucide-svelte';
+	import {
+		LayoutGrid,
+		Table2,
+		Plus,
+		Filter,
+		Code,
+		Loader2,
+		KeyRound,
+		Link2,
+		X
+	} from 'lucide-svelte';
 
 	// Filter types
 	interface FilterCondition {
@@ -41,9 +51,14 @@
 	let tableTotalData = $state<number>(0);
 	let tableData = $state<Record<string, any>[]>([]);
 	let isLoadingData = $state(false);
+	let dataLoadingTitle = $state('Preparing table data');
+	let dataLoadingDescription = $state('Waiting for the database');
 	let isLoadingStructure = $state(false);
 	let filters = $state<FilterCondition[]>([]);
 	let appliedFilters = $state<FilterCondition[]>([]);
+	const primaryKeyCount = $derived(columns.filter((column) => column.is_primary).length);
+	const relationCount = $derived(columns.filter((column) => column.foreign_key).length);
+	const nullableCount = $derived(columns.filter((column) => column.nullable).length);
 
 	// DDL state
 	let tableDDL = $state<string>('');
@@ -182,23 +197,46 @@
 		const doLoadData = async () => {
 			lastLoadKey = loadKey; // Set before async to prevent re-entry
 			isLoadingData = true;
-			updateStatus('loading data...', 'info');
+			const startedAt = performance.now();
+			const offset = page * tableLimit;
+			dataLoadingTitle = `Loading ${schemaName}.${tableName}`;
+			dataLoadingDescription = 'Counting rows that match the current filters…';
+			updateStatus(`Loading ${schemaName}.${tableName}: counting matching rows…`, 'info');
 			try {
 				let reqTable = new database.Table();
 				reqTable.Name = tableName;
 				reqTable.Schema = schemaName;
 				reqTable.Limit = tableLimit;
-				reqTable.Offset = page * tableLimit;
+				reqTable.Offset = offset;
 				reqTable.Filter = buildFilterClause();
 
 				const totalRes = await CountCollectionData(reqTable);
+				if (totalRes.errors?.length) throw new Error(totalRes.errors[0].detail);
+
+				tableTotalData = totalRes.data || 0;
+				const firstRow = tableTotalData > 0 ? offset + 1 : 0;
+				const lastRow = Math.min(offset + tableLimit, tableTotalData);
+				dataLoadingDescription =
+					tableTotalData > 0
+						? `Fetching rows ${firstRow.toLocaleString()}–${lastRow.toLocaleString()} of ${tableTotalData.toLocaleString()}…`
+						: 'The table contains no matching rows.';
+				updateStatus(
+					tableTotalData > 0
+						? `Fetching ${schemaName}.${tableName} rows ${firstRow}–${lastRow} of ${tableTotalData}…`
+						: `${schemaName}.${tableName} has no matching rows`,
+					'info'
+				);
+
 				const dataRes = await GetCollectionData(reqTable);
 
 				if (dataRes.errors?.length) throw new Error(dataRes.errors[0].detail);
 
 				tableData = dataRes.data?.data || [];
-				tableTotalData = totalRes.data || 0;
-				updateStatus('', 'info');
+				const duration = Math.round(performance.now() - startedAt);
+				updateStatus(
+					`Loaded ${tableData.length} ${tableData.length === 1 ? 'row' : 'rows'} from ${schemaName}.${tableName} in ${duration}ms`,
+					'success'
+				);
 			} catch (e: any) {
 				console.error('[TableContent] Error loading data:', e);
 				updateStatus(e?.message ?? 'Failed fetching data', 'error');
@@ -249,220 +287,310 @@
 	});
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-	<div use:melt={$tabsRoot} class="flex min-h-0 flex-1 flex-col">
-		<div class="px-4">
-			<div use:melt={$tabsList} class="border-border inline-flex h-9 items-center gap-1 border-b">
+<div class="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
+	<div use:melt={$tabsRoot} class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+		<div class="flex h-11 shrink-0 items-center justify-between border-b px-4">
+			<div use:melt={$tabsList} class="inline-flex h-full items-center gap-5">
 				<button
 					use:melt={$tabTrigger('structure')}
-					class="data-[state=active]:border-primary data-[state=active]:text-foreground text-muted-foreground inline-flex items-center justify-center gap-1.5 border-b-2 border-transparent px-3 py-1.5 text-xs font-medium transition-colors"
+					class="text-muted-foreground data-[state=active]:border-b-primary data-[state=active]:text-foreground inline-flex h-full items-center justify-center gap-1.5 border-0 border-b-2 border-b-transparent px-0.5 text-[10px] font-semibold transition-colors"
 				>
-					<LayoutGrid class="h-3.5 w-3.5" />
+					<LayoutGrid class="h-3 w-3" />
 					Structure
 				</button>
 				<button
 					use:melt={$tabTrigger('data')}
-					class="data-[state=active]:border-primary data-[state=active]:text-foreground text-muted-foreground inline-flex items-center justify-center gap-1.5 border-b-2 border-transparent px-3 py-1.5 text-xs font-medium transition-colors"
+					class="text-muted-foreground data-[state=active]:border-b-primary data-[state=active]:text-foreground inline-flex h-full items-center justify-center gap-1.5 border-0 border-b-2 border-b-transparent px-0.5 text-[10px] font-semibold transition-colors"
 				>
-					<Table2 class="h-3.5 w-3.5" />
+					<Table2 class="h-3 w-3" />
 					Data
 				</button>
 				<button
 					use:melt={$tabTrigger('ddl')}
-					class="data-[state=active]:border-primary data-[state=active]:text-foreground text-muted-foreground inline-flex items-center justify-center gap-1.5 border-b-2 border-transparent px-3 py-1.5 text-xs font-medium transition-colors"
+					class="text-muted-foreground data-[state=active]:border-b-primary data-[state=active]:text-foreground inline-flex h-full items-center justify-center gap-1.5 border-0 border-b-2 border-b-transparent px-0.5 text-[10px] font-semibold transition-colors"
 				>
-					<Code class="h-3.5 w-3.5" />
+					<Code class="h-3 w-3" />
 					DDL
 				</button>
+			</div>
+			<div class="text-muted-foreground flex items-center gap-2 text-[10px]">
+				{#if tabsStore.activeTab?.kind === 'table'}
+					<span class="font-mono">{tabsStore.activeTab.schema}.{tabsStore.activeTab.table}</span>
+					<span class="h-3 border-l"></span>
+				{/if}
+				<span>{columns.length} columns</span>
 			</div>
 		</div>
 
 		<!-- Structure Tab -->
-		<div use:melt={$tabContent('structure')} class="flex-1 overflow-auto p-4">
+		<div
+			use:melt={$tabContent('structure')}
+			data-structure-scroll
+			class="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--background)] p-3"
+		>
 			{#if isLoadingStructure}
 				<div class="flex h-full items-center justify-center py-20">
 					<Loader2 class="text-muted-foreground h-8 w-8 animate-spin" />
 				</div>
 			{:else}
-				<div class="space-y-4">
-					<!-- Columns -->
-					<div>
-						<h3 class="mb-2 text-sm font-medium">columns</h3>
-						<div class="max-h-[35vh] overflow-auto rounded-md border">
-							<table class="w-full caption-bottom text-sm">
-								<thead class="[&_tr]:border-b">
-									<tr class="hover:bg-muted/50 border-b transition-colors">
-										<th
-											class="text-muted-foreground h-10 w-48 px-4 text-left align-middle font-medium"
-											>name</th
-										>
-										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-											>type</th
-										>
-										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-											>length</th
-										>
-										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-											>nullable</th
-										>
-										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-											>default</th
-										>
-										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-											>primary</th
-										>
-										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-											>foreign key</th
-										>
-									</tr>
-								</thead>
-								<tbody class="[&_tr:last-child]:border-0">
-									{#each columns as col (col.name)}
-										<tr class="hover:bg-muted/50 border-b transition-colors">
-											<td class="p-4 align-middle font-mono text-sm">{col.name}</td>
-											<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
-												>{col.data_type}</td
-											>
-											<td class="p-4 align-middle">{col.length || '-'}</td>
-											<td class="p-4 align-middle">{col.nullable ? 'yes' : 'no'}</td>
-											<td class="max-w-32 truncate p-4 align-middle font-mono text-xs"
-												>{col.default || '-'}</td
-											>
-											<td class="p-4 align-middle">{col.is_primary_label || '-'}</td>
-											<td class="max-w-48 truncate p-4 align-middle font-mono text-xs"
-												>{col.foreign_key || '-'}</td
-											>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
+				<div class="space-y-3 pr-1 pb-3">
+					<section
+						class="grid shrink-0 grid-cols-4 divide-x overflow-hidden rounded-lg border bg-[var(--surface-raised)]"
+					>
+						<div class="flex items-center gap-3 px-4 py-3">
+							<Table2 class="text-muted-foreground h-4 w-4" />
+							<div>
+								<div class="text-[13px] font-bold">{columns.length}</div>
+								<div class="text-muted-foreground mt-0.5 text-[8px]">
+									Columns · {nullableCount} nullable
+								</div>
+							</div>
 						</div>
-					</div>
+						<div class="flex items-center gap-3 px-4 py-3">
+							<KeyRound class="text-muted-foreground h-4 w-4" />
+							<div>
+								<div class="text-[13px] font-bold">{primaryKeyCount}</div>
+								<div class="text-muted-foreground mt-0.5 text-[8px]">Primary keys</div>
+							</div>
+						</div>
+						<div class="flex items-center gap-3 px-4 py-3">
+							<Link2 class="text-muted-foreground h-4 w-4" />
+							<div>
+								<div class="text-[13px] font-bold">{relationCount}</div>
+								<div class="text-muted-foreground mt-0.5 text-[8px]">Relations</div>
+							</div>
+						</div>
+						<div class="flex items-center gap-3 px-4 py-3">
+							<KeyRound class="text-muted-foreground h-4 w-4" />
+							<div>
+								<div class="text-[13px] font-bold">{indices.length}</div>
+								<div class="text-muted-foreground mt-0.5 text-[8px]">Indexes</div>
+							</div>
+						</div>
+					</section>
 
-					<!-- Indices -->
-					<div>
-						<h3 class="mb-2 text-sm font-medium">indices</h3>
-						<div class="max-h-[25vh] overflow-auto rounded-md border">
-							<table class="w-full caption-bottom text-sm">
-								<thead class="[&_tr]:border-b">
-									<tr class="hover:bg-muted/50 border-b transition-colors">
-										<th
-											class="text-muted-foreground h-10 w-64 px-4 text-left align-middle font-medium"
-											>name</th
-										>
-										<th class="text-muted-foreground h-10 px-4 text-left align-middle font-medium"
-											>definition</th
-										>
-									</tr>
-								</thead>
-								<tbody class="[&_tr:last-child]:border-0">
-									{#each indices as idx (idx.name)}
-										<tr class="hover:bg-muted/50 border-b transition-colors">
-											<td class="p-4 align-middle font-mono text-sm">{idx.name}</td>
-											<td class="text-muted-foreground p-4 align-middle font-mono text-xs"
-												>{idx.definition}</td
-											>
+					<div class="space-y-3">
+						<section class="min-w-0 overflow-hidden rounded-lg border bg-[var(--surface-raised)]">
+							<div class="flex h-11 items-center justify-between border-b px-3.5">
+								<div>
+									<h3 class="text-[11px] font-bold">Columns</h3>
+									<p class="text-muted-foreground mt-0.5 text-[8px]">
+										Types, constraints, defaults, and relationships
+									</p>
+								</div>
+								<span class="text-muted-foreground text-[9px]">{columns.length} total</span>
+							</div>
+							<div class="overflow-x-auto">
+								<table class="w-full caption-bottom">
+									<thead>
+										<tr class="border-b">
+											<th class="h-8 w-[28%] px-3.5 text-left">Column</th>
+											<th class="h-8 w-[20%] px-3.5 text-left">Type</th>
+											<th class="h-8 w-[24%] px-3.5 text-left">Constraints</th>
+											<th class="h-8 px-3.5 text-left">Default / relation</th>
 										</tr>
-									{:else}
-										<tr>
-											<td colspan="2" class="text-muted-foreground p-4 text-center">no indices</td>
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
+									</thead>
+									<tbody>
+										{#each columns as col (col.name)}
+											<tr class="border-b last:border-b-0">
+												<td class="px-3.5 py-2.5">
+													<div class="flex items-center gap-2">
+														{#if col.is_primary}
+															<KeyRound class="h-3.5 w-3.5 shrink-0 text-amber-500" />
+														{:else if col.foreign_key}
+															<Link2 class="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+														{:else}
+															<span class="bg-muted-foreground/35 h-1.5 w-1.5 shrink-0 rounded-full"
+															></span>
+														{/if}
+														<span class="truncate font-mono text-[10px] font-semibold"
+															>{col.name}</span
+														>
+													</div>
+												</td>
+												<td class="px-3.5 py-2.5 font-mono text-[9px]">
+													{col.data_type}{col.length ? `(${col.length})` : ''}
+												</td>
+												<td class="text-muted-foreground px-3.5 py-2.5 text-[8px]">
+													{#if col.is_primary}<span class="text-foreground font-semibold"
+															>primary key</span
+														><span class="px-1">·</span>{/if}
+													<span>{col.nullable ? 'nullable' : 'required'}</span>
+													{#if col.foreign_key}<span class="px-1">·</span><span>foreign key</span
+														>{/if}
+												</td>
+												<td class="px-3.5 py-2.5">
+													{#if col.foreign_key}
+														<div
+															class="text-muted-foreground flex items-center gap-1.5 truncate font-mono text-[8px]"
+														>
+															<Link2 class="h-3 w-3 shrink-0" />
+															<span class="truncate">{col.foreign_key}</span>
+														</div>
+													{/if}
+													{#if col.default}
+														<div class="text-muted-foreground mt-0.5 truncate font-mono text-[8px]">
+															default {col.default}
+														</div>
+													{:else if !col.foreign_key}
+														<span class="text-muted-foreground text-[9px]">—</span>
+													{/if}
+												</td>
+											</tr>
+										{:else}
+											<tr>
+												<td colspan="4" class="text-muted-foreground h-28 text-center text-[10px]">
+													No column metadata available
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						</section>
+
+						<section class="overflow-hidden rounded-lg border bg-[var(--surface-raised)]">
+							<div class="flex h-11 items-center justify-between border-b px-3.5">
+								<div>
+									<h3 class="text-[11px] font-bold">Indexes</h3>
+									<p class="text-muted-foreground mt-0.5 text-[8px]">Lookup and uniqueness rules</p>
+								</div>
+								<span class="text-muted-foreground text-[9px]">{indices.length}</span>
+							</div>
+							<div>
+								{#each indices as idx (idx.name)}
+									<div class="flex min-h-14 items-start gap-2.5 border-b px-3 py-3 last:border-b-0">
+										<KeyRound class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
+										<div class="min-w-0 flex-1">
+											<div class="truncate font-mono text-[9px] font-semibold">{idx.name}</div>
+											<div class="text-muted-foreground mt-1 truncate font-mono text-[8px]">
+												{idx.columns?.join(', ') || 'No columns'}
+											</div>
+											<div class="text-muted-foreground mt-1 text-[8px]">
+												{idx.algorithm || 'default'} · {idx.is_unique ? 'unique' : 'non-unique'}
+											</div>
+										</div>
+									</div>
+								{:else}
+									<div class="text-muted-foreground px-4 py-10 text-center">
+										<KeyRound class="mx-auto h-4 w-4 opacity-45" />
+										<p class="mt-2 text-[9px]">No indexes defined</p>
+									</div>
+								{/each}
+							</div>
+						</section>
 					</div>
 				</div>
 			{/if}
 		</div>
 
 		<!-- Data Tab -->
-		<div use:melt={$tabContent('data')} class="flex min-h-0 flex-1 flex-col p-4">
+		<div
+			use:melt={$tabContent('data')}
+			class="flex min-h-0 flex-1 flex-col bg-[var(--background)] p-3"
+		>
 			<!-- Filters Panel -->
 			{#if filters.length > 0}
-				<div class="bg-muted/30 mb-3 space-y-2 rounded-lg border p-3">
-					{#each filters as filter (filter.id)}
+				<section class="mb-2 overflow-hidden rounded-lg border bg-[var(--surface-raised)]">
+					<div class="flex h-9 items-center justify-between border-b px-3">
 						<div class="flex items-center gap-2">
-							<!-- Enabled Checkbox -->
-							<div class="flex items-center">
+							<Filter class="text-muted-foreground h-3.5 w-3.5" />
+							<span class="text-[10px] font-bold">Filters</span>
+							<span class="text-muted-foreground text-[8px]">
+								{filters.filter((filter) => filter.enabled).length} active
+							</span>
+						</div>
+						<button
+							type="button"
+							class="rt-toolbar-button h-7 gap-1.5 px-2 text-[9px] font-semibold"
+							onclick={addFilter}
+						>
+							<Plus class="h-3 w-3" />
+							Add condition
+						</button>
+					</div>
+
+					<div class="space-y-1.5 p-2.5">
+						{#each filters as filter (filter.id)}
+							<div
+								class="grid grid-cols-[22px_168px_142px_minmax(140px,1fr)_30px] items-center gap-2"
+							>
 								<input
 									type="checkbox"
 									id="filter-{filter.id}"
-									class="border-input bg-background focus:ring-primary accent-primary h-4 w-4 rounded border focus:ring-2 focus:ring-offset-2"
+									class="border-input bg-background focus:ring-primary accent-primary h-3.5 w-3.5 rounded border focus:ring-2"
 									checked={filter.enabled}
 									onchange={() => {
 										filter.enabled = !filter.enabled;
 										filters = [...filters];
 									}}
+									aria-label="Enable filter"
 								/>
+
+								<FilterCombobox
+									options={columns.map((col) => ({ value: col.name, label: col.name }))}
+									value={filter.column}
+									onChange={(v) => updateFilter(filter.id, 'column', v)}
+									placeholder="Column"
+									class="w-full"
+								/>
+
+								<FilterCombobox
+									options={FILTER_OPERATORS}
+									value={filter.operator}
+									onChange={(v) => updateFilter(filter.id, 'operator', v)}
+									placeholder="Operator"
+									class="w-full"
+								/>
+
+								{#if filter.operator !== 'IS NULL' && filter.operator !== 'IS NOT NULL'}
+									<input
+										type="text"
+										class="rt-input placeholder:text-muted-foreground h-8 w-full px-3 text-[10px]"
+										placeholder="Value"
+										value={filter.value}
+										oninput={(e) => updateFilter(filter.id, 'value', e.currentTarget.value)}
+										onkeydown={(event) => event.key === 'Enter' && applyFilters()}
+									/>
+								{:else}
+									<span class="text-muted-foreground px-2 text-[9px]">No value required</span>
+								{/if}
+
+								<button
+									type="button"
+									class="rt-toolbar-button hover:text-destructive h-7 w-7"
+									onclick={() => removeFilter(filter.id)}
+									title="Remove condition"
+									aria-label="Remove filter condition"
+								>
+									<X class="h-3.5 w-3.5" />
+								</button>
 							</div>
+						{/each}
+					</div>
 
-							<!-- Column Select -->
-							<FilterCombobox
-								options={columns.map((col) => ({ value: col.name, label: col.name }))}
-								value={filter.column}
-								onChange={(v) => updateFilter(filter.id, 'column', v)}
-								placeholder="Column..."
-								class="w-40"
-							/>
-
-							<!-- Operator Select -->
-							<FilterCombobox
-								options={FILTER_OPERATORS}
-								value={filter.operator}
-								onChange={(v) => updateFilter(filter.id, 'operator', v)}
-								placeholder="Operator..."
-								class="w-36"
-							/>
-
-							<!-- Value Input -->
-							{#if filter.operator !== 'IS NULL' && filter.operator !== 'IS NOT NULL'}
-								<input
-									type="text"
-									class="border-input bg-background placeholder:text-muted-foreground focus:ring-primary h-8 flex-1 rounded-md border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-offset-1"
-									placeholder="Enter value..."
-									value={filter.value}
-									oninput={(e) => updateFilter(filter.id, 'value', e.currentTarget.value)}
-								/>
-							{/if}
-
-							<!-- Remove Filter Button -->
+					<div class="flex h-10 items-center justify-between border-t px-3">
+						<span class="text-muted-foreground text-[8px]">
+							Filters are applied when you run them.
+						</span>
+						<div class="flex items-center gap-1.5">
 							<button
 								type="button"
-								class="hover:bg-destructive/10 hover:text-destructive inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
-								onclick={() => removeFilter(filter.id)}
-								title="Remove filter"
+								class="rt-toolbar-button h-7 px-2.5 text-[9px] font-semibold"
+								onclick={clearFilters}
 							>
-								<Minus class="h-4 w-4" />
+								Reset
 							</button>
-
-							<!-- Add Filter Button -->
 							<button
 								type="button"
-								class="hover:bg-primary/10 hover:text-primary inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
-								onclick={addFilter}
-								title="Add another filter"
+								class="rt-primary-button inline-flex h-7 items-center rounded-md px-3 text-[9px] font-bold"
+								onclick={applyFilters}
 							>
-								<Plus class="h-4 w-4" />
+								Run filters
 							</button>
 						</div>
-					{/each}
-
-					<div class="flex items-center justify-end gap-2 pt-1">
-						<button
-							class="hover:bg-accent inline-flex h-8 cursor-pointer items-center rounded-md px-3 text-sm transition-colors"
-							onclick={clearFilters}
-						>
-							Clear
-						</button>
-						<button
-							class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-8 cursor-pointer items-center rounded-md px-3 text-sm transition-colors"
-							onclick={applyFilters}
-						>
-							Apply
-						</button>
 					</div>
-				</div>
+				</section>
 			{/if}
 
 			<!-- Data Grid -->
@@ -476,12 +604,14 @@
 					onPageChange={handlePageChange}
 					onAddFilter={addFilter}
 					loading={isLoadingData}
+					loadingTitle={dataLoadingTitle}
+					loadingDescription={dataLoadingDescription}
 				/>
 			</div>
 		</div>
 
 		<!-- DDL Tab -->
-		<div use:melt={$tabContent('ddl')} class="flex-1 overflow-auto p-4">
+		<div use:melt={$tabContent('ddl')} class="flex-1 overflow-auto bg-[var(--background)] p-3">
 			{#if isLoadingDDL}
 				<div class="flex h-32 items-center justify-center">
 					<div
@@ -489,9 +619,13 @@
 					></div>
 				</div>
 			{:else if tableDDL}
-				<div class="rounded-md border">
+				<div class="overflow-hidden rounded-lg border bg-[var(--surface-raised)] shadow-sm">
+					<div class="flex h-9 items-center justify-between border-b px-3">
+						<span class="text-xs font-bold">Table definition</span>
+						<span class="text-muted-foreground font-mono text-[9px]">SQL</span>
+					</div>
 					<pre
-						class="bg-muted/30 overflow-auto whitespace-pre-wrap p-4 font-mono text-sm">{tableDDL}</pre>
+						class="rt-code-surface overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">{tableDDL}</pre>
 				</div>
 			{:else}
 				<div class="text-muted-foreground py-8 text-center">No DDL available</div>

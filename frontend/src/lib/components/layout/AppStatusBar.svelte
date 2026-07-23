@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getSegments, getLevel, getDatabaseInfo } from '$lib/stores/status.svelte';
 	import { hasChanges, stagedChanges } from '$lib/stores/staged.svelte';
-	import { CircleCheck, CircleAlert, CircleX, Database, Clock } from 'lucide-svelte';
+	import { CircleCheck, CircleAlert, CircleX, Database } from 'lucide-svelte';
 
 	const segments = $derived(getSegments());
 	const level = $derived(getLevel());
@@ -20,15 +20,16 @@
 	);
 </script>
 
-<footer class="bg-sidebar flex h-7 items-center justify-between border-t px-3 text-xs">
-	<!-- Left: Status -->
+<footer
+	class="flex h-6 shrink-0 items-center justify-between border-t bg-[var(--surface-raised)] px-3 text-[10px]"
+>
 	<div class="flex items-center gap-2">
 		{#if level === 'error'}
-			<CircleX class="h-3.5 w-3.5 {statusColor}" />
+			<CircleX class="h-3 w-3 {statusColor}" />
 		{:else if level === 'warn'}
-			<CircleAlert class="h-3.5 w-3.5 {statusColor}" />
+			<CircleAlert class="h-3 w-3 {statusColor}" />
 		{:else}
-			<CircleCheck class="h-3.5 w-3.5 {statusColor}" />
+			<CircleCheck class="h-3 w-3 {statusColor}" />
 		{/if}
 		<span class="text-muted-foreground">
 			{#if segments.length > 0}
@@ -39,20 +40,19 @@
 		</span>
 	</div>
 
-	<!-- Right: Info -->
 	<div class="text-muted-foreground flex items-center gap-3">
 		{#if changes}
-			<span class="bg-secondary rounded-md px-1.5 py-0.5 text-xs">
+			<span class="bg-primary/10 text-primary rounded px-1.5 py-0.5 font-semibold">
 				{changeCount} pending changes
 			</span>
 		{/if}
 
 		{#if dbInfo}
 			<div class="flex items-center gap-1">
-				<Database class="h-3 w-3" />
-				<span>{dbInfo.engine || 'Unknown'}</span>
+				<Database class="h-2.5 w-2.5" />
+				<span class="font-semibold">{dbInfo.engine || 'Unknown'}</span>
 			</div>
-			<span class="opacity-50">|</span>
+			<span class="h-3 border-l"></span>
 			<span>{dbInfo.database || 'db'}</span>
 		{/if}
 	</div>

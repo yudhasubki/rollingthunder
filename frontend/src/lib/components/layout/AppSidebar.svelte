@@ -14,11 +14,11 @@
 		Search,
 		Trash2,
 		Eraser,
-		MoreVertical,
 		AlertTriangle,
 		History,
 		Clock,
-		Play
+		ArrowUpRight,
+		Workflow
 	} from 'lucide-svelte';
 	import { createDropdownMenu, createDialog, melt } from '@melt-ui/svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
@@ -34,6 +34,7 @@
 		setSidebarAddTable,
 		setSidebarRemoveTable
 	} from '$lib/stores/sidebar.svelte';
+	import { getContextMenuPosition } from '$lib/utils/contextMenu';
 	import { fly } from 'svelte/transition';
 
 	interface Props {
@@ -78,14 +79,6 @@
 	let contextMenuTable = $state<string | null>(null);
 	let contextMenuPos = $state({ x: 0, y: 0 });
 	let showContextMenu = $state(false);
-
-	// Context menu dropdown
-	const {
-		elements: { trigger: ctxTrigger, menu: ctxMenu, item: ctxItem },
-		states: { open: ctxOpen }
-	} = createDropdownMenu({
-		positioning: { placement: 'bottom-start' }
-	});
 
 	// Confirmation dialog state
 	let confirmAction = $state<'drop' | 'truncate' | null>(null);
@@ -269,10 +262,19 @@
 		tabsStore.newCreateTableTab(selectedSchema);
 	}
 
+	function openSchemaDiagram() {
+		if (!selectedSchema) {
+			updateStatus('Please select a schema first', 'error');
+			return;
+		}
+		tabsStore.newSchemaDiagramTab(selectedSchema);
+		updateStatus(`Opening schema diagram for ${selectedSchema}…`, 'info');
+	}
+
 	function handleContextMenu(e: MouseEvent, table: string) {
 		e.preventDefault();
 		contextMenuTable = table;
-		contextMenuPos = { x: e.clientX, y: e.clientY };
+		contextMenuPos = getContextMenuPosition(e, 236, 230);
 		showContextMenu = true;
 	}
 
@@ -291,6 +293,13 @@
 		openConfirmDialog('truncate', contextMenuTable);
 	}
 
+	function openContextTable() {
+		if (!contextMenuTable) return;
+		const table = contextMenuTable;
+		closeContextMenu();
+		handleTableClick(table);
+	}
+
 	function openQueryFromHistory(item: QueryHistoryItem) {
 		tabsStore.newQueryTabWithContent(item.query, 'History Query');
 	}
@@ -307,24 +316,46 @@
 	}
 </script>
 
-<aside class="bg-sidebar flex h-full w-64 min-w-64 flex-col overflow-hidden border-r">
-	<!-- Header -->
-	<div class="flex flex-shrink-0 items-center justify-between border-b px-3 py-2">
-		<span class="text-sidebar-foreground text-sm font-medium">Explorer</span>
-		<div class="flex gap-1">
+<aside
+	class="rt-panel relative flex h-full w-[272px] max-w-[286px] min-w-[248px] flex-col overflow-hidden border-r"
+>
+	<div class="flex h-11 shrink-0 items-center justify-between border-b px-3">
+		<div class="flex min-w-0 items-center gap-2">
+			<span class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-md">
+				<Database class="h-3.5 w-3.5" />
+			</span>
+			<div class="min-w-0">
+				<div class="truncate text-xs font-bold">Database explorer</div>
+				<div class="text-muted-foreground truncate text-[9px]">
+					{selectedSchema || 'Select a schema'}
+				</div>
+			</div>
+		</div>
+		<div class="flex items-center gap-0.5">
 			<button
 				type="button"
-				class="hover:bg-sidebar-accent inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors disabled:opacity-50"
+				class="rt-toolbar-button h-7 w-7 cursor-pointer disabled:opacity-50"
 				onclick={refresh}
 				disabled={loading}
+				title="Refresh schemas"
 			>
 				<RefreshCw class="h-3.5 w-3.5 {loading ? 'animate-spin' : ''}" />
 			</button>
-			<!-- New dropdown -->
+			<button
+				type="button"
+				class="rt-toolbar-button h-7 w-7 cursor-pointer disabled:opacity-50"
+				onclick={openSchemaDiagram}
+				disabled={!selectedSchema}
+				title="Open schema diagram"
+				aria-label="Open schema diagram"
+			>
+				<Workflow class="h-3.5 w-3.5" />
+			</button>
 			<button
 				type="button"
 				use:melt={$ddTrigger}
-				class="hover:bg-sidebar-accent inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-colors"
+				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				title="Create new"
 			>
 				<Plus class="h-3.5 w-3.5" />
 			</button>
@@ -334,119 +365,111 @@
 	{#if $ddOpen}
 		<div
 			use:melt={$ddMenu}
-			class="bg-popover text-popover-foreground z-50 min-w-40 rounded-md border p-1 shadow-md"
-			transition:fly={{ duration: 150, y: -10 }}
+			class="rt-popover text-popover-foreground z-50 min-w-40 rounded-lg p-1.5"
+			transition:fly={{ duration: 130, y: -6 }}
 		>
+			<div class="text-muted-foreground px-2 py-1 text-[10px] font-bold tracking-[0.1em] uppercase">
+				Create
+			</div>
 			<button
 				type="button"
 				use:melt={$ddItem}
-				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+				class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
 				onclick={openNewTableTab}
 			>
-				<Table2 class="h-4 w-4" />
-				New Table
+				<Table2 class="h-3.5 w-3.5" />
+				New table
 			</button>
 			<button
 				type="button"
 				use:melt={$ddItem}
-				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none"
+				class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
 				onclick={newQuery}
 			>
-				<Code class="h-4 w-4" />
-				New Query
+				<Code class="h-3.5 w-3.5" />
+				New query
+			</button>
+			<div class="bg-border my-1 h-px"></div>
+			<button
+				type="button"
+				use:melt={$ddItem}
+				class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
+				onclick={openSchemaDiagram}
+			>
+				<Workflow class="h-3.5 w-3.5" />
+				Schema diagram
 			</button>
 		</div>
 	{/if}
 
-	<!-- Schema Selector -->
-	<div class="flex-shrink-0 border-b p-2">
-		<button
-			type="button"
-			use:melt={$schemaTrigger}
-			class="border-input bg-background hover:bg-accent/50 flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 text-sm transition-colors"
-		>
-			<div class="flex items-center gap-2">
-				<Database class="text-muted-foreground h-4 w-4" />
-				<span class="truncate">{selectedSchema || 'Select schema...'}</span>
-			</div>
-			<ChevronDown class="text-muted-foreground h-4 w-4 shrink-0" />
-		</button>
-
-		{#if $schemaOpen}
-			<!-- Backdrop -->
-			<button
-				type="button"
-				class="fixed inset-0 z-40 cursor-default"
-				onclick={() => schemaOpenStore.set(false)}
-			></button>
-
-			<div
-				class="bg-popover text-popover-foreground absolute left-2 right-2 z-50 mt-1 max-h-52 overflow-auto rounded-md border p-1 shadow-lg"
-				style="width: calc(100% - 16px);"
-				transition:fly={{ duration: 100, y: -5 }}
-			>
-				{#each schemas as schema (schema)}
-					<button
-						type="button"
-						class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none {selectedSchema ===
-						schema
-							? 'bg-accent'
-							: ''}"
-						onclick={() => selectSchema(schema)}
-					>
-						<Database class="h-4 w-4" />
-						{schema}
-					</button>
-				{/each}
-				{#if schemas.length === 0}
-					<div class="text-muted-foreground px-2 py-1.5 text-sm">No schemas</div>
-				{/if}
-			</div>
-		{/if}
-	</div>
-
-	<!-- Search -->
-	<div class="flex-shrink-0 px-2 py-1.5">
-		<div class="relative">
+	<div class="flex shrink-0 items-center gap-1.5 border-b p-2">
+		<div class="relative min-w-0 flex-1">
 			<Search
-				class="text-muted-foreground pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+				class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2"
 			/>
 			<input
 				type="text"
-				class="border-input bg-background placeholder:text-muted-foreground focus:ring-primary h-7 w-full rounded-md border pl-7 pr-2 text-sm focus:outline-none focus:ring-1"
-				placeholder="Filter tables..."
+				class="rt-input placeholder:text-muted-foreground h-8 w-full pr-2 pl-8 text-xs"
+				placeholder="Filter tables"
 				bind:value={searchQuery}
 			/>
 		</div>
+		<span
+			class="text-muted-foreground flex h-8 min-w-8 items-center justify-center rounded-md border bg-[var(--surface-sunken)] px-1.5 text-[10px] font-semibold"
+			title="Visible tables"
+		>
+			{filteredTables.length}
+		</span>
 	</div>
 
-	<!-- Tables List -->
-	<div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
+	<div class="min-h-0 flex-1 overflow-auto px-2 py-2">
+		<div class="mb-1.5 flex items-center justify-between px-1">
+			<span class="text-muted-foreground text-[9px] font-bold tracking-[0.13em] uppercase">
+				Tables
+			</span>
+			<span class="text-muted-foreground text-[9px]">Right-click for actions</span>
+		</div>
+
 		{#if loadingTables}
-			<div class="flex flex-col items-center justify-center py-8">
+			<div class="flex flex-col items-center justify-center py-10">
 				<div
 					class="border-primary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
 				></div>
-				<span class="text-muted-foreground mt-2 text-xs">Loading tables...</span>
+				<span class="text-muted-foreground mt-2 text-[11px]">Loading tables…</span>
 			</div>
 		{:else if filteredTables.length === 0}
-			<div class="text-muted-foreground flex flex-col items-center justify-center py-8 text-center">
-				<Table2 class="mb-2 h-8 w-8" />
-				<p class="text-sm">{searchQuery ? 'No tables match' : 'No tables'}</p>
+			<div
+				class="text-muted-foreground mx-1 flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center"
+			>
+				<span class="bg-muted mb-2 flex h-9 w-9 items-center justify-center rounded-lg">
+					<Table2 class="h-4 w-4" />
+				</span>
+				<p class="text-xs font-medium">{searchQuery ? 'No matching tables' : 'No tables yet'}</p>
 			</div>
 		{:else}
 			<div class="space-y-0.5">
 				{#each filteredTables as table (table)}
 					<button
 						type="button"
-						class="hover:bg-sidebar-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors {selectedItem ===
+						class="group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition-colors {selectedItem ===
 						`${selectedSchema}.${table}`
-							? 'bg-sidebar-accent text-sidebar-accent-foreground'
-							: 'text-muted-foreground'}"
+							? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold'
+							: 'text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]'}"
 						onclick={() => handleTableClick(table)}
 						oncontextmenu={(e) => handleContextMenu(e, table)}
 					>
-						<Table2 class="h-3.5 w-3.5 shrink-0" />
+						{#if selectedItem === `${selectedSchema}.${table}`}
+							<span class="bg-primary absolute left-0 h-4 w-0.5 rounded-r-full"></span>
+						{/if}
+						<span
+							class="flex h-5 w-5 shrink-0 items-center justify-center rounded border bg-[var(--surface-raised)]"
+						>
+							<Table2
+								class="h-3 w-3 {selectedItem === `${selectedSchema}.${table}`
+									? 'text-primary'
+									: ''}"
+							/>
+						</span>
 						<span class="truncate">{table}</span>
 					</button>
 				{/each}
@@ -454,63 +477,64 @@
 		{/if}
 	</div>
 
-	<!-- Query History Section -->
-	<div class="flex-shrink-0 border-t">
+	<div class="max-h-[38%] shrink-0 border-t">
 		<button
 			type="button"
-			class="hover:bg-sidebar-accent flex w-full items-center justify-between px-3 py-2 transition-colors"
+			class="flex h-9 w-full items-center justify-between px-3 transition-colors hover:bg-[var(--surface-hover)]"
 			onclick={() => (historyExpanded = !historyExpanded)}
 		>
 			<div class="flex items-center gap-2">
 				{#if historyExpanded}
-					<ChevronDown class="h-3.5 w-3.5" />
+					<ChevronDown class="text-muted-foreground h-3 w-3" />
 				{:else}
-					<ChevronRight class="h-3.5 w-3.5" />
+					<ChevronRight class="text-muted-foreground h-3 w-3" />
 				{/if}
 				<History class="h-3.5 w-3.5" />
-				<span class="text-sm font-medium">Query History</span>
+				<span class="text-[11px] font-bold">Query history</span>
 			</div>
 			{#if getQueryHistory().length > 0}
-				<span class="text-muted-foreground text-xs">{getQueryHistory().length}</span>
+				<span
+					class="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-[9px] font-semibold"
+				>
+					{getQueryHistory().length}
+				</span>
 			{/if}
 		</button>
 
 		{#if historyExpanded}
-			<div class="max-h-48 overflow-auto px-2 pb-2">
+			<div class="max-h-40 overflow-auto px-2 pb-2">
 				{#if getQueryHistory().length === 0}
-					<div class="text-muted-foreground py-4 text-center text-xs">No query history</div>
+					<div class="text-muted-foreground py-3 text-center text-[10px]">No recent queries</div>
 				{:else}
 					<div class="space-y-0.5">
 						{#each getQueryHistory().slice(0, 20) as item (item.id)}
 							<div
 								role="button"
 								tabindex="0"
-								class="hover:bg-sidebar-accent group flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors"
+								class="group flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--surface-hover)]"
 								onclick={() => openQueryFromHistory(item)}
 								onkeydown={(e) => e.key === 'Enter' && openQueryFromHistory(item)}
 							>
-								<div class="mt-0.5 shrink-0">
-									{#if item.status === 'success'}
-										<div class="h-1.5 w-1.5 rounded-full bg-green-500"></div>
-									{:else}
-										<div class="h-1.5 w-1.5 rounded-full bg-red-500"></div>
-									{/if}
-								</div>
+								<span
+									class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full {item.status === 'success'
+										? 'bg-emerald-500'
+										: 'bg-red-500'}"
+								></span>
 								<div class="min-w-0 flex-1">
-									<div class="truncate font-mono text-xs">
-										{item.query.substring(0, 40)}{item.query.length > 40 ? '...' : ''}
+									<div class="truncate font-mono text-[10px]">
+										{item.query.substring(0, 40)}{item.query.length > 40 ? '…' : ''}
 									</div>
-									<div class="text-muted-foreground flex items-center gap-1 text-[10px]">
+									<div class="text-muted-foreground mt-0.5 flex items-center gap-1 text-[9px]">
 										<Clock class="h-2.5 w-2.5" />
 										{formatHistoryTime(item.timestamp)}
 										{#if item.rowCount !== undefined}
-											<span>• {item.rowCount} rows</span>
+											<span>· {item.rowCount} rows</span>
 										{/if}
 									</div>
 								</div>
 								<button
 									type="button"
-									class="invisible shrink-0 rounded p-0.5 hover:bg-red-100 hover:text-red-600 group-hover:visible"
+									class="text-muted-foreground invisible shrink-0 rounded p-0.5 group-hover:visible hover:bg-red-100 hover:text-red-600"
 									onclick={(e) => {
 										e.stopPropagation();
 										deleteQueryHistoryItem(item.id);
@@ -527,47 +551,119 @@
 		{/if}
 	</div>
 
-	<!-- Context Menu -->
+	<div class="relative flex h-11 shrink-0 items-center gap-2 border-t px-2">
+		<button
+			type="button"
+			use:melt={$schemaTrigger}
+			class="rt-input hover:bg-accent/40 flex h-8 min-w-0 flex-1 cursor-pointer items-center justify-between px-2.5 text-xs"
+		>
+			<div class="flex min-w-0 items-center gap-2">
+				<Database class="text-primary h-3.5 w-3.5 shrink-0" />
+				<span class="truncate">{selectedSchema || 'Select schema'}</span>
+			</div>
+			<ChevronDown class="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+		</button>
+		<span class="text-muted-foreground shrink-0 text-[9px]">{tables.length} tables</span>
+
+		{#if $schemaOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 cursor-default"
+				onclick={() => schemaOpenStore.set(false)}
+				aria-label="Close schema selector"
+			></button>
+			<div
+				class="rt-popover text-popover-foreground absolute right-2 bottom-10 left-2 z-50 max-h-52 overflow-auto rounded-lg p-1.5"
+				transition:fly={{ duration: 100, y: 5 }}
+			>
+				<div
+					class="text-muted-foreground px-2 py-1 text-[10px] font-bold tracking-[0.1em] uppercase"
+				>
+					Schemas
+				</div>
+				{#each schemas as schema (schema)}
+					<button
+						type="button"
+						class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs outline-none {selectedSchema ===
+						schema
+							? 'bg-accent text-accent-foreground font-semibold'
+							: ''}"
+						onclick={() => selectSchema(schema)}
+					>
+						<Database class="h-3.5 w-3.5" />
+						{schema}
+					</button>
+				{/each}
+				{#if schemas.length === 0}
+					<div class="text-muted-foreground px-2 py-2 text-xs">No schemas</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
+
 	{#if showContextMenu && contextMenuTable}
-		<!-- Backdrop to close menu -->
 		<button
 			type="button"
 			class="fixed inset-0 z-40 cursor-default"
 			onclick={closeContextMenu}
 			aria-label="Close context menu"
 		></button>
-		<!-- Menu -->
 		<div
-			class="bg-popover text-popover-foreground fixed z-50 min-w-40 rounded-md border p-1 shadow-lg"
+			class="rt-context-menu fixed z-50"
 			style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
 			transition:fly={{ duration: 100, y: -5 }}
+			role="menu"
+			data-context-menu="table"
 		>
-			<div class="text-muted-foreground border-b px-2 py-1 text-xs font-medium">
-				{contextMenuTable}
+			<div class="rt-context-header">
+				<span class="rt-context-header-icon">
+					<Table2 class="h-3.5 w-3.5" />
+				</span>
+				<span class="min-w-0">
+					<span class="rt-context-title">{contextMenuTable}</span>
+					<span class="rt-context-meta">{selectedSchema} · table actions</span>
+				</span>
 			</div>
+			<button type="button" class="rt-context-item" onclick={openContextTable} role="menuitem">
+				<span class="rt-context-item-icon">
+					<ArrowUpRight class="h-3.5 w-3.5" />
+				</span>
+				<span>
+					<span class="rt-context-label">Open table</span>
+					<span class="rt-context-meta">Browse structure and data</span>
+				</span>
+			</button>
+			<div class="rt-context-divider"></div>
 			<button
 				type="button"
-				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm"
+				class="rt-context-item rt-context-item--warning"
 				onclick={handleTruncateTable}
+				role="menuitem"
 			>
-				<Eraser class="h-4 w-4" />
-				Truncate Table
+				<span class="rt-context-item-icon">
+					<Eraser class="h-3.5 w-3.5" />
+				</span>
+				<span>
+					<span class="rt-context-label">Clear all rows</span>
+					<span class="rt-context-meta">Keep the table structure</span>
+				</span>
 			</button>
 			<button
 				type="button"
-				class="hover:bg-destructive/10 text-destructive flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm"
+				class="rt-context-item rt-context-item--danger"
 				onclick={handleDropTable}
+				role="menuitem"
 			>
-				<Trash2 class="h-4 w-4" />
-				Drop Table
+				<span class="rt-context-item-icon">
+					<Trash2 class="h-3.5 w-3.5" />
+				</span>
+				<span>
+					<span class="rt-context-label">Delete table</span>
+					<span class="rt-context-meta">Remove structure and data</span>
+				</span>
 			</button>
 		</div>
 	{/if}
-
-	<!-- Footer with table count -->
-	<div class="text-muted-foreground flex-shrink-0 border-t px-3 py-1.5 text-xs">
-		{tables.length} table{tables.length !== 1 ? 's' : ''}
-	</div>
 </aside>
 
 <!-- Confirmation Dialog -->
@@ -576,7 +672,7 @@
 		<div use:melt={$overlay} class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"></div>
 		<div
 			use:melt={$content}
-			class="bg-popover text-popover-foreground fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg"
+			class="bg-popover text-popover-foreground fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg"
 		>
 			<div class="flex items-start gap-4">
 				<div

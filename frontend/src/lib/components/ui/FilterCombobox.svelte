@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { createCombobox, melt } from '@melt-ui/svelte';
+	import { createSelect, melt } from '@melt-ui/svelte';
 	import { writable, get } from 'svelte/store';
+	import { tick } from 'svelte';
 	import { ChevronDown, Check } from 'lucide-svelte';
 	import { fly } from 'svelte/transition';
 
@@ -15,6 +16,12 @@
 		onChange: (value: string) => void;
 		placeholder?: string;
 		class?: string;
+		disabled?: boolean;
+		searchable?: boolean;
+		triggerClass?: string;
+		searchPlaceholder?: string;
+		emptyText?: string;
+		id?: string;
 	}
 
 	let {
@@ -22,7 +29,13 @@
 		value,
 		onChange,
 		placeholder = 'Select...',
-		class: className = ''
+		class: className = '',
+		disabled = false,
+		searchable = true,
+		triggerClass = 'h-8 px-2 text-[11px]',
+		searchPlaceholder = 'Search...',
+		emptyText = 'No results',
+		id = undefined
 	}: Props = $props();
 
 	// Find option by value
@@ -31,18 +44,24 @@
 	// State stores
 	const selectedStore = writable<Option | undefined>(getOption(value));
 	const openStore = writable(false);
+	let searchQuery = $state('');
+	let searchInputElement = $state<HTMLInputElement | null>(null);
 
 	const {
-		elements: { menu, input, option: optionEl },
-		states: { open, inputValue, selected },
+		elements: { trigger, menu, option: optionEl },
+		states: { open },
 		helpers: { isSelected }
-	} = createCombobox<string>({
+	} = createSelect<string>({
 		selected: selectedStore,
 		open: openStore,
-		forceVisible: true,
+		portal: 'body',
 		positioning: {
-			placement: 'bottom',
-			sameWidth: true
+			placement: 'bottom-start',
+			strategy: 'fixed',
+			sameWidth: true,
+			fitViewport: true,
+			gutter: 4,
+			overflowPadding: 8
 		},
 		onSelectedChange: ({ next }) => {
 			if (next?.value) {
@@ -61,6 +80,8 @@
 			if (!currentSelected || currentSelected.value !== value) {
 				selectedStore.set(opt);
 			}
+		} else if (get(selectedStore)) {
+			selectedStore.set(undefined);
 		}
 	});
 
@@ -69,61 +90,69 @@
 
 	// Filter options
 	const filteredOptions = $derived(
-		$inputValue && $inputValue !== displayLabel
-			? options.filter((opt) => opt.label.toLowerCase().includes($inputValue.toLowerCase()))
+		searchable && searchQuery
+			? options.filter((opt) => opt.label.toLowerCase().includes(searchQuery.toLowerCase()))
 			: options
 	);
 
-	function toggleOpen() {
-		openStore.update((v) => !v);
-	}
+	$effect(() => {
+		if ($open && searchable) {
+			tick().then(() => searchInputElement?.focus());
+		} else if (!$open && searchQuery) {
+			searchQuery = '';
+		}
+	});
 </script>
 
 <div class="relative {className}">
 	<!-- Trigger Button -->
 	<button
+		{id}
 		type="button"
-		class="border-input bg-background hover:bg-accent/50 focus:ring-primary flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1"
-		onclick={toggleOpen}
+		use:melt={$trigger}
+		class="rt-input flex w-full cursor-pointer items-center justify-between gap-2 disabled:cursor-not-allowed disabled:opacity-55 {triggerClass}"
+		{disabled}
 	>
-		<span class={displayLabel ? '' : 'text-muted-foreground'}>
+		<span class="truncate {displayLabel ? '' : 'text-muted-foreground'}">
 			{displayLabel || placeholder}
 		</span>
-		<ChevronDown class="text-muted-foreground h-4 w-4 shrink-0" />
+		<ChevronDown
+			class="text-muted-foreground h-4 w-4 shrink-0 transition-transform {$open
+				? 'rotate-180'
+				: ''}"
+		/>
 	</button>
 
 	<!-- Dropdown Menu -->
 	{#if $open}
-		<!-- Backdrop -->
-		<button
-			type="button"
-			class="fixed inset-0 z-[100] cursor-default"
-			onclick={() => openStore.set(false)}
-		></button>
-
 		<div
-			class="bg-popover text-popover-foreground absolute left-0 top-full z-[110] mt-1 max-h-52 w-full min-w-max overflow-auto rounded-md border p-1 shadow-lg"
+			use:melt={$menu}
+			class="rt-popover text-popover-foreground z-[140] max-h-52 min-w-[132px] overflow-hidden rounded-lg p-1.5"
 			transition:fly={{ duration: 100, y: -5 }}
+			data-filter-dropdown={id ?? 'options'}
 		>
-			<!-- Search Input -->
-			<div class="p-1">
-				<input
-					use:melt={$input}
-					class="border-input bg-background placeholder:text-muted-foreground h-7 w-full rounded border px-2 text-sm focus:outline-none"
-					placeholder="Search..."
-				/>
-			</div>
+			{#if searchable}
+				<div class="p-1">
+					<input
+						bind:this={searchInputElement}
+						bind:value={searchQuery}
+						class="rt-input placeholder:text-muted-foreground h-7 w-full px-2 text-[11px]"
+						placeholder={searchPlaceholder}
+						onkeydown={(event) => event.stopPropagation()}
+					/>
+				</div>
+			{/if}
 
 			<!-- Options -->
 			<div class="max-h-40 overflow-auto">
 				{#if filteredOptions.length === 0}
-					<div class="text-muted-foreground px-2 py-1.5 text-sm">No results</div>
+					<div class="text-muted-foreground px-2 py-1.5 text-[11px]">{emptyText}</div>
 				{:else}
 					{#each filteredOptions as opt (opt.value)}
 						<button
 							type="button"
 							use:melt={$optionEl({ value: opt.value, label: opt.label })}
-							class="hover:bg-accent hover:text-accent-foreground data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[selected]:bg-accent flex w-full cursor-pointer items-center justify-between rounded px-2 py-1.5 text-left text-sm outline-none"
+							class="hover:bg-accent hover:text-accent-foreground data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[selected]:bg-accent flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-[11px] outline-none"
 						>
 							<span>{opt.label}</span>
 							{#if $isSelected(opt.value)}

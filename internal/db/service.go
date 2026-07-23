@@ -49,7 +49,16 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectResponse] {
-	driver, err := NewDriver(s.ctx, req.Driver, req.Config)
+	driverName := req.Driver
+	if driverName == "" {
+		driverName = req.Config.Driver
+	}
+	if driverName == "" {
+		driverName = "postgres"
+	}
+	req.Config.Driver = driverName
+
+	driver, err := NewDriver(s.ctx, driverName, req.Config)
 	if err != nil {
 		return response.BaseResponse[ConnectResponse]{
 			Errors: []response.BaseErrorResponse{

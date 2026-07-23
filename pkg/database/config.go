@@ -2,8 +2,9 @@ package database
 
 type Config struct {
 	// Connection metadata
-	Name  string `json:"name"`  // Connection display name
-	Color string `json:"color"` // Connection color (hex)
+	Name   string `json:"name"`   // Connection display name
+	Color  string `json:"color"`  // Connection color (hex)
+	Driver string `json:"driver"` // postgres, mysql, sqlite
 
 	// Basic connection
 	Host     string `json:"host"`

@@ -79,7 +79,7 @@ func (p *Postgres) Connect() error {
 	dsn = append(dsn, fmt.Sprintf("host=%s", host))
 
 	port := "5432"
-	if p.cfg.Port != "5432" {
+	if p.cfg.Port != "" {
 		port = p.cfg.Port
 	}
 	dsn = append(dsn, fmt.Sprintf("port=%s", port))
@@ -91,10 +91,19 @@ func (p *Postgres) Connect() error {
 
 	db := sqlx.NewDb(stdlib.OpenDBFromPool(pool), "pgx")
 	p.conn = db
-	return db.Ping()
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		p.conn = nil
+		return err
+	}
+
+	return nil
 }
 
 func (p *Postgres) Close() error {
+	if p.conn == nil {
+		return nil
+	}
 	return p.conn.Close()
 }
 

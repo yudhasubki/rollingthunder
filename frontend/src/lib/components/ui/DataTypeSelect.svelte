@@ -72,7 +72,7 @@
 	<button
 		type="button"
 		use:melt={$trigger}
-		class="border-input bg-background hover:bg-accent/50 focus:ring-primary flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1"
+		class="rt-input flex h-8 w-full cursor-pointer items-center justify-between px-2 text-[11px]"
 	>
 		<span class="truncate">{value || 'Select type...'}</span>
 		<ChevronDown class="text-muted-foreground h-4 w-4 shrink-0" />
@@ -81,21 +81,21 @@
 	{#if $open}
 		<div
 			use:melt={$menu}
-			class="bg-popover text-popover-foreground z-[110] max-h-60 overflow-auto rounded-md border p-1 shadow-lg"
+			class="rt-popover text-popover-foreground z-[110] max-h-60 overflow-auto rounded-lg p-1.5"
 			transition:fly={{ duration: 100, y: -5 }}
 		>
 			{#each Object.entries(groupedTypes()) as [category, types]}
 				<div use:melt={$group(category)}>
 					<div
 						use:melt={$groupLabel(category)}
-						class="text-muted-foreground px-2 py-1.5 text-xs font-semibold"
+						class="text-muted-foreground px-2 py-1.5 text-[9px] font-bold tracking-wide uppercase"
 					>
 						{category}
 					</div>
 					{#each types as dt}
 						<div
 							use:melt={$option({ value: dt.name, label: dt.name })}
-							class="data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground flex cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none"
+							class="data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-[11px] outline-none"
 						>
 							<span>{dt.name}</span>
 							{#if $isSelected(dt.name)}

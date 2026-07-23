@@ -1,725 +1,346 @@
 <script lang="ts">
-	import {
-		Connect,
-		GetSavedConnections,
-		SaveConnection,
-		UpdateConnection,
-		DeleteConnection
-	} from '$lib/wailsjs/go/db/Service';
-	import { database as driver, db as service } from '$lib/wailsjs/go/models';
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { createSelect, createDialog, melt } from '@melt-ui/svelte';
-	import { writable } from 'svelte/store';
+	import { Connect, GetSavedConnections } from '$lib/wailsjs/go/db/Service';
+	import { db } from '$lib/wailsjs/go/models';
+	import { connectionStore } from '$lib/stores/connectionStore.svelte';
+	import ConnectionManagerModal from '$lib/components/ConnectionManagerModal.svelte';
 	import {
+		ArrowLeft,
+		ArrowRight,
+		Check,
 		Database,
 		Loader2,
-		ChevronDown,
+		Pencil,
 		Plus,
-		Trash2,
-		Edit2,
-		Lock,
-		Server,
-		Palette,
-		Save,
-		AlertTriangle,
-		ArrowLeft
+		Search,
+		ShieldCheck,
+		TableProperties,
+		TerminalSquare,
+		Workflow
 	} from 'lucide-svelte';
-	import { fly } from 'svelte/transition';
-	import { onMount } from 'svelte';
-	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 
-	// Connection form state
-	let connectionName = $state('');
-	let connectionColor = $state('#3B82F6');
-	let dbtype = $state('postgres');
-	let host = $state('127.0.0.1');
-	let port = $state('5432');
-	let user = $state('');
-	let password = $state('');
-	let dbname = $state('');
-	let sslMode = $state('disable');
-	let sslRootCert = $state('');
-	let sslCert = $state('');
-	let sslKey = $state('');
+	let profiles = $state<db.SavedConnection[]>([]);
+	let searchQuery = $state('');
+	let loadingProfiles = $state(false);
+	let connectingId = $state<string | null>(null);
+	let message = $state('');
+	let managerOpen = $state(false);
+	let managerInitialId = $state<string | null>(null);
+	let managerStartNew = $state(false);
 
-	let result = $state<string | null>(null);
-	let loading = $state(false);
-	let saving = $state(false);
-	let editingId = $state<string | null>(null);
-
-	// Saved connections
-	let savedConnections = $state<any[]>([]);
-
-	// Context menu state
-	let contextMenuConn = $state<any>(null);
-	let contextMenuPos = $state({ x: 0, y: 0 });
-	let showContextMenu = $state(false);
-
-	// Delete confirmation modal
-	let deleteTargetId = $state<string | null>(null);
-	let deleteTargetName = $state<string>('');
-	let deleting = $state(false);
-
-	const deleteOpenStore = writable(false);
-	const {
-		elements: { overlay, content, title, description, close, portalled },
-		states: { open: deleteDialogOpen }
-	} = createDialog({
-		open: deleteOpenStore,
-		forceVisible: true
-	});
-
-	function handleContextMenu(e: MouseEvent, conn: any) {
-		e.preventDefault();
-		contextMenuConn = conn;
-		contextMenuPos = { x: e.clientX, y: e.clientY };
-		showContextMenu = true;
-	}
-
-	function closeContextMenu() {
-		showContextMenu = false;
-		contextMenuConn = null;
-	}
-
-	function openDeleteModal() {
-		if (!contextMenuConn) return;
-		deleteTargetId = contextMenuConn.id;
-		deleteTargetName = contextMenuConn.config?.name || 'Unnamed';
-		closeContextMenu();
-		deleteOpenStore.set(true);
-	}
-
-	function closeDeleteModal() {
-		deleteOpenStore.set(false);
-		deleteTargetId = null;
-		deleteTargetName = '';
-		deleting = false;
-	}
-
-	async function executeDelete() {
-		if (!deleteTargetId) return;
-		deleting = true;
-		try {
-			await DeleteConnection(deleteTargetId);
-			await loadSavedConnections();
-			if (editingId === deleteTargetId) {
-				newConnection();
-			}
-		} catch (e: any) {
-			result = e.message;
-		}
-		closeDeleteModal();
-	}
-
-	const dbTypes = [
-		{ value: 'postgres', label: 'PostgreSQL' },
-		{ value: 'mysql', label: 'MySQL' },
-		{ value: 'sqlite', label: 'SQLite' }
-	];
-
-	const sslModes = [
-		{ value: 'disable', label: 'Disable' },
-		{ value: 'require', label: 'Require' },
-		{ value: 'verify-ca', label: 'Verify CA' },
-		{ value: 'verify-full', label: 'Verify Full' }
-	];
-
-	const colors = [
-		'#EF4444',
-		'#F97316',
-		'#EAB308',
-		'#22C55E',
-		'#14B8A6',
-		'#3B82F6',
-		'#6366F1',
-		'#8B5CF6',
-		'#EC4899',
-		'#6B7280'
-	];
-
-	// Melt-UI Select for DB Type
-	const {
-		elements: { trigger: selectTrigger, menu: selectMenu, option },
-		states: { open: selectOpen, selected }
-	} = createSelect({
-		defaultSelected: { value: 'postgres', label: 'PostgreSQL' },
-		positioning: { placement: 'bottom', sameWidth: true }
-	});
-
-	// Melt-UI Select for SSL Mode
-	const {
-		elements: { trigger: sslTrigger, menu: sslMenu, option: sslOption },
-		states: { open: sslOpen, selected: sslSelected }
-	} = createSelect({
-		defaultSelected: { value: 'disable', label: 'Disable' },
-		positioning: { placement: 'bottom', sameWidth: true }
-	});
-
-	$effect(() => {
-		if ($selected?.value) {
-			dbtype = $selected.value as string;
-		}
-	});
-
-	$effect(() => {
-		if ($sslSelected?.value) {
-			sslMode = $sslSelected.value as string;
-		}
-	});
+	const filteredProfiles = $derived(
+		searchQuery.trim()
+			? profiles.filter((profile) => {
+					const config = profile.config;
+					return `${config.name} ${config.host} ${config.db} ${config.user}`
+						.toLowerCase()
+						.includes(searchQuery.trim().toLowerCase());
+				})
+			: profiles
+	);
 
 	onMount(async () => {
-		await loadSavedConnections();
-		connectionStore.refreshConnections();
+		await Promise.all([loadProfiles(), connectionStore.refreshConnections()]);
 	});
 
-	async function loadSavedConnections() {
+	async function loadProfiles() {
+		loadingProfiles = true;
 		try {
-			const res = await GetSavedConnections();
-			savedConnections = res.data || [];
-		} catch (e) {
-			console.error('Failed to load connections:', e);
-		}
-	}
-
-	function selectConnection(conn: any) {
-		editingId = conn.id;
-		const cfg = conn.config;
-		connectionName = cfg.name || '';
-		connectionColor = cfg.color || '#3B82F6';
-		host = cfg.host || '127.0.0.1';
-		port = cfg.port || '5432';
-		user = cfg.user || '';
-		password = cfg.password || '';
-		dbname = cfg.db || '';
-		sslMode = cfg.sslMode || 'disable';
-		sslRootCert = cfg.sslRootCert || '';
-		sslCert = cfg.sslCert || '';
-		sslKey = cfg.sslKey || '';
-	}
-
-	function newConnection() {
-		editingId = null;
-		connectionName = '';
-		connectionColor = '#3B82F6';
-		host = '127.0.0.1';
-		port = '5432';
-		user = '';
-		password = '';
-		dbname = '';
-		sslMode = 'disable';
-		sslRootCert = '';
-		sslCert = '';
-		sslKey = '';
-		result = null;
-	}
-
-	async function saveCurrentConnection() {
-		if (!connectionName.trim()) {
-			result = 'Connection name is required to save';
-			return;
-		}
-
-		saving = true;
-		result = null;
-		try {
-			const config = new driver.Config({
-				name: connectionName,
-				color: connectionColor,
-				host,
-				port,
-				user,
-				password,
-				db: dbname,
-				sslMode,
-				sslRootCert,
-				sslCert,
-				sslKey
-			});
-
-			let res;
-			if (editingId) {
-				// Update existing connection
-				res = await UpdateConnection(editingId, config);
-			} else {
-				// Create new connection
-				res = await SaveConnection(config);
-			}
-
-			if (res.errors?.length) {
-				result = res.errors[0].detail;
-			} else {
-				await loadSavedConnections();
-				editingId = res.data?.id || editingId;
-			}
-		} catch (e: any) {
-			result = e.message;
+			const response = await GetSavedConnections();
+			if (response.errors?.length) throw new Error(response.errors[0].detail);
+			profiles = response.data || [];
+		} catch (error: any) {
+			message = error?.message || 'Could not load saved profiles';
 		} finally {
-			saving = false;
+			loadingProfiles = false;
 		}
 	}
 
-	async function connect() {
-		loading = true;
-		result = null;
+	function isConnected(profile: db.SavedConnection) {
+		return connectionStore.connections.some(
+			(connection) =>
+				connection.name === profile.config.name &&
+				connection.host === profile.config.host &&
+				connection.database === profile.config.db
+		);
+	}
+
+	async function connectProfile(profile: db.SavedConnection) {
+		connectingId = profile.id;
+		message = `Connecting to ${profile.config.host}:${profile.config.port}/${profile.config.db}…`;
 
 		try {
-			const config = new driver.Config({
-				name: connectionName,
-				color: connectionColor,
-				host,
-				port,
-				user,
-				password,
-				db: dbname,
-				sslMode,
-				sslRootCert,
-				sslCert,
-				sslKey
-			});
-
-			const req = new service.ConnectRequest({
-				driver: dbtype,
-				config
-			});
-
-			const res = await Connect(req);
-
-			if (res.data?.connected) {
-				goto('/workspace');
-			} else {
-				result = `${res.errors?.[0]?.detail || 'Unknown error'}`;
+			const response = await Connect(
+				new db.ConnectRequest({
+					driver: 'postgres',
+					config: profile.config
+				})
+			);
+			if (response.errors?.length || !response.data?.connected) {
+				throw new Error(response.errors?.[0]?.detail || 'Connection failed');
 			}
-		} catch (e: any) {
-			console.error('Caught error:', e);
-			result = `${e.message}`;
+			await connectionStore.refreshConnections();
+			goto('/workspace');
+		} catch (error: any) {
+			message = error?.message || 'Could not connect to the database';
 		} finally {
-			loading = false;
+			connectingId = null;
 		}
+	}
+
+	function openNewProfile() {
+		managerInitialId = null;
+		managerStartNew = true;
+		managerOpen = true;
+	}
+
+	function editProfile(profile: db.SavedConnection) {
+		managerInitialId = profile.id;
+		managerStartNew = false;
+		managerOpen = true;
+	}
+
+	async function closeManager() {
+		managerOpen = false;
+		await loadProfiles();
 	}
 </script>
 
-<div class="bg-background flex h-screen">
-	<!-- Left Sidebar: Saved Connections -->
-	<div class="bg-muted/30 flex w-72 flex-col border-r">
-		<!-- Header -->
-		<div class="flex items-center justify-between border-b p-4">
-			<div class="flex items-center gap-2">
-				{#if connectionStore.connections.length > 0}
-					<button
-						type="button"
-						class="hover:bg-accent -ml-1 mr-1 rounded-md p-1.5 transition-colors"
-						onclick={() => goto('/workspace')}
-						title="Back to workspace"
-					>
-						<ArrowLeft class="h-4 w-4" />
-					</button>
-				{/if}
-				<img src="/logo.png" alt="RollingThunder" class="h-6 w-6" />
-				<span class="font-semibold">Connections</span>
-			</div>
+<svelte:head>
+	<title>Rolling Thunder · Connections</title>
+</svelte:head>
+
+<div class="rt-connection-shell grid h-screen grid-cols-[minmax(400px,0.9fr)_minmax(560px,1.1fr)]">
+	<section
+		class="relative flex min-w-0 flex-col overflow-hidden border-r bg-[var(--surface-sunken)] p-8"
+	>
+		<div class="rt-empty-grid pointer-events-none absolute inset-0 opacity-40"></div>
+
+		{#if connectionStore.connections.length > 0}
 			<button
 				type="button"
-				class="hover:bg-accent rounded-md p-1.5 transition-colors"
-				onclick={newConnection}
-				title="New Connection"
+				class="rt-toolbar-button border-border absolute top-8 right-8 z-10 h-8 gap-1.5 px-2.5 text-[9px] font-semibold"
+				onclick={() => goto('/workspace')}
 			>
-				<Plus class="h-4 w-4" />
+				<ArrowLeft class="h-3 w-3" />
+				Workspace
 			</button>
-		</div>
+		{/if}
 
-		<!-- Connection List -->
-		<div class="flex-1 overflow-auto p-2">
-			{#if savedConnections.length === 0}
-				<div class="text-muted-foreground py-8 text-center text-sm">
-					<Database class="mx-auto mb-2 h-8 w-8 opacity-50" />
-					<p>No saved connections</p>
-					<p class="mt-1 text-xs">Create one to get started</p>
+		<div class="relative my-auto max-w-[430px] py-10">
+			<img src="/logo.png" alt="Rolling Thunder" class="rt-brand-logo h-24 w-24" />
+			<div class="mt-5 text-[14px] font-bold tracking-[-0.02em]">Rolling Thunder</div>
+			<p class="text-primary mt-7 text-[9px] font-bold tracking-[0.15em] uppercase">
+				One focused workspace
+			</p>
+			<h1 class="mt-3 text-[28px] leading-[1.18] font-bold tracking-[-0.035em]">
+				Move through your databases without losing context.
+			</h1>
+			<p class="text-muted-foreground mt-4 max-w-sm text-[11px] leading-relaxed">
+				Explore schemas, inspect data, and run SQL across multiple PostgreSQL connections from one
+				desktop workspace.
+			</p>
+
+			<div class="mt-8 space-y-4">
+				<div class="flex items-center gap-3">
+					<span class="flex h-8 w-8 items-center justify-center rounded-lg border">
+						<Workflow class="text-muted-foreground h-3.5 w-3.5" />
+					</span>
+					<div>
+						<div class="text-[10px] font-bold">Map the schema</div>
+						<div class="text-muted-foreground mt-0.5 text-[8px]">
+							See tables and foreign-key relationships together.
+						</div>
+					</div>
 				</div>
-			{:else}
-				<div class="space-y-1">
-					{#each savedConnections as conn (conn.id)}
-						<button
-							type="button"
-							class="hover:bg-accent flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors {editingId ===
-							conn.id
-								? 'bg-accent'
-								: ''}"
-							onclick={() => selectConnection(conn)}
-							oncontextmenu={(e) => handleContextMenu(e, conn)}
-						>
-							<div
-								class="h-3 w-3 shrink-0 rounded-full"
-								style="background-color: {conn.config?.color || '#3B82F6'}"
-							></div>
-							<div class="flex-1 truncate">
-								<div class="truncate text-sm font-medium">
-									{conn.config?.name || 'Unnamed'}
-								</div>
-								<div class="text-muted-foreground truncate text-xs">
-									{conn.config?.host || 'localhost'}:{conn.config?.port || '5432'}/{conn.config
-										?.db || ''}
-								</div>
-							</div>
-						</button>
-					{/each}
+				<div class="flex items-center gap-3">
+					<span class="flex h-8 w-8 items-center justify-center rounded-lg border">
+						<TableProperties class="text-muted-foreground h-3.5 w-3.5" />
+					</span>
+					<div>
+						<div class="text-[10px] font-bold">Inspect and edit data</div>
+						<div class="text-muted-foreground mt-0.5 text-[8px]">
+							Structure, rows, indexes, and DDL in one table view.
+						</div>
+					</div>
 				</div>
-			{/if}
-		</div>
-
-		<!-- Footer -->
-		<div class="text-muted-foreground border-t px-4 py-2 text-xs">
-			{savedConnections.length} connection{savedConnections.length !== 1 ? 's' : ''}
-		</div>
-	</div>
-
-	<!-- Right Panel: Connection Form -->
-	<div class="flex flex-1 flex-col overflow-hidden">
-		<!-- Form Header -->
-		<div class="flex items-center justify-between border-b px-6 py-4">
-			<div>
-				<h2 class="text-xl font-semibold">
-					{editingId ? 'Edit Connection' : 'New Connection'}
-				</h2>
-				<p class="text-muted-foreground text-sm">Configure your database connection</p>
-			</div>
-			<div class="flex items-center gap-2">
-				<button
-					type="button"
-					class="border-input bg-background hover:bg-accent inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors disabled:opacity-50"
-					onclick={saveCurrentConnection}
-					disabled={saving}
-				>
-					{#if saving}
-						<Loader2 class="h-4 w-4 animate-spin" />
-					{:else}
-						<Save class="h-4 w-4" />
-					{/if}
-					Save
-				</button>
+				<div class="flex items-center gap-3">
+					<span class="flex h-8 w-8 items-center justify-center rounded-lg border">
+						<TerminalSquare class="text-muted-foreground h-3.5 w-3.5" />
+					</span>
+					<div>
+						<div class="text-[10px] font-bold">Stay informed</div>
+						<div class="text-muted-foreground mt-0.5 text-[8px]">
+							Every query and background load reports clear progress.
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 
-		<!-- Form Content -->
-		<div class="flex-1 overflow-auto p-6">
-			<form
-				onsubmit={(e) => {
-					e.preventDefault();
-					connect();
-				}}
-				class="mx-auto max-w-2xl space-y-6"
-			>
-				<!-- Connection Info Section -->
-				<div class="space-y-4">
-					<div class="flex items-center gap-2 text-sm font-medium">
-						<Server class="h-4 w-4" />
-						Connection Info
-					</div>
+		<footer class="text-muted-foreground relative flex items-center gap-2 text-[8px]">
+			<ShieldCheck class="h-3.5 w-3.5" />
+			Connection profiles are stored locally on this device.
+		</footer>
+	</section>
 
-					<div class="grid grid-cols-2 gap-4">
-						<!-- Connection Name -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium" for="connName">Name</label>
-							<input
-								id="connName"
-								bind:value={connectionName}
-								placeholder="My Database"
-								disabled={loading}
-								class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-							/>
-						</div>
-
-						<!-- Color Picker -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium">Color</label>
-							<div class="flex gap-1.5">
-								{#each colors as color}
-									<button
-										type="button"
-										class="h-8 w-8 rounded-md transition-transform hover:scale-110 {connectionColor ===
-										color
-											? 'ring-primary ring-2 ring-offset-2'
-											: ''}"
-										style="background-color: {color}"
-										onclick={() => (connectionColor = color)}
-									></button>
-								{/each}
-							</div>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<!-- Database Type -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium" for="dbtype">Database Type</label>
-							<button
-								use:melt={$selectTrigger}
-								class="border-input bg-background hover:bg-accent inline-flex h-10 w-full cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-sm"
-							>
-								{$selected?.label || 'Select type'}
-								<ChevronDown class="h-4 w-4 opacity-50" />
-							</button>
-							{#if $selectOpen}
-								<div
-									use:melt={$selectMenu}
-									class="bg-popover text-popover-foreground z-50 rounded-md border p-1 shadow-md"
-									transition:fly={{ duration: 150, y: -10 }}
-								>
-									{#each dbTypes as db}
-										<div
-											use:melt={$option({ value: db.value, label: db.label })}
-											class="hover:bg-accent data-[highlighted]:bg-accent cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none"
-										>
-											{db.label}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-
-						<!-- Database Name -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium" for="dbname">Database</label>
-							<input
-								id="dbname"
-								bind:value={dbname}
-								placeholder="myapp_db"
-								disabled={loading}
-								class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-							/>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-4 gap-4">
-						<!-- Host -->
-						<div class="col-span-2 space-y-2">
-							<label class="text-sm font-medium" for="host">Host</label>
-							<input
-								id="host"
-								bind:value={host}
-								placeholder="127.0.0.1"
-								disabled={loading}
-								class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-							/>
-						</div>
-
-						<!-- Port -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium" for="port">Port</label>
-							<input
-								id="port"
-								bind:value={port}
-								placeholder="5432"
-								disabled={loading}
-								class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-							/>
-						</div>
-
-						<!-- SSL Mode -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium">SSL</label>
-							<button
-								use:melt={$sslTrigger}
-								class="border-input bg-background hover:bg-accent inline-flex h-10 w-full cursor-pointer items-center justify-between rounded-md border px-3 py-2 text-sm"
-							>
-								{$sslSelected?.label || 'Disable'}
-								<ChevronDown class="h-4 w-4 opacity-50" />
-							</button>
-							{#if $sslOpen}
-								<div
-									use:melt={$sslMenu}
-									class="bg-popover text-popover-foreground z-50 rounded-md border p-1 shadow-md"
-									transition:fly={{ duration: 150, y: -10 }}
-								>
-									{#each sslModes as mode}
-										<div
-											use:melt={$sslOption({ value: mode.value, label: mode.label })}
-											class="hover:bg-accent data-[highlighted]:bg-accent cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none"
-										>
-											{mode.label}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<!-- Username -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium" for="user">Username</label>
-							<input
-								id="user"
-								bind:value={user}
-								placeholder="postgres"
-								disabled={loading}
-								class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-							/>
-						</div>
-
-						<!-- Password -->
-						<div class="space-y-2">
-							<label class="text-sm font-medium" for="password">Password</label>
-							<input
-								id="password"
-								type="password"
-								bind:value={password}
-								placeholder="••••••••"
-								disabled={loading}
-								class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-							/>
-						</div>
-					</div>
-				</div>
-
-				<!-- SSL Certificates Section (only if SSL enabled) -->
-				{#if sslMode !== 'disable'}
-					<div class="space-y-4">
-						<div class="flex items-center gap-2 text-sm font-medium">
-							<Lock class="h-4 w-4" />
-							SSL Certificates
-						</div>
-
-						<div class="space-y-4">
-							<div class="space-y-2">
-								<label class="text-sm font-medium" for="sslRootCert">CA Certificate Path</label>
-								<input
-									id="sslRootCert"
-									bind:value={sslRootCert}
-									placeholder="/path/to/ca-certificate.crt"
-									disabled={loading}
-									class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-								/>
-							</div>
-
-							<div class="grid grid-cols-2 gap-4">
-								<div class="space-y-2">
-									<label class="text-sm font-medium" for="sslCert">Client Certificate Path</label>
-									<input
-										id="sslCert"
-										bind:value={sslCert}
-										placeholder="/path/to/client-cert.crt"
-										disabled={loading}
-										class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-									/>
-								</div>
-
-								<div class="space-y-2">
-									<label class="text-sm font-medium" for="sslKey">Client Key Path</label>
-									<input
-										id="sslKey"
-										bind:value={sslKey}
-										placeholder="/path/to/client-key.key"
-										disabled={loading}
-										class="border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
-									/>
-								</div>
-							</div>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Error Message -->
-				{#if result}
-					<div class="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-						{result}
-					</div>
-				{/if}
-
-				<!-- Submit Button -->
-				<button
-					type="submit"
-					class="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50"
-					disabled={loading}
-				>
-					{#if loading}
-						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-						Connecting...
-					{:else}
-						<Database class="mr-2 h-4 w-4" />
-						Connect
-					{/if}
-				</button>
-			</form>
-		</div>
-
-		<!-- Footer -->
-		<div class="text-muted-foreground border-t px-6 py-3 text-center text-xs">
-			RollingThunder Database Manager · Beta
-		</div>
-	</div>
-</div>
-
-<!-- Context Menu -->
-{#if showContextMenu}
-	<button
-		type="button"
-		class="fixed inset-0 z-40 cursor-default"
-		onclick={closeContextMenu}
-		onkeydown={(e) => e.key === 'Escape' && closeContextMenu()}
-	></button>
-	<div
-		class="bg-popover text-popover-foreground fixed z-50 min-w-[160px] rounded-md border p-1 shadow-md"
-		style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px"
-	>
-		<button
-			type="button"
-			class="hover:bg-destructive/10 text-destructive flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm"
-			onclick={openDeleteModal}
-		>
-			<Trash2 class="h-4 w-4" />
-			Delete Connection
-		</button>
-	</div>
-{/if}
-
-<!-- Delete Confirmation Modal -->
-{#if $deleteDialogOpen}
-	<div use:melt={$portalled}>
-		<div use:melt={$overlay} class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"></div>
-		<div
-			use:melt={$content}
-			class="bg-popover text-popover-foreground fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg"
-		>
-			<div class="flex items-start gap-4">
-				<div
-					class="bg-destructive/10 text-destructive flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-				>
-					<AlertTriangle class="h-5 w-5" />
-				</div>
-				<div class="flex-1">
-					<h2 use:melt={$title} class="text-lg font-semibold">Delete Connection</h2>
-					<p use:melt={$description} class="text-muted-foreground mt-2 text-sm">
-						Are you sure you want to delete <strong>"{deleteTargetName}"</strong>? This action
-						cannot be undone.
+	<main class="flex min-w-0 flex-col overflow-hidden bg-[var(--surface-raised)]">
+		<div class="mx-auto flex h-full w-full max-w-[760px] flex-col px-8 py-8">
+			<header class="flex shrink-0 items-end justify-between">
+				<div>
+					<p class="text-muted-foreground text-[8px] font-bold tracking-[0.14em] uppercase">
+						Connection hub
+					</p>
+					<h2 class="mt-2 text-[20px] font-bold tracking-[-0.025em]">Choose a profile</h2>
+					<p class="text-muted-foreground mt-1 text-[9px]">
+						Connect to a saved database or add a new one.
 					</p>
 				</div>
+				<span class="text-muted-foreground text-[9px]">
+					{profiles.length}
+					{profiles.length === 1 ? 'profile' : 'profiles'}
+				</span>
+			</header>
+
+			<div class="mt-6 flex shrink-0 items-center gap-2">
+				<div class="relative min-w-0 flex-1">
+					<Search
+						class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2"
+					/>
+					<input
+						type="search"
+						class="rt-input h-9 w-full pr-3 pl-9 text-[10px]"
+						placeholder="Filter by name, host, database, or user"
+						bind:value={searchQuery}
+					/>
+				</div>
+				<button
+					type="button"
+					class="rt-primary-button inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3.5 text-[10px] font-bold"
+					onclick={openNewProfile}
+				>
+					<Plus class="h-3.5 w-3.5" />
+					Add connection
+				</button>
 			</div>
-			<div class="mt-6 flex justify-end gap-3">
-				<button
-					use:melt={$close}
-					type="button"
-					class="border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
-					onclick={closeDeleteModal}
-					disabled={deleting}
-				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					class="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-					onclick={executeDelete}
-					disabled={deleting}
-				>
-					{#if deleting}
-						<div
-							class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-						></div>
-						Deleting...
+
+			{#if message}
+				<div class="text-muted-foreground mt-3 flex shrink-0 items-center gap-2 text-[9px]">
+					{#if connectingId}
+						<Loader2 class="h-3 w-3 animate-spin" />
 					{:else}
-						Delete
+						<Check class="h-3 w-3" />
 					{/if}
-				</button>
+					{message}
+				</div>
+			{/if}
+
+			<div class="mt-5 min-h-0 flex-1 overflow-auto pr-1">
+				{#if loadingProfiles}
+					<div
+						class="text-muted-foreground flex h-full items-center justify-center gap-2 text-[10px]"
+					>
+						<Loader2 class="h-4 w-4 animate-spin" />
+						Loading connection profiles
+					</div>
+				{:else if filteredProfiles.length === 0}
+					<div class="flex h-full min-h-64 items-center justify-center">
+						<div class="text-muted-foreground max-w-xs text-center">
+							<span class="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border">
+								<Database class="h-5 w-5" />
+							</span>
+							<h3 class="text-foreground mt-3 text-[11px] font-bold">
+								{searchQuery ? 'No profiles match that filter' : 'No connections yet'}
+							</h3>
+							<p class="mt-1 text-[9px] leading-relaxed">
+								{searchQuery
+									? 'Try a different name, host, database, or user.'
+									: 'Add your first PostgreSQL profile to open the workspace.'}
+							</p>
+							{#if !searchQuery}
+								<button
+									type="button"
+									class="rt-primary-button mt-4 inline-flex h-8 items-center gap-2 rounded-md px-3 text-[9px] font-bold"
+									onclick={openNewProfile}
+								>
+									<Plus class="h-3 w-3" />
+									Add connection
+								</button>
+							{/if}
+						</div>
+					</div>
+				{:else}
+					<div class="space-y-2">
+						{#each filteredProfiles as profile (profile.id)}
+							<article
+								class="group flex min-h-[78px] items-center gap-3 rounded-lg border px-3.5 py-3 transition-colors hover:bg-[var(--surface-hover)]"
+							>
+								<span
+									class="text-muted-foreground flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-[var(--surface-raised)]"
+								>
+									<Database class="h-4 w-4" />
+								</span>
+								<div class="min-w-0 flex-1">
+									<div class="flex items-center gap-2">
+										<h3 class="truncate text-[11px] font-bold">
+											{profile.config.name || 'Unnamed profile'}
+										</h3>
+										{#if isConnected(profile)}
+											<span
+												class="flex items-center gap-1 text-[8px] font-semibold text-emerald-500"
+											>
+												<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+												Connected
+											</span>
+										{/if}
+									</div>
+									<p class="text-muted-foreground mt-1 truncate font-mono text-[8px]">
+										{profile.config.host}:{profile.config.port} / {profile.config.db}
+									</p>
+									<p class="text-muted-foreground mt-1 text-[8px]">
+										{profile.config.user || 'No username'} · SSL {profile.config.sslMode ||
+											'disable'}
+									</p>
+								</div>
+								<div class="flex shrink-0 items-center gap-1">
+									<button
+										type="button"
+										class="rt-toolbar-button h-8 w-8 opacity-0 group-hover:opacity-100"
+										onclick={() => editProfile(profile)}
+										title="Edit profile"
+										aria-label="Edit {profile.config.name || profile.config.db}"
+									>
+										<Pencil class="h-3.5 w-3.5" />
+									</button>
+									<button
+										type="button"
+										class="rt-toolbar-button border-border h-8 gap-1.5 px-3 text-[9px] font-bold"
+										onclick={() => connectProfile(profile)}
+										disabled={connectingId !== null}
+									>
+										{#if connectingId === profile.id}
+											<Loader2 class="h-3 w-3 animate-spin" />
+											Connecting
+										{:else}
+											Connect
+											<ArrowRight class="h-3 w-3" />
+										{/if}
+									</button>
+								</div>
+							</article>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
-	</div>
-{/if}
+	</main>
+
+	<ConnectionManagerModal
+		open={managerOpen}
+		onClose={closeManager}
+		onConnected={() => goto('/workspace')}
+		initialProfileId={managerInitialId}
+		startNew={managerStartNew}
+	/>
+</div>

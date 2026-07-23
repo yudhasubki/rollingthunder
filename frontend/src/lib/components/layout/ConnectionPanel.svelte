@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Database, Plus, X } from 'lucide-svelte';
+	import { Database, Plus, Unplug, Cable } from 'lucide-svelte';
 	import {
 		connectionState,
 		refreshConnections,
@@ -7,6 +7,7 @@
 		removeConnection
 	} from '$lib/stores/connectionStore.svelte';
 	import { goto } from '$app/navigation';
+	import { getContextMenuPosition } from '$lib/utils/contextMenu';
 	import { fly } from 'svelte/transition';
 
 	// Refresh on mount
@@ -18,6 +19,9 @@
 	let showContextMenu = $state(false);
 	let contextMenuPos = $state({ x: 0, y: 0 });
 	let contextMenuConnId = $state<string | null>(null);
+	const contextMenuConnection = $derived(
+		connectionState.connections.find((connection) => connection.id === contextMenuConnId) ?? null
+	);
 
 	async function handleSwitch(id: string) {
 		const success = await switchToConnection(id);
@@ -27,12 +31,12 @@
 	}
 
 	function handleNewConnection() {
-		goto('/');
+		window.dispatchEvent(new CustomEvent('open-connection-manager'));
 	}
 
 	function handleContextMenu(e: MouseEvent, connId: string) {
 		e.preventDefault();
-		contextMenuPos = { x: e.clientX, y: e.clientY };
+		contextMenuPos = getContextMenuPosition(e, 236, 132);
 		contextMenuConnId = connId;
 		showContextMenu = true;
 	}
@@ -54,34 +58,37 @@
 	}
 </script>
 
-<aside class="bg-sidebar flex h-full w-16 flex-col items-center border-r py-2">
-	<!-- Connections -->
-	<div class="flex flex-1 flex-col items-center gap-2 overflow-auto">
+<aside
+	class="flex h-full w-[58px] shrink-0 flex-col items-center border-r bg-[var(--rail)] py-2.5"
+	aria-label="Connections"
+>
+	<div
+		class="text-muted-foreground mb-2 flex h-8 w-8 items-center justify-center rounded-lg border bg-[var(--surface-raised)]"
+		title="Connections"
+	>
+		<Cable class="h-4 w-4" />
+	</div>
+
+	<div class="flex w-full flex-1 flex-col items-center gap-1.5 overflow-auto px-1.5">
 		{#each connectionState.connections as conn (conn.id)}
 			<button
-				class="group relative flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl transition-all {conn.isActive
-					? 'bg-accent'
-					: 'hover:bg-accent/50'}"
+				class="group relative flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-[10px] border transition-colors {conn.isActive
+					? 'border-border bg-[var(--surface-raised)] shadow-sm'
+					: 'hover:border-border border-transparent hover:bg-[var(--surface-hover)]'}"
 				onclick={() => handleSwitch(conn.id)}
 				oncontextmenu={(e) => handleContextMenu(e, conn.id)}
 				title="{conn.name || conn.database} @ {conn.host}"
 			>
-				<div
-					class="flex h-10 w-10 items-center justify-center rounded-lg"
-					style="background-color: {conn.color || '#6366f1'}20"
-				>
-					<Database class="h-5 w-5" style="color: {conn.color || '#6366f1'}" />
+				<div class="flex h-7 w-7 items-center justify-center rounded-md">
+					<Database class="h-4 w-4 {conn.isActive ? 'text-foreground' : 'text-muted-foreground'}" />
 				</div>
-				<!-- Active indicator -->
 				{#if conn.isActive}
 					<div
-						class="absolute -left-0.5 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full"
-						style="background-color: {conn.color || '#6366f1'}"
+						class="bg-foreground absolute top-1/2 -left-[7px] h-5 w-[2px] -translate-y-1/2 rounded-r-full"
 					></div>
 				{/if}
-				<!-- Tooltip -->
 				<div
-					class="bg-popover text-popover-foreground pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md border px-2 py-1 text-xs shadow-md group-hover:block"
+					class="rt-popover text-popover-foreground pointer-events-none absolute left-full z-50 ml-2 hidden rounded-md px-2.5 py-1.5 text-[11px] font-medium whitespace-nowrap group-hover:block"
 				>
 					{conn.name || conn.database}
 				</div>
@@ -89,19 +96,18 @@
 		{/each}
 	</div>
 
-	<!-- Add New Connection -->
-	<div class="border-t pt-2">
+	<div class="mt-2 flex w-10 flex-col items-center gap-1.5 border-t pt-2">
 		<button
-			class="hover:bg-accent flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl transition-colors"
+			class="rt-toolbar-button !border-border h-9 w-9 cursor-pointer border-dashed"
 			onclick={handleNewConnection}
 			title="New Connection"
 		>
-			<Plus class="text-muted-foreground h-5 w-5" />
+			<Plus class="h-4 w-4" />
 		</button>
 	</div>
 
 	<!-- Right-click Context Menu -->
-	{#if showContextMenu}
+	{#if showContextMenu && contextMenuConnection}
 		<button
 			type="button"
 			class="fixed inset-0 z-40 cursor-default"
@@ -109,17 +115,38 @@
 			aria-label="Close menu"
 		></button>
 		<div
-			class="bg-popover text-popover-foreground fixed z-50 min-w-36 rounded-md border p-1 shadow-lg"
+			class="rt-context-menu fixed z-50"
 			style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
 			transition:fly={{ duration: 100, y: -5 }}
+			role="menu"
+			data-context-menu="connection"
 		>
+			<div class="rt-context-header">
+				<span class="rt-context-header-icon">
+					<Database class="h-3.5 w-3.5" />
+				</span>
+				<span class="min-w-0">
+					<span class="rt-context-title"
+						>{contextMenuConnection.name || contextMenuConnection.database}</span
+					>
+					<span class="rt-context-meta"
+						>{contextMenuConnection.database} · {contextMenuConnection.host}</span
+					>
+				</span>
+			</div>
 			<button
 				type="button"
-				class="hover:bg-accent hover:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-red-500 hover:bg-red-50"
+				class="rt-context-item rt-context-item--danger"
 				onclick={handleDisconnect}
+				role="menuitem"
 			>
-				<X class="h-4 w-4" />
-				Disconnect
+				<span class="rt-context-item-icon">
+					<Unplug class="h-3.5 w-3.5" />
+				</span>
+				<span>
+					<span class="rt-context-label">Disconnect</span>
+					<span class="rt-context-meta">Close this database session</span>
+				</span>
 			</button>
 		</div>
 	{/if}
