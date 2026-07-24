@@ -63,38 +63,10 @@ func (m *MySQL) Connect(ctx context.Context) error {
 		}
 	}
 
-	host := strings.TrimSpace(m.cfg.Host)
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	port := strings.TrimSpace(m.cfg.Port)
-	if port == "" {
-		port = "3306"
-	}
-
-	driverConfig := mysqldriver.NewConfig()
-	driverConfig.User = m.cfg.User
-	driverConfig.Passwd = m.cfg.Password
-	driverConfig.Net = "tcp"
-	driverConfig.Addr = net.JoinHostPort(host, port)
-	driverConfig.DBName = strings.TrimSpace(m.cfg.Db)
-	driverConfig.ParseTime = true
-	driverConfig.Loc = time.UTC
-	driverConfig.Timeout = 15 * time.Second
-	driverConfig.ReadTimeout = 0
-	driverConfig.WriteTimeout = 0
-	driverConfig.MultiStatements = false
-	driverConfig.InterpolateParams = false
-	driverConfig.ClientFoundRows = true
-	driverConfig.Params = map[string]string{
-		"charset": "utf8mb4",
-	}
-
-	tlsConfig, err := buildMySQLTLSConfig(m.cfg, host)
+	driverConfig, err := buildMySQLDriverConfig(m.cfg)
 	if err != nil {
 		return err
 	}
-	driverConfig.TLS = tlsConfig
 
 	connector, err := mysqldriver.NewConnector(driverConfig)
 	if err != nil {
@@ -118,6 +90,45 @@ func (m *MySQL) Connect(ctx context.Context) error {
 		m.engine = "MySQL"
 	}
 	return nil
+}
+
+func buildMySQLDriverConfig(cfg Config) (*mysqldriver.Config, error) {
+	host := strings.TrimSpace(cfg.Host)
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := strings.TrimSpace(cfg.Port)
+	if port == "" {
+		port = "3306"
+	}
+
+	driverConfig := mysqldriver.NewConfig()
+	driverConfig.User = cfg.User
+	driverConfig.Passwd = cfg.Password
+	driverConfig.Net = "tcp"
+	driverConfig.Addr = net.JoinHostPort(host, port)
+	driverConfig.DBName = strings.TrimSpace(cfg.Db)
+	driverConfig.ParseTime = true
+	driverConfig.Loc = time.UTC
+	driverConfig.Timeout = 15 * time.Second
+	driverConfig.ReadTimeout = 0
+	driverConfig.WriteTimeout = 0
+	driverConfig.MultiStatements = false
+	driverConfig.InterpolateParams = false
+	driverConfig.ClientFoundRows = true
+	if err := driverConfig.Apply(
+		mysqldriver.Charset("utf8mb4", "utf8mb4_unicode_ci"),
+	); err != nil {
+		return nil, fmt.Errorf("configure MySQL connection charset: %w", err)
+	}
+
+	tlsConfig, err := buildMySQLTLSConfig(cfg, host)
+	if err != nil {
+		return nil, err
+	}
+	driverConfig.TLS = tlsConfig
+
+	return driverConfig, nil
 }
 
 func buildMySQLTLSConfig(cfg Config, host string) (*tls.Config, error) {

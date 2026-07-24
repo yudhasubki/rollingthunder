@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"rollingthunder/pkg/database"
@@ -156,6 +157,29 @@ func TestMySQLTLSModes(t *testing.T) {
 		"db.example",
 	); err == nil {
 		t.Fatal("disable accepted a client certificate")
+	}
+}
+
+func TestMySQLDriverConfigUsesCompatibleCharsetOption(t *testing.T) {
+	driverConfig, err := buildMySQLDriverConfig(Config{
+		Host: "db.example",
+		Db:   "rolling_thunder",
+	})
+	if err != nil {
+		t.Fatalf("buildMySQLDriverConfig() error = %v", err)
+	}
+	if _, exists := driverConfig.Params["charset"]; exists {
+		t.Fatal("charset must not be configured as a generic session variable")
+	}
+
+	dsn := driverConfig.FormatDSN()
+	for _, parameter := range []string{
+		"charset=utf8mb4",
+		"collation=utf8mb4_unicode_ci",
+	} {
+		if !strings.Contains(dsn, parameter) {
+			t.Fatalf("DSN %q does not contain %q", dsn, parameter)
+		}
 	}
 }
 
