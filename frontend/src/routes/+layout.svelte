@@ -3,12 +3,17 @@
 	import { onMount } from 'svelte';
 	import { GetDiagnosticsSettings, RecordFrontendError } from '$lib/wailsjs/go/db/Service';
 	import { diagnostics } from '$lib/wailsjs/go/models';
+	import { hasBackendMethod } from '$lib/wails/backendCompatibility';
 
 	let { children } = $props();
 
 	onMount(() => {
 		let diagnosticsEnabled = false;
 		const refreshDiagnostics = async () => {
+			if (!hasBackendMethod('GetDiagnosticsSettings')) {
+				diagnosticsEnabled = false;
+				return;
+			}
 			try {
 				const response = await GetDiagnosticsSettings();
 				diagnosticsEnabled = Boolean(response.data?.enabled);

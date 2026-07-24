@@ -14,6 +14,11 @@
 	} from '$lib/connection/attempt';
 	import { createServiceError } from '$lib/errors/service';
 	import {
+		BACKEND_RESTART_MESSAGE,
+		hasBackendMethod,
+		isBackendVersionMismatch
+	} from '$lib/wails/backendCompatibility';
+	import {
 		ArrowLeft,
 		ArrowRight,
 		AlertCircle,
@@ -57,7 +62,12 @@
 	);
 
 	onMount(() => {
-		void Promise.all([loadProfiles(), connectionStore.refreshConnections()]);
+		if (!hasBackendMethod('GetDiagnosticsSettings')) {
+			message = BACKEND_RESTART_MESSAGE;
+			messageLevel = 'error';
+		} else {
+			void Promise.all([loadProfiles(), connectionStore.refreshConnections()]);
+		}
 		return () => {
 			stopConnectionElapsedTimer?.();
 			if (connectionAttemptID) {
@@ -75,7 +85,9 @@
 			}
 			profiles = response.data || [];
 		} catch (error: any) {
-			message = error?.message || 'Could not load saved profiles';
+			message = isBackendVersionMismatch(error)
+				? BACKEND_RESTART_MESSAGE
+				: error?.message || 'Could not load saved profiles';
 			messageLevel = 'error';
 		} finally {
 			loadingProfiles = false;

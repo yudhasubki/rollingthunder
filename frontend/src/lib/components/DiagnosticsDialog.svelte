@@ -18,6 +18,7 @@
 	} from '$lib/wailsjs/go/db/Service';
 	import { diagnostics } from '$lib/wailsjs/go/models';
 	import { focusTrap } from '$lib/actions/focusTrap';
+	import { BACKEND_RESTART_MESSAGE, hasBackendMethod } from '$lib/wails/backendCompatibility';
 
 	interface Props {
 		open: boolean;
@@ -57,6 +58,11 @@
 	async function load(): Promise<void> {
 		loading = true;
 		error = '';
+		if (!hasBackendMethod('GetDiagnosticsSettings')) {
+			error = BACKEND_RESTART_MESSAGE;
+			loading = false;
+			return;
+		}
 		try {
 			const response = await GetDiagnosticsSettings();
 			if (response.errors?.length) throw new Error(response.errors[0].detail);
