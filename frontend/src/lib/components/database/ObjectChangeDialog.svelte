@@ -24,6 +24,7 @@
 	import { createServiceError } from '$lib/errors/service';
 	import { updateStatus } from '$lib/stores/status.svelte';
 	import { focusTrap } from '$lib/actions/focusTrap';
+	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 
 	interface Props {
 		open: boolean;
@@ -93,6 +94,22 @@
 	const selectedColumnMetadata = $derived(
 		columns.find((column) => column.name === selectedColumn) || null
 	);
+	const columnOptions = $derived(
+		columns.map((column) => ({
+			value: column.name,
+			label: `${column.name} · ${column.data_type}`
+		}))
+	);
+	const nullableOptions = [
+		{ value: 'keep', label: 'Keep current' },
+		{ value: 'nullable', label: 'Allow NULL' },
+		{ value: 'required', label: 'Set NOT NULL' }
+	];
+	const defaultOptions = [
+		{ value: 'keep', label: 'Keep current' },
+		{ value: 'set', label: 'Set default' },
+		{ value: 'drop', label: 'Drop default' }
+	];
 
 	$effect(() => {
 		if (!open || !intent) return;
@@ -379,6 +396,23 @@
 		defaultMode = 'keep';
 		columnDefault = '';
 	}
+
+	function selectColumn(value: string) {
+		selectedColumn = value;
+		resetColumnEdits();
+	}
+
+	function selectNullableMode(value: string) {
+		if (value === 'keep' || value === 'nullable' || value === 'required') {
+			nullableMode = value;
+		}
+	}
+
+	function selectDefaultMode(value: string) {
+		if (value === 'keep' || value === 'set' || value === 'drop') {
+			defaultMode = value;
+		}
+	}
 </script>
 
 {#if open && intent}
@@ -632,18 +666,20 @@
 							<section
 								class="grid gap-3 rounded-xl border bg-[var(--surface-raised)] p-4 sm:grid-cols-2"
 							>
-								<label class="sm:col-span-2">
-									<span class="text-[9px] font-bold">Column</span>
-									<select
-										class="rt-input mt-1.5 h-9 w-full px-3 text-[10px]"
-										bind:value={selectedColumn}
-										onchange={resetColumnEdits}
-									>
-										{#each columns as column}
-											<option value={column.name}>{column.name} · {column.data_type}</option>
-										{/each}
-									</select>
-								</label>
+								<div class="sm:col-span-2">
+									<label class="text-[9px] font-bold" for="alter-column-source">Column</label>
+									<FilterCombobox
+										id="alter-column-source"
+										class="mt-1.5"
+										options={columnOptions}
+										value={selectedColumn}
+										onChange={selectColumn}
+										placeholder="Select a column"
+										searchPlaceholder="Search columns…"
+										emptyText="No matching columns"
+										triggerClass="h-9 px-3 text-[10px] font-mono"
+									/>
+								</div>
 								<label>
 									<span class="text-[9px] font-bold"
 										>Rename to <span class="text-muted-foreground">(optional)</span></span
@@ -676,28 +712,32 @@
 										placeholder={`${selectedColumn}::text`}
 									/>
 								</label>
-								<label>
-									<span class="text-[9px] font-bold">Nullability</span>
-									<select
-										class="rt-input mt-1.5 h-9 w-full px-3 text-[10px]"
-										bind:value={nullableMode}
+								<div>
+									<label class="text-[9px] font-bold" for="alter-column-nullability"
+										>Nullability</label
 									>
-										<option value="keep">Keep current</option>
-										<option value="nullable">Allow NULL</option>
-										<option value="required">Set NOT NULL</option>
-									</select>
-								</label>
-								<label>
-									<span class="text-[9px] font-bold">Default</span>
-									<select
-										class="rt-input mt-1.5 h-9 w-full px-3 text-[10px]"
-										bind:value={defaultMode}
-									>
-										<option value="keep">Keep current</option>
-										<option value="set">Set default</option>
-										<option value="drop">Drop default</option>
-									</select>
-								</label>
+									<FilterCombobox
+										id="alter-column-nullability"
+										class="mt-1.5"
+										options={nullableOptions}
+										value={nullableMode}
+										onChange={selectNullableMode}
+										searchable={false}
+										triggerClass="h-9 px-3 text-[10px]"
+									/>
+								</div>
+								<div>
+									<label class="text-[9px] font-bold" for="alter-column-default">Default</label>
+									<FilterCombobox
+										id="alter-column-default"
+										class="mt-1.5"
+										options={defaultOptions}
+										value={defaultMode}
+										onChange={selectDefaultMode}
+										searchable={false}
+										triggerClass="h-9 px-3 text-[10px]"
+									/>
+								</div>
 								{#if defaultMode === 'set'}
 									<label class="sm:col-span-2">
 										<span class="text-[9px] font-bold">Default expression</span>
