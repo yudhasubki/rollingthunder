@@ -14,7 +14,9 @@ type BaseResponse[T any] struct {
 type BaseErrorResponse struct {
 	Title  string `json:"title"`
 	Status int    `json:"status"`
+	Code   string `json:"code,omitempty"`
 	Detail string `json:"detail"`
+	Hint   string `json:"hint,omitempty"`
 }
 
 type BaseWithMeta[R, T any] struct {

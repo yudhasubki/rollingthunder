@@ -196,6 +196,22 @@ export namespace database {
 	        this.format = source["format"];
 	    }
 	}
+	export class Filter {
+	    Column: string;
+	    Operator: string;
+	    Value: any;
+
+	    static createFrom(source: any = {}) {
+	        return new Filter(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Column = source["Column"];
+	        this.Operator = source["Operator"];
+	        this.Value = source["Value"];
+	    }
+	}
 	export class Index {
 	    name: string;
 	    columns: string[];
@@ -233,6 +249,26 @@ export namespace database {
 	    }
 	}
 	
+	export class QueryRequest {
+	    connectionId: string;
+	    query: string;
+	    attemptId: string;
+	    transactionId?: string;
+	    allowUnfilteredMutation: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new QueryRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connectionId = source["connectionId"];
+	        this.query = source["query"];
+	        this.attemptId = source["attemptId"];
+	        this.transactionId = source["transactionId"];
+	        this.allowUnfilteredMutation = source["allowUnfilteredMutation"];
+	    }
+	}
 	export class QueryResult {
 	    rows: any[];
 	    truncated: boolean;
@@ -355,7 +391,7 @@ export namespace database {
 	    Name: string;
 	    Offset: number;
 	    Limit: number;
-	    Filter: string;
+	    Filters: Filter[];
 	    Sorts: Sort[];
 	
 	    static createFrom(source: any = {}) {
@@ -368,7 +404,7 @@ export namespace database {
 	        this.Name = source["Name"];
 	        this.Offset = source["Offset"];
 	        this.Limit = source["Limit"];
-	        this.Filter = source["Filter"];
+	        this.Filters = this.convertValues(source["Filters"], Filter);
 	        this.Sorts = this.convertValues(source["Sorts"], Sort);
 	    }
 	
@@ -571,6 +607,43 @@ export namespace db {
 		    return a;
 		}
 	}
+	export class TransactionInfo {
+	    id: string;
+	    connectionId: string;
+	    state: string;
+	    // Go type: time
+	    startedAt: any;
+
+	    static createFrom(source: any = {}) {
+	        return new TransactionInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.connectionId = source["connectionId"];
+	        this.state = source["state"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
@@ -579,7 +652,9 @@ export namespace response {
 	export class BaseErrorResponse {
 	    title: string;
 	    status: number;
+	    code?: string;
 	    detail: string;
+	    hint?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new BaseErrorResponse(source);
@@ -589,7 +664,9 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.title = source["title"];
 	        this.status = source["status"];
+	        this.code = source["code"];
 	        this.detail = source["detail"];
+	        this.hint = source["hint"];
 	    }
 	}
 	export class BaseResponse___rollingthunder_internal_db_ConnectionInfo_ {
@@ -830,6 +907,38 @@ export namespace response {
 	        this.data = this.convertValues(source["data"], db.SavedConnection);
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_internal_db_TransactionInfo_ {
+	    errors?: BaseErrorResponse[];
+	    data?: db.TransactionInfo;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_internal_db_TransactionInfo_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], db.TransactionInfo);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1106,4 +1215,3 @@ export namespace response {
 	}
 
 }
-

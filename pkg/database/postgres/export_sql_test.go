@@ -211,17 +211,29 @@ func TestBuildPostgresExportQueryUsesSQLLiteralProjection(t *testing.T) {
 			Schema: "public",
 			Name:   "orders",
 			Limit:  100,
-			Filter: `"status" = 'open'`,
+			Filters: []database.Filter{
+				{
+					Column:   "status",
+					Operator: database.FilterEqual,
+					Value:    "open",
+				},
+			},
 		},
 		database.ExportScopePage,
-		database.Structures{{Name: "id", IsPrimary: true}},
+		database.Structures{
+			{Name: "id", IsPrimary: true},
+			{Name: "status"},
+		},
 		`pg_catalog.quote_nullable("id") AS "id"`,
 	)
 	if err != nil {
 		t.Fatalf("build projected export query: %v", err)
 	}
-	const expected = `SELECT pg_catalog.quote_nullable("id") AS "id" FROM "public"."orders" WHERE "status" = 'open' ORDER BY "id" ASC NULLS LAST LIMIT 100 OFFSET 0`
-	if query != expected {
-		t.Fatalf("query = %q, want %q", query, expected)
+	const expected = `SELECT pg_catalog.quote_nullable("id") AS "id" FROM "public"."orders" WHERE "status" = $1 ORDER BY "id" ASC NULLS LAST LIMIT 100 OFFSET 0`
+	if query.SQL != expected {
+		t.Fatalf("query = %q, want %q", query.SQL, expected)
+	}
+	if len(query.Args) != 1 || query.Args[0] != "open" {
+		t.Fatalf("query args = %#v, want [open]", query.Args)
 	}
 }

@@ -47,6 +47,10 @@ type Service struct {
 	connectionTimeout   time.Duration
 	connectionAttempts  map[string]*connectionAttempt
 	connectionAttemptMu sync.Mutex
+	queryAttempts       map[string]*queryAttempt
+	queryAttemptMu      sync.RWMutex
+	transactions        map[string]*transactionSession
+	transactionMu       sync.RWMutex
 }
 
 func NewService() *Service {
@@ -57,6 +61,8 @@ func NewService() *Service {
 		newDriver:          NewDriver,
 		connectionTimeout:  defaultConnectionTimeout,
 		connectionAttempts: make(map[string]*connectionAttempt),
+		queryAttempts:      make(map[string]*queryAttempt),
+		transactions:       make(map[string]*transactionSession),
 	}
 }
 
@@ -65,17 +71,21 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func serviceError[T any](detail string) response.BaseResponse[T] {
-	return response.BaseResponse[T]{
-		Errors: []response.BaseErrorResponse{
-			{Detail: detail},
-		},
-	}
+	return serviceErrorWithCode[T](
+		500,
+		errorCodeDatabaseOperationFailed,
+		"Database operation failed",
+		detail,
+		"Retry the operation or inspect the activity console for more context.",
+	)
 }
 
 // driverFor pins an active operation to one connection. The release function
 // must be called after the driver operation completes. Disconnect waits for
 // pinned operations instead of closing a driver while it is still in use.
-func (s *Service) driverFor(connectionID string) (database.Driver, func(), error) {
+func (s *Service) pinnedConnection(
+	connectionID string,
+) (*Connection, func(), error) {
 	if connectionID == "" {
 		return nil, nil, fmt.Errorf("connection ID is required")
 	}
@@ -93,7 +103,15 @@ func (s *Service) driverFor(connectionID string) (database.Driver, func(), error
 		return nil, nil, fmt.Errorf("connection not found or disconnected")
 	}
 
-	return conn.Driver, conn.mu.RUnlock, nil
+	return conn, conn.mu.RUnlock, nil
+}
+
+func (s *Service) driverFor(connectionID string) (database.Driver, func(), error) {
+	conn, release, err := s.pinnedConnection(connectionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conn.Driver, release, nil
 }
 
 func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectResponse] {
@@ -108,27 +126,38 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 
 	attempt, err := s.startConnectionAttempt(req.AttemptID)
 	if err != nil {
-		return serviceError[ConnectResponse](err.Error())
+		return serviceErrorWithCode[ConnectResponse](
+			400,
+			errorCodeInvalidRequest,
+			"Invalid connection request",
+			err.Error(),
+			"Check the connection profile and try again.",
+		)
 	}
 	defer s.finishConnectionAttempt(attempt)
 
 	driver, err := s.newDriver(attempt.ctx, driverName, req.Config)
 	if err != nil {
-		return serviceError[ConnectResponse](err.Error())
+		return serviceErrorWithCode[ConnectResponse](
+			400,
+			errorCodeInvalidRequest,
+			"Unsupported database provider",
+			err.Error(),
+			"Choose one of the database providers currently marked as available.",
+		)
 	}
 
 	err = driver.Connect(attempt.ctx)
 	if err != nil {
 		_ = driver.Close()
-		return serviceError[ConnectResponse](
-			connectionAttemptError(attempt, err).Error(),
-		)
+		return connectionFailure[ConnectResponse](attempt, err)
 	}
 
 	if !s.claimConnectionAttempt(attempt) {
 		_ = driver.Close()
-		return serviceError[ConnectResponse](
-			connectionAttemptError(attempt, nil).Error(),
+		return connectionFailure[ConnectResponse](
+			attempt,
+			connectionAttemptError(attempt, nil),
 		)
 	}
 
@@ -346,26 +375,6 @@ func (s *Service) DeleteRow(connectionID string, table database.Table, primaryKe
 	}
 }
 
-// ExecuteQuery executes a raw SQL query
-func (s *Service) ExecuteQuery(connectionID string, query string) response.BaseResponse[database.QueryResult] {
-	driver, release, err := s.driverFor(connectionID)
-	if err != nil {
-		return serviceError[database.QueryResult](err.Error())
-	}
-	defer release()
-
-	result, err := driver.ExecuteQuery(query, database.QueryOptions{
-		MaxRows: database.DefaultQueryResultLimit,
-	})
-	if err != nil {
-		return serviceError[database.QueryResult](err.Error())
-	}
-
-	return response.BaseResponse[database.QueryResult]{
-		Data: result,
-	}
-}
-
 // CreateTable creates a new table in the database
 func (s *Service) CreateTable(connectionID string, table database.Table, columns []database.ColumnDefinition) response.BaseResponse[bool] {
 	driver, release, err := s.driverFor(connectionID)
@@ -547,6 +556,7 @@ func (s *Service) DisconnectConnection(connectionID string) response.BaseRespons
 	// Wait for in-flight work on this connection before closing its driver.
 	conn.mu.Lock()
 	conn.closed = true
+	s.rollbackTransactionsForConnection(connectionID)
 	err := conn.Driver.Close()
 	conn.mu.Unlock()
 	if err != nil {

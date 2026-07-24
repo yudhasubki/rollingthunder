@@ -39,7 +39,7 @@
 - Inspect columns, constraints, relationships, indexes, and table DDL.
 - Identify primary and foreign keys explicitly and open referenced tables directly from Structure.
 - Open an interactive schema diagram.
-- Browse paginated table data with filters and server-side sorting.
+- Browse paginated table data with typed, parameterized filters and server-side sorting.
 - Use single-column sorting or Shift-click headers for prioritized multi-column sorting.
 - Read typed cell previews with explicit `NULL`, boolean, JSON, date/time, and binary states.
 - Keep row numbers, actions, and headers visible while scrolling, and resize columns when needed.
@@ -76,6 +76,13 @@
 - Monaco-powered SQL editing and syntax highlighting.
 - Execute the selected SQL or the statement under the cursor.
 - Query history, execution status, result grids, and activity-console feedback.
+- Cancel a running query with live elapsed-time feedback.
+- Start an explicit transaction per query tab, then commit or roll back from the editor toolbar.
+- Block raw transaction-control statements from pooled auto-commit queries so transaction state
+  cannot silently move to another connection.
+- Review and explicitly confirm an `UPDATE` or `DELETE` without a top-level `WHERE` clause.
+- See stable query error codes and recovery hints for syntax, constraint, permission, cancellation,
+  and transaction failures.
 - Paginate query results in 100-row client pages and cap interactive results at 1,000 rows with a
   visible truncation warning.
 - Schema-aware completion for schemas, tables, columns, and aliases.
@@ -110,7 +117,7 @@ Other important limitations include:
 - PostgreSQL is the only real database driver.
 - Indexes can be inspected but not created or edited visually.
 - Existing tables cannot yet be altered from the structure editor.
-- Query cancellation, multiple result sets, and visual query plans are not implemented.
+- Multiple result sets and visual query plans are not implemented.
 - Saved credentials are not yet integrated with the operating-system keychain.
 
 ## Tech stack
@@ -162,8 +169,8 @@ npm run build
 
 ## Roadmap
 
-The next milestones add a complete database-object explorer, safer query workflows, real MySQL and
-SQLite drivers, and production hardening. See
+The next milestones add a complete database-object explorer, real MySQL and SQLite drivers,
+power-user query tooling, and production hardening. See
 [ROADMAP.md](ROADMAP.md) for priorities and acceptance criteria.
 
 ## Contributing

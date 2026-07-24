@@ -13,6 +13,7 @@
 		createConnectionAttemptID,
 		startConnectionElapsedTimer
 	} from '$lib/connection/attempt';
+	import { createServiceError } from '$lib/errors/service';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import { database, db } from '$lib/wailsjs/go/models';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
@@ -166,7 +167,9 @@
 		loadingProfiles = true;
 		try {
 			const response = await GetSavedConnections();
-			if (response.errors?.length) throw new Error(response.errors[0].detail);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not load saved connections');
+			}
 			profiles = response.data || [];
 
 			if (createNew) {
@@ -295,7 +298,9 @@
 			const response = editingId
 				? await UpdateConnection(editingId, buildConfig())
 				: await SaveConnection(buildConfig());
-			if (response.errors?.length) throw new Error(response.errors[0].detail);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not save connection profile');
+			}
 
 			const savedId = response.data?.id || editingId;
 			await loadProfiles(savedId);
@@ -331,7 +336,7 @@
 			});
 			const response = await Connect(request);
 			if (response.errors?.length || !response.data?.connected) {
-				throw new Error(response.errors?.[0]?.detail || 'Connection failed');
+				throw createServiceError(response.errors?.[0], 'Connection failed');
 			}
 
 			await connectionStore.refreshConnections();
@@ -341,7 +346,12 @@
 			onClose();
 		} catch (error: any) {
 			const detail = error?.message || 'Could not connect to the database';
-			showMessage(detail, detail.toLowerCase().includes('cancelled') ? 'info' : 'error');
+			showMessage(
+				detail,
+				error?.code === 'CONNECTION_CANCELLED' || detail.toLowerCase().includes('cancelled')
+					? 'info'
+					: 'error'
+			);
 		} finally {
 			if (connectionAttemptID === attemptID) {
 				connectionAttemptID = null;
@@ -377,7 +387,9 @@
 		action = 'delete';
 		try {
 			const response = await DeleteConnection(editingId);
-			if (response.errors?.length) throw new Error(response.errors[0].detail);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not delete connection profile');
+			}
 			const deletedName = connectionName;
 			newProfile();
 			await loadProfiles();

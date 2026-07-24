@@ -401,14 +401,24 @@ func (p *Postgres) GetDatabaseInfo() (database.Info, error) {
 
 func (p *Postgres) CountCollectionData(table database.Table) (int, error) {
 	var result int
+	columns, err := p.getCollectionStructures(table)
+	if err != nil {
+		return 0, err
+	}
+	filterClause, args, err := buildPostgresFilterClause(
+		table.Filters,
+		structuresFromColumns(columns),
+		1,
+	)
+	if err != nil {
+		return 0, err
+	}
 	query := fmt.Sprintf(
 		"SELECT COUNT(*) FROM %s",
 		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
 	)
-	if table.Filter != "" {
-		query += fmt.Sprintf(" WHERE %s", table.Filter)
-	}
-	err := p.conn.Get(&result, query)
+	query += filterClause
+	err = p.conn.Get(&result, query, args...)
 	return result, err
 }
 
@@ -460,16 +470,23 @@ func (p *Postgres) GetCollectionData(table database.Table) (database.Structures,
 		return nil, nil, err
 	}
 
+	filterClause, args, err := buildPostgresFilterClause(
+		table.Filters,
+		structures,
+		1,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	query := fmt.Sprintf(
 		`SELECT * FROM %s`,
 		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
 	)
-	if table.Filter != "" {
-		query += fmt.Sprintf(" WHERE %s", table.Filter)
-	}
+	query += filterClause
 	query += orderClause
 	query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
-	rows, err := p.conn.Queryx(query)
+	rows, err := p.conn.Queryx(query, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -509,16 +526,15 @@ func (p *Postgres) InsertRow(table database.Table, data map[string]interface{}) 
 		if col == "_isNew" || strings.HasPrefix(col, "temp_") {
 			continue
 		}
-		columns = append(columns, fmt.Sprintf(`"%s"`, col))
+		columns = append(columns, quotePostgresIdentifier(col))
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
 		values = append(values, val)
 		i++
 	}
 
 	query := fmt.Sprintf(
-		`INSERT INTO %s.%s (%s) VALUES (%s)`,
-		table.Schema,
-		table.Name,
+		`INSERT INTO %s (%s) VALUES (%s)`,
+		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
 		strings.Join(columns, ", "),
 		strings.Join(placeholders, ", "),
 	)
@@ -531,6 +547,10 @@ func (p *Postgres) InsertRow(table database.Table, data map[string]interface{}) 
 func (p *Postgres) UpdateRow(table database.Table, data map[string]interface{}, primaryKey string) error {
 	if len(data) == 0 {
 		return errors.New("no data to update")
+	}
+	primaryKey = strings.TrimSpace(primaryKey)
+	if primaryKey == "" {
+		return errors.New("a primary key is required for row updates")
 	}
 
 	primaryValue, ok := data[primaryKey]
@@ -550,36 +570,70 @@ func (p *Postgres) UpdateRow(table database.Table, data map[string]interface{}, 
 		if col == "_isNew" || strings.HasPrefix(col, "temp_") {
 			continue
 		}
-		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, col, i))
+		setClauses = append(
+			setClauses,
+			fmt.Sprintf("%s = $%d", quotePostgresIdentifier(col), i),
+		)
 		values = append(values, val)
 		i++
+	}
+	if len(setClauses) == 0 {
+		return errors.New("no mutable columns to update")
 	}
 
 	values = append(values, primaryValue)
 	query := fmt.Sprintf(
-		`UPDATE %s.%s SET %s WHERE "%s" = $%d`,
-		table.Schema,
-		table.Name,
+		`UPDATE %s SET %s WHERE %s = $%d`,
+		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
 		strings.Join(setClauses, ", "),
-		primaryKey,
+		quotePostgresIdentifier(primaryKey),
 		i,
 	)
 
-	_, err := p.conn.Exec(query, values...)
-	return err
+	result, err := p.conn.Exec(query, values...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf(
+			"row update affected %d rows instead of exactly one",
+			affected,
+		)
+	}
+	return nil
 }
 
 // DeleteRow deletes a row from the table by primary key
 func (p *Postgres) DeleteRow(table database.Table, primaryKey string, primaryValue interface{}) error {
+	primaryKey = strings.TrimSpace(primaryKey)
+	if primaryKey == "" {
+		return errors.New("a primary key is required for row deletion")
+	}
 	query := fmt.Sprintf(
-		`DELETE FROM %s.%s WHERE "%s" = $1`,
-		table.Schema,
-		table.Name,
-		primaryKey,
+		`DELETE FROM %s WHERE %s = $1`,
+		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
+		quotePostgresIdentifier(primaryKey),
 	)
 
-	_, err := p.conn.Exec(query, primaryValue)
-	return err
+	result, err := p.conn.Exec(query, primaryValue)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf(
+			"row deletion affected %d rows instead of exactly one",
+			affected,
+		)
+	}
+	return nil
 }
 
 type mappedRows interface {
@@ -613,15 +667,66 @@ func collectQueryResults(rows mappedRows, maxRows int) (database.QueryResult, er
 	return result, nil
 }
 
-// ExecuteQuery executes a raw SQL query and returns a bounded result set.
-func (p *Postgres) ExecuteQuery(query string, options database.QueryOptions) (database.QueryResult, error) {
-	rows, err := p.conn.Queryx(query)
+type queryContextRunner interface {
+	QueryxContext(
+		context.Context,
+		string,
+		...interface{},
+	) (*sqlx.Rows, error)
+}
+
+func executePostgresQuery(
+	ctx context.Context,
+	runner queryContextRunner,
+	query string,
+	options database.QueryOptions,
+) (database.QueryResult, error) {
+	rows, err := runner.QueryxContext(ctx, query)
 	if err != nil {
 		return database.QueryResult{}, err
 	}
 	defer rows.Close()
 
 	return collectQueryResults(rows, options.MaxRows)
+}
+
+// ExecuteQuery executes a raw SQL query and returns a bounded result set.
+func (p *Postgres) ExecuteQuery(
+	ctx context.Context,
+	query string,
+	options database.QueryOptions,
+) (database.QueryResult, error) {
+	return executePostgresQuery(ctx, p.conn, query, options)
+}
+
+type postgresTransaction struct {
+	tx *sqlx.Tx
+}
+
+func (transaction *postgresTransaction) ExecuteQuery(
+	ctx context.Context,
+	query string,
+	options database.QueryOptions,
+) (database.QueryResult, error) {
+	return executePostgresQuery(ctx, transaction.tx, query, options)
+}
+
+func (transaction *postgresTransaction) Commit() error {
+	return transaction.tx.Commit()
+}
+
+func (transaction *postgresTransaction) Rollback() error {
+	return transaction.tx.Rollback()
+}
+
+func (p *Postgres) BeginTransaction(
+	ctx context.Context,
+) (database.Transaction, error) {
+	transaction, err := p.conn.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &postgresTransaction{tx: transaction}, nil
 }
 
 type sqlxExportRows struct {
@@ -648,7 +753,7 @@ func buildPostgresExportQuery(
 	table database.Table,
 	scope database.ExportScope,
 	structures database.Structures,
-) (string, error) {
+) (postgresQuery, error) {
 	return buildPostgresExportQueryWithProjection(table, scope, structures, "*")
 }
 
@@ -657,20 +762,28 @@ func buildPostgresExportQueryWithProjection(
 	scope database.ExportScope,
 	structures database.Structures,
 	projection string,
-) (string, error) {
+) (postgresQuery, error) {
 	if strings.TrimSpace(table.Schema) == "" || strings.TrimSpace(table.Name) == "" {
-		return "", fmt.Errorf("schema and table are required")
+		return postgresQuery{}, fmt.Errorf("schema and table are required")
 	}
 	if strings.TrimSpace(projection) == "" {
-		return "", fmt.Errorf("export projection is required")
+		return postgresQuery{}, fmt.Errorf("export projection is required")
 	}
 	if table.Offset < 0 {
-		return "", fmt.Errorf("table offset cannot be negative")
+		return postgresQuery{}, fmt.Errorf("table offset cannot be negative")
 	}
 
 	orderClause, err := buildPostgresOrderClause(table.Sorts, structures)
 	if err != nil {
-		return "", err
+		return postgresQuery{}, err
+	}
+	filterClause, args, err := buildPostgresFilterClause(
+		table.Filters,
+		structures,
+		1,
+	)
+	if err != nil {
+		return postgresQuery{}, err
 	}
 
 	query := fmt.Sprintf(
@@ -678,28 +791,26 @@ func buildPostgresExportQueryWithProjection(
 		projection,
 		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
 	)
-	if table.Filter != "" {
-		query += fmt.Sprintf(" WHERE %s", table.Filter)
-	}
+	query += filterClause
 	query += orderClause
 
 	switch scope {
 	case database.ExportScopePage:
 		if table.Limit <= 0 {
-			return "", fmt.Errorf("current-page export requires a positive table limit")
+			return postgresQuery{}, fmt.Errorf("current-page export requires a positive table limit")
 		}
 		query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
 	case database.ExportScopeSelected:
 		if table.Limit <= 0 {
-			return "", fmt.Errorf("selected-row export requires a positive table limit")
+			return postgresQuery{}, fmt.Errorf("selected-row export requires a positive table limit")
 		}
 		query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
 	case database.ExportScopeAll:
 	default:
-		return "", fmt.Errorf("unsupported table export scope %q", scope)
+		return postgresQuery{}, fmt.Errorf("unsupported table export scope %q", scope)
 	}
 
-	return query, nil
+	return postgresQuery{SQL: query, Args: args}, nil
 }
 
 func (p *Postgres) ExportTable(
@@ -735,7 +846,7 @@ func (p *Postgres) ExportTable(
 		return database.ExportStats{}, err
 	}
 
-	rows, err := p.conn.QueryxContext(ctx, query)
+	rows, err := p.conn.QueryxContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return database.ExportStats{}, err
 	}

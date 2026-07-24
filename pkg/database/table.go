@@ -21,12 +21,12 @@ type Sort struct {
 }
 
 type Table struct {
-	Schema string
-	Name   string
-	Offset int
-	Limit  int
-	Filter string // WHERE clause for filtering data
-	Sorts  []Sort
+	Schema  string
+	Name    string
+	Offset  int
+	Limit   int
+	Filters []Filter
+	Sorts   []Sort
 }
 
 type TableData struct {

@@ -22,6 +22,13 @@
 	import { database } from '$lib/wailsjs/go/models';
 	import { getColumnTypeLabel } from '$lib/table/cells';
 	import { getForeignRelation } from '$lib/table/relations';
+	import {
+		buildDatabaseFilters,
+		filterNeedsValue,
+		FILTER_OPERATORS,
+		type FilterCondition,
+		type FilterOperator
+	} from '$lib/table/filters';
 	import { updateStatus } from '$lib/stores/status.svelte';
 	import {
 		CountCollectionData,
@@ -49,27 +56,6 @@
 	}
 
 	let { tab }: Props = $props();
-
-	// Filter types
-	interface FilterCondition {
-		id: string;
-		column: string;
-		operator: string;
-		value: string;
-		enabled: boolean;
-	}
-
-	const FILTER_OPERATORS = [
-		{ value: '=', label: 'equals' },
-		{ value: '!=', label: 'not equals' },
-		{ value: '>', label: 'greater than' },
-		{ value: '<', label: 'less than' },
-		{ value: '>=', label: 'greater or equal' },
-		{ value: '<=', label: 'less or equal' },
-		{ value: 'LIKE', label: 'contains' },
-		{ value: 'IS NULL', label: 'is null' },
-		{ value: 'IS NOT NULL', label: 'is not null' }
-	];
 
 	let columns = $state<database.Structure[]>([]);
 	let indices = $state<database.Index[]>([]);
@@ -125,7 +111,7 @@
 			{
 				id: crypto.randomUUID(),
 				column: firstCol,
-				operator: '=',
+				operator: 'eq',
 				value: '',
 				enabled: true
 			}
@@ -136,8 +122,10 @@
 		filters = filters.filter((f) => f.id !== id);
 	}
 
-	function updateFilter(id: string, field: keyof FilterCondition, value: string) {
-		filters = filters.map((f) => (f.id === id ? { ...f, [field]: value } : f));
+	function updateFilter(id: string, field: keyof FilterCondition, value: string | FilterOperator) {
+		filters = filters.map((filter) =>
+			filter.id === id ? ({ ...filter, [field]: value } as FilterCondition) : filter
+		);
 	}
 
 	function applyFilters() {
@@ -149,29 +137,6 @@
 		filters = [];
 		appliedFilters = [];
 		currentPage = 0;
-	}
-
-	function buildFilterClause(currentFilters: FilterCondition[]): string {
-		if (currentFilters.length === 0) return '';
-
-		const conditions = currentFilters
-			.filter(
-				(filter) =>
-					filter.enabled &&
-					filter.column &&
-					(filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL' || filter.value)
-			)
-			.map((filter) => {
-				if (filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL') {
-					return `"${filter.column}" ${filter.operator}`;
-				}
-				if (filter.operator === 'LIKE') {
-					return `"${filter.column}" ILIKE '%${filter.value.replace(/'/g, "''")}'`;
-				}
-				return `"${filter.column}" ${filter.operator} '${filter.value.replace(/'/g, "''")}'`;
-			});
-
-		return conditions.length > 0 ? conditions.join(' AND ') : '';
 	}
 
 	function buildDatabaseSorts(currentSorting: SortingState): database.Sort[] {
@@ -278,7 +243,9 @@
 				reqTable.Schema = schemaName;
 				reqTable.Limit = tableLimit;
 				reqTable.Offset = offset;
-				reqTable.Filter = buildFilterClause(currentFilters);
+				reqTable.Filters = buildDatabaseFilters(currentFilters).map(
+					(filter) => new database.Filter(filter)
+				);
 				reqTable.Sorts = buildDatabaseSorts(currentSorting);
 
 				const totalRes = await CountCollectionData(connectionId, reqTable);
@@ -423,7 +390,7 @@
 			Name: tab.table,
 			Limit: tableLimit,
 			Offset: currentPage * tableLimit,
-			Filter: buildFilterClause(appliedFilters),
+			Filters: buildDatabaseFilters(appliedFilters).map((filter) => new database.Filter(filter)),
 			Sorts: buildDatabaseSorts(sorting)
 		});
 
@@ -890,7 +857,7 @@
 									class="w-full"
 								/>
 
-								{#if filter.operator !== 'IS NULL' && filter.operator !== 'IS NOT NULL'}
+								{#if filterNeedsValue(filter.operator)}
 									<input
 										type="text"
 										class="rt-input placeholder:text-muted-foreground h-8 w-full px-3 text-[10px]"

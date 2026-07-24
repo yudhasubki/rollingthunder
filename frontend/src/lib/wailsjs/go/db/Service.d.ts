@@ -5,9 +5,15 @@ import {db} from '../models';
 import {database} from '../models';
 import {context} from '../models';
 
+export function BeginTransaction(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
+
 export function CancelConnectionAttempt(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function CancelExport(arg1:string):Promise<response.BaseResponse_bool_>;
+
+export function CancelQuery(arg1:string):Promise<response.BaseResponse_bool_>;
+
+export function CommitTransaction(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
 
 export function Connect(arg1:db.ConnectRequest):Promise<response.BaseResponse_rollingthunder_internal_db_ConnectResponse_>;
 
@@ -23,7 +29,7 @@ export function DisconnectConnection(arg1:string):Promise<response.BaseResponse_
 
 export function DropTable(arg1:string,arg2:database.Table):Promise<response.BaseResponse_bool_>;
 
-export function ExecuteQuery(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_pkg_database_QueryResult_>;
+export function ExecuteQuery(arg1:database.QueryRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_QueryResult_>;
 
 export function ExportQueryResults(arg1:database.RowsExportRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ExportResult_>;
 
@@ -52,6 +58,8 @@ export function GetSchemas(arg1:string):Promise<response.BaseResponse___string_>
 export function GetTableDDL(arg1:string,arg2:database.Table):Promise<response.BaseResponse_string_>;
 
 export function InsertRow(arg1:string,arg2:database.Table,arg3:Record<string, any>):Promise<response.BaseResponse_bool_>;
+
+export function RollbackTransaction(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
 
 export function SaveConnection(arg1:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;
 

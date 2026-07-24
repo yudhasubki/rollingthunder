@@ -18,7 +18,7 @@ type Driver interface {
 	InsertRow(table Table, data map[string]interface{}) error
 	UpdateRow(table Table, data map[string]interface{}, primaryKey string) error
 	DeleteRow(table Table, primaryKey string, primaryValue interface{}) error
-	ExecuteQuery(query string, options QueryOptions) (QueryResult, error)
+	ExecuteQuery(ctx context.Context, query string, options QueryOptions) (QueryResult, error)
 	ExportTable(ctx context.Context, request TableExportRequest, writer io.Writer) (ExportStats, error)
 	// Table management
 	CreateTable(table Table, columns []ColumnDefinition) error

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -30,6 +31,10 @@ type routingTestDriver struct {
 	startOnce    sync.Once
 	closeCalled  chan struct{}
 	closeOnce    sync.Once
+
+	transaction  database.Transaction
+	beginErr     error
+	beginContext context.Context
 }
 
 func (d *routingTestDriver) Connect(context.Context) error {
@@ -87,6 +92,7 @@ func (d *routingTestDriver) DeleteRow(database.Table, string, interface{}) error
 }
 
 func (d *routingTestDriver) ExecuteQuery(
+	ctx context.Context,
 	query string,
 	options database.QueryOptions,
 ) (database.QueryResult, error) {
@@ -100,13 +106,38 @@ func (d *routingTestDriver) ExecuteQuery(
 		})
 	}
 	if d.queryRelease != nil {
-		<-d.queryRelease
+		select {
+		case <-d.queryRelease:
+		case <-ctx.Done():
+			return database.QueryResult{}, ctx.Err()
+		}
 	}
 
 	return database.QueryResult{
 		Rows:     []map[string]interface{}{{"source": d.name}},
 		RowLimit: options.MaxRows,
 	}, nil
+}
+
+func (d *routingTestDriver) BeginTransaction(
+	ctx context.Context,
+) (database.Transaction, error) {
+	d.mu.Lock()
+	d.beginContext = ctx
+	d.mu.Unlock()
+	if d.beginErr != nil {
+		return nil, d.beginErr
+	}
+	if d.transaction == nil {
+		return nil, errors.New("test transaction is not configured")
+	}
+	return d.transaction, nil
+}
+
+func (d *routingTestDriver) transactionContext() context.Context {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.beginContext
 }
 
 func (d *routingTestDriver) ExportTable(
@@ -182,6 +213,7 @@ func (d *routingTestDriver) exportCallCount() int {
 
 func newRoutingTestService(drivers map[string]*routingTestDriver, activeID string) *Service {
 	service := NewService()
+	service.Start(context.Background())
 	connectedAt := time.Now()
 	for id, driver := range drivers {
 		service.connections[id] = &Connection{
@@ -208,7 +240,10 @@ func TestExecuteQueryUsesOwningConnection(t *testing.T) {
 		"bravo",
 	)
 
-	response := service.ExecuteQuery("alpha", "select current_database()")
+	response := service.ExecuteQuery(database.QueryRequest{
+		ConnectionID: "alpha",
+		Query:        "select current_database()",
+	})
 
 	if len(response.Errors) != 0 {
 		t.Fatalf("ExecuteQuery returned errors: %+v", response.Errors)
@@ -234,7 +269,10 @@ func TestExecuteQueryUsesOwningConnection(t *testing.T) {
 		t.Fatalf("SwitchConnection failed: %+v", switched)
 	}
 
-	response = service.ExecuteQuery("bravo", "select current_database()")
+	response = service.ExecuteQuery(database.QueryRequest{
+		ConnectionID: "bravo",
+		Query:        "select current_database()",
+	})
 	if len(response.Errors) != 0 {
 		t.Fatalf("ExecuteQuery returned errors after switching: %+v", response.Errors)
 	}
@@ -249,8 +287,13 @@ func TestConnectionSensitiveOperationsRejectMissingConnection(t *testing.T) {
 	for name, response := range map[string]struct {
 		errors int
 	}{
-		"empty":   {errors: len(service.ExecuteQuery("", "select 1").Errors)},
-		"unknown": {errors: len(service.ExecuteQuery("missing", "select 1").Errors)},
+		"empty": {errors: len(service.ExecuteQuery(database.QueryRequest{
+			Query: "select 1",
+		}).Errors)},
+		"unknown": {errors: len(service.ExecuteQuery(database.QueryRequest{
+			ConnectionID: "missing",
+			Query:        "select 1",
+		}).Errors)},
 	} {
 		if response.errors != 1 {
 			t.Errorf("%s connection returned %d errors, want 1", name, response.errors)
@@ -272,7 +315,10 @@ func TestDisconnectWaitsForInFlightOperation(t *testing.T) {
 
 	queryDone := make(chan struct{})
 	go func() {
-		service.ExecuteQuery("alpha", "select pg_sleep(1)")
+		service.ExecuteQuery(database.QueryRequest{
+			ConnectionID: "alpha",
+			Query:        "select pg_sleep(1)",
+		})
 		close(queryDone)
 	}()
 
@@ -312,7 +358,10 @@ func TestDisconnectWaitsForInFlightOperation(t *testing.T) {
 		t.Fatal("driver was not closed after in-flight work completed")
 	}
 
-	response := service.ExecuteQuery("alpha", "select 1")
+	response := service.ExecuteQuery(database.QueryRequest{
+		ConnectionID: "alpha",
+		Query:        "select 1",
+	})
 	if len(response.Errors) != 1 {
 		t.Fatalf("disconnected connection returned %d errors, want 1", len(response.Errors))
 	}

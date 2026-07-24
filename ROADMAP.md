@@ -18,6 +18,11 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Searchable row-detail drawer for table data and query results
 - [x] Multi-tab workspace with query history
 - [x] Bounded query results with a 1,000-row safety cap and client-side pagination
+- [x] Cancellable queries with elapsed-time feedback
+- [x] Per-query-tab explicit transactions with commit and rollback
+- [x] Typed, parameterized, driver-owned table filters
+- [x] Confirmation guard for unfiltered `UPDATE` and `DELETE` statements
+- [x] Stable connection/query error codes with actionable recovery hints
 - [x] Context-aware SQL completion for schemas, tables, aliases, and columns
 - [x] PostgreSQL, MySQL, and SQLite keyword/function completion catalogs
 - [x] Regression tests for SQL context parsing and dialect catalogs
@@ -60,11 +65,11 @@ explicit, tested ordering behavior.
 
 ### Query and data safety
 
-- [ ] Cancel a running query.
-- [ ] Add an explicit transaction mode with commit and rollback.
-- [ ] Replace free-form filter assembly with a typed, driver-owned filter expression.
-- [ ] Warn before an unfiltered update or delete.
-- [ ] Add stable error codes and actionable connection/query messages.
+- [x] Cancel a running query.
+- [x] Add an explicit transaction mode with commit and rollback.
+- [x] Replace free-form filter assembly with a typed, driver-owned filter expression.
+- [x] Warn before an unfiltered update or delete.
+- [x] Add stable error codes and actionable connection/query messages.
 
 ## Milestone 2 — Complete database-object explorer
 
@@ -141,7 +146,8 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 ## Milestone 5 — Release readiness
 
 - [ ] Store credentials in macOS Keychain, Windows Credential Manager, or Linux Secret Service.
-- [ ] Add connection timeouts, keepalive, health checks, and controlled reconnects.
+- [x] Add bounded connection attempts with elapsed-time feedback and cancellation.
+- [ ] Add keepalive, health checks, and controlled reconnects.
 - [ ] Integration tests against supported database versions.
 - [ ] End-to-end tests for connection, editing, export, and destructive actions.
 - [ ] Accessibility and keyboard-navigation audit.

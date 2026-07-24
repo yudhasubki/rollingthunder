@@ -8,9 +8,20 @@
 		Clock,
 		X,
 		RefreshCw,
-		TriangleAlert
+		TriangleAlert,
+		CircleDot,
+		CheckCheck,
+		Undo2,
+		Square
 	} from 'lucide-svelte';
-	import { ExecuteQuery, ExportQueryResults } from '$lib/wailsjs/go/db/Service';
+	import {
+		BeginTransaction,
+		CancelQuery,
+		CommitTransaction,
+		ExecuteQuery,
+		ExportQueryResults,
+		RollbackTransaction
+	} from '$lib/wailsjs/go/db/Service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
 	import {
 		addQueryToHistory,
@@ -59,13 +70,26 @@
 	let destroyed = false;
 
 	let isRunning = $state(false);
+	let queryCancelling = $state(false);
+	let queryAttemptID = $state('');
+	let queryElapsedSeconds = $state(0);
+	let queryElapsedTimer: ReturnType<typeof setInterval> | null = null;
+	let queryCancelled = $state(false);
 	let queryResults = $state<Record<string, any>[]>([]);
 	let queryResultTruncated = $state(false);
 	let queryResultLimit = $state(0);
 	let resultPage = $state(0);
 	let resultColumns = $state<database.Structure[]>([]);
 	let errorMessage = $state<string>('');
+	let errorCode = $state<string>('');
+	let errorHint = $state<string>('');
 	let executedQuery = $state<string>('');
+	let unsafeQueryPending = $state<string>('');
+	let unsafeMutationDetail = $state('');
+	let transactionID = $state('');
+	let transactionState = $state<
+		'idle' | 'starting' | 'active' | 'failed' | 'committing' | 'rolling_back'
+	>('idle');
 	let showHistory = $state(false);
 	let autocompleteRefreshing = $state(false);
 	let exportDialogOpen = $state(false);
@@ -191,6 +215,13 @@
 		editor?.dispose();
 		editorModel?.dispose();
 		stopExportProgressPolling?.();
+		if (queryElapsedTimer) globalThis.clearInterval(queryElapsedTimer);
+		if (queryAttemptID) {
+			void CancelQuery(queryAttemptID).catch(() => {});
+		}
+		if (transactionID) {
+			void RollbackTransaction(transactionID).catch(() => {});
+		}
 	});
 
 	// Get the query to execute - either selected text or current statement
@@ -292,8 +323,32 @@
 		return statements;
 	}
 
+	function startQueryTimer() {
+		if (queryElapsedTimer) globalThis.clearInterval(queryElapsedTimer);
+		const startedAt = Date.now();
+		queryElapsedSeconds = 0;
+		queryElapsedTimer = globalThis.setInterval(() => {
+			queryElapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+		}, 250);
+	}
+
+	function stopQueryTimer() {
+		if (queryElapsedTimer) {
+			globalThis.clearInterval(queryElapsedTimer);
+			queryElapsedTimer = null;
+		}
+	}
+
 	async function handleRun() {
 		if (!editor || isRunning) return;
+		if (transactionState === 'failed') {
+			updateStatus('Roll back the failed transaction before running another query', 'warn');
+			return;
+		}
+		if (transactionState !== 'idle' && transactionState !== 'active') {
+			updateStatus('Wait for the current transaction action to finish', 'warn');
+			return;
+		}
 
 		const query = getQueryToExecute();
 		if (!query) {
@@ -312,8 +367,21 @@
 			return;
 		}
 
+		await executeQuery(query, false);
+	}
+
+	async function executeQuery(query: string, allowUnfilteredMutation: boolean) {
+		if (isRunning) return;
+
+		const attemptID = crypto.randomUUID();
 		isRunning = true;
+		queryCancelling = false;
+		queryAttemptID = attemptID;
+		queryCancelled = false;
+		startQueryTimer();
 		errorMessage = '';
+		errorCode = '';
+		errorHint = '';
 		queryResults = [];
 		queryResultTruncated = false;
 		queryResultLimit = 0;
@@ -322,21 +390,48 @@
 		selectedRows = [];
 		selectedRowIndexes = [];
 		executedQuery = query;
-		updateStatus('Executing query...', 'info');
+		updateStatus(
+			transactionID
+				? 'Executing query inside transaction…'
+				: 'Executing query in auto-commit mode…',
+			'info'
+		);
 
-		// Log query to console
 		addConsoleLog(
-			`Executing: ${query.replace(/\n/g, ' ').substring(0, 100)}${query.length > 100 ? '...' : ''}`,
+			`${transactionID ? '[TX] ' : ''}Executing: ${query.replace(/\n/g, ' ').substring(0, 100)}${query.length > 100 ? '...' : ''}`,
 			'info'
 		);
 
 		const startTime = Date.now();
 
 		try {
-			const response = await ExecuteQuery(tab.connectionId, query);
+			const response = await ExecuteQuery(
+				new database.QueryRequest({
+					connectionId: tab.connectionId,
+					query,
+					attemptId: attemptID,
+					transactionId: transactionID || undefined,
+					allowUnfilteredMutation
+				})
+			);
 
 			if (response.errors?.length) {
-				throw new Error(response.errors[0].detail);
+				const serviceError = response.errors[0];
+				if (
+					serviceError.code === 'UNFILTERED_MUTATION_REQUIRES_CONFIRMATION' &&
+					!allowUnfilteredMutation
+				) {
+					unsafeQueryPending = query;
+					unsafeMutationDetail = serviceError.detail;
+					updateStatus(serviceError.detail, 'warn');
+					addConsoleLog(`Safety check: ${serviceError.detail}`, 'warn');
+					return;
+				}
+				throw {
+					message: serviceError.detail,
+					code: serviceError.code,
+					hint: serviceError.hint
+				};
 			}
 
 			queryResults = response.data?.rows || [];
@@ -371,13 +466,176 @@
 			addQueryToHistory(query, 'success', queryResults.length, undefined, executionTime);
 		} catch (e: any) {
 			const executionTime = Date.now() - startTime;
+			errorCode = e?.code || 'QUERY_FAILED';
+			errorHint = e?.hint || '';
+			if (errorCode === 'QUERY_CANCELLED') {
+				queryCancelled = true;
+				errorMessage = '';
+				if (transactionID) {
+					transactionState = 'failed';
+				}
+				updateStatus(
+					transactionID
+						? 'Query cancelled. Roll back the current transaction before continuing.'
+						: 'Query cancelled',
+					'info'
+				);
+				addConsoleLog(`Query cancelled after ${executionTime}ms`, 'warn');
+				return;
+			}
+
 			errorMessage = e?.message ?? 'Query execution failed';
+			if (
+				transactionID &&
+				errorCode !== 'UNFILTERED_MUTATION_REQUIRES_CONFIRMATION' &&
+				errorCode !== 'TRANSACTION_CONTROL_REQUIRES_MODE'
+			) {
+				transactionState = 'failed';
+			}
 			updateStatus(errorMessage, 'error');
-			addConsoleLog(`✗ Error: ${errorMessage}`, 'error');
+			addConsoleLog(
+				`✗ ${errorCode}: ${errorMessage}${errorHint ? ` — ${errorHint}` : ''}`,
+				'error'
+			);
 			addQueryToHistory(query, 'error', undefined, errorMessage, executionTime);
 		} finally {
+			if (queryAttemptID === attemptID) {
+				queryAttemptID = '';
+			}
+			stopQueryTimer();
+			queryCancelling = false;
 			isRunning = false;
 		}
+	}
+
+	async function cancelRunningQuery() {
+		if (!queryAttemptID || !isRunning || queryCancelling) return;
+		queryCancelling = true;
+		updateStatus('Cancelling query safely…', 'info');
+
+		try {
+			const response = await CancelQuery(queryAttemptID);
+			if (response.errors?.length && response.errors[0].code !== 'QUERY_NOT_RUNNING') {
+				throw new Error(response.errors[0].detail);
+			}
+		} catch (error: any) {
+			queryCancelling = false;
+			updateStatus(error?.message ?? 'Failed to cancel query', 'error');
+		}
+	}
+
+	async function beginTransaction() {
+		if (transactionID || transactionState !== 'idle' || isRunning) return;
+		const requestedID = crypto.randomUUID();
+		transactionState = 'starting';
+		errorMessage = '';
+		errorCode = '';
+		errorHint = '';
+		updateStatus('Starting explicit transaction…', 'info');
+
+		try {
+			const response = await BeginTransaction(tab.connectionId, requestedID);
+			if (response.errors?.length) {
+				const serviceError = response.errors[0];
+				throw {
+					message: serviceError.detail,
+					code: serviceError.code,
+					hint: serviceError.hint
+				};
+			}
+			const startedID = response.data?.id || requestedID;
+			if (destroyed) {
+				void RollbackTransaction(startedID).catch(() => {});
+				return;
+			}
+			transactionID = startedID;
+			transactionState = 'active';
+			updateStatus('Transaction started. Changes remain pending until Commit.', 'success');
+			addConsoleLog(`Transaction ${transactionID.slice(0, 8)} started`, 'info');
+		} catch (error: any) {
+			transactionState = 'idle';
+			errorCode = error?.code || 'TRANSACTION_FAILED';
+			errorMessage = error?.message || 'Failed to start transaction';
+			errorHint = error?.hint || '';
+			updateStatus(errorMessage, 'error');
+		}
+	}
+
+	async function commitTransaction() {
+		if (!transactionID || transactionState !== 'active' || isRunning) return;
+		const finishingID = transactionID;
+		transactionState = 'committing';
+		updateStatus('Committing transaction…', 'info');
+
+		try {
+			const response = await CommitTransaction(finishingID);
+			if (response.errors?.length) {
+				const serviceError = response.errors[0];
+				throw {
+					message: serviceError.detail,
+					code: serviceError.code,
+					hint: serviceError.hint
+				};
+			}
+			updateStatus('Transaction committed', 'success');
+			addConsoleLog(`Transaction ${finishingID.slice(0, 8)} committed`, 'success');
+			errorMessage = '';
+			errorCode = '';
+			errorHint = '';
+		} catch (error: any) {
+			errorCode = error?.code || 'TRANSACTION_FAILED';
+			errorMessage = error?.message || 'Failed to commit transaction';
+			errorHint = error?.hint || '';
+			updateStatus(errorMessage, 'error');
+		} finally {
+			transactionID = '';
+			transactionState = 'idle';
+		}
+	}
+
+	async function rollbackTransaction() {
+		if (!transactionID || isRunning) return;
+		const finishingID = transactionID;
+		transactionState = 'rolling_back';
+		updateStatus('Rolling back transaction…', 'info');
+
+		try {
+			const response = await RollbackTransaction(finishingID);
+			if (response.errors?.length && response.errors[0].code !== 'TRANSACTION_NOT_FOUND') {
+				const serviceError = response.errors[0];
+				throw {
+					message: serviceError.detail,
+					code: serviceError.code,
+					hint: serviceError.hint
+				};
+			}
+			updateStatus('Transaction rolled back', 'success');
+			addConsoleLog(`Transaction ${finishingID.slice(0, 8)} rolled back`, 'warn');
+			errorMessage = '';
+			errorCode = '';
+			errorHint = '';
+		} catch (error: any) {
+			errorCode = error?.code || 'TRANSACTION_FAILED';
+			errorMessage = error?.message || 'Failed to roll back transaction';
+			errorHint = error?.hint || '';
+			updateStatus(errorMessage, 'error');
+		} finally {
+			transactionID = '';
+			transactionState = 'idle';
+		}
+	}
+
+	function cancelUnsafeMutation() {
+		unsafeQueryPending = '';
+		unsafeMutationDetail = '';
+		updateStatus('Unfiltered mutation was not executed', 'info');
+	}
+
+	function confirmUnsafeMutation() {
+		const query = unsafeQueryPending;
+		unsafeQueryPending = '';
+		unsafeMutationDetail = '';
+		if (query) void executeQuery(query, true);
 	}
 
 	function openExportDialog(preferredScope?: 'selected') {
@@ -503,17 +761,23 @@
 	}
 </script>
 
+<svelte:window
+	onkeydown={(event) => {
+		if (event.key === 'Escape' && unsafeQueryPending) cancelUnsafeMutation();
+	}}
+/>
+
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)] p-3">
 	<!-- Toolbar -->
-	<div class="mb-2 flex h-8 shrink-0 items-center justify-between">
-		<div class="flex items-center gap-2">
+	<div class="mb-2 flex min-h-8 shrink-0 items-center justify-between gap-3">
+		<div class="flex min-w-0 items-center gap-2">
 			<span class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-md">
 				<Play class="h-3 w-3" fill="currentColor" />
 			</span>
-			<div>
+			<div class="min-w-0">
 				<h3 class="text-[11px] font-bold">SQL editor</h3>
 				<p
-					class="text-[9px] {autocompleteMetadata.error
+					class="truncate text-[9px] {autocompleteMetadata.error
 						? 'text-destructive'
 						: 'text-muted-foreground'}"
 					title={autocompleteMetadata.error || 'Schema-aware SQL autocomplete'}
@@ -528,7 +792,7 @@
 				</p>
 			</div>
 		</div>
-		<div class="flex items-center gap-1">
+		<div class="flex shrink-0 items-center gap-1">
 			<button
 				class="rt-toolbar-button h-7 w-7 cursor-pointer disabled:cursor-wait disabled:opacity-50"
 				onclick={() => refreshAutocomplete(true, true)}
@@ -549,19 +813,98 @@
 				<History class="h-3 w-3" />
 				History
 			</button>
-			<button
-				class="rt-primary-button inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[10px] font-bold disabled:pointer-events-none disabled:opacity-50"
-				onclick={handleRun}
-				disabled={isRunning}
-			>
-				{#if isRunning}
-					<Loader2 class="h-3 w-3 animate-spin" />
-					Running…
-				{:else}
+			<span class="bg-border mx-0.5 h-4 w-px"></span>
+
+			{#if transactionID}
+				<span
+					class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[9px] font-semibold {transactionState ===
+					'failed'
+						? 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400'
+						: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'}"
+					title={`Transaction ${transactionID}`}
+				>
+					{#if transactionState === 'committing' || transactionState === 'rolling_back'}
+						<Loader2 class="h-3 w-3 animate-spin" />
+					{:else}
+						<CircleDot class="h-3 w-3" />
+					{/if}
+					{#if transactionState === 'failed'}
+						TX failed
+					{:else if transactionState === 'committing'}
+						Committing
+					{:else if transactionState === 'rolling_back'}
+						Rolling back
+					{:else}
+						TX active
+					{/if}
+				</span>
+				<button
+					class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold disabled:pointer-events-none disabled:opacity-35"
+					onclick={commitTransaction}
+					disabled={isRunning || transactionState !== 'active'}
+					title={transactionState === 'failed'
+						? 'A failed transaction must be rolled back'
+						: 'Commit all pending changes'}
+				>
+					<CheckCheck class="h-3 w-3" />
+					Commit
+				</button>
+				<button
+					class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold disabled:pointer-events-none disabled:opacity-35"
+					onclick={rollbackTransaction}
+					disabled={isRunning ||
+						transactionState === 'committing' ||
+						transactionState === 'rolling_back'}
+					title="Discard all pending changes"
+				>
+					<Undo2 class="h-3 w-3" />
+					Rollback
+				</button>
+			{:else}
+				<button
+					class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold disabled:pointer-events-none disabled:opacity-35"
+					onclick={beginTransaction}
+					disabled={isRunning || transactionState !== 'idle'}
+					title="Start an explicit transaction for this query tab"
+				>
+					{#if transactionState === 'starting'}
+						<Loader2 class="h-3 w-3 animate-spin" />
+						Starting
+					{:else}
+						<CircleDot class="h-3 w-3" />
+						Begin
+					{/if}
+				</button>
+			{/if}
+
+			{#if isRunning}
+				<button
+					class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-red-500/35 bg-red-500/10 px-3 text-[10px] font-bold text-red-600 transition-colors hover:bg-red-500/15 disabled:cursor-wait disabled:opacity-60 dark:text-red-400"
+					onclick={cancelRunningQuery}
+					disabled={queryCancelling}
+					title="Cancel the running query"
+				>
+					{#if queryCancelling}
+						<Loader2 class="h-3 w-3 animate-spin" />
+						Cancelling…
+					{:else}
+						<Square class="h-3 w-3" fill="currentColor" />
+						Cancel <span class="font-mono text-[9px] opacity-75">{queryElapsedSeconds}s</span>
+					{/if}
+				</button>
+			{:else}
+				<button
+					class="rt-primary-button inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[10px] font-bold disabled:pointer-events-none disabled:opacity-50"
+					onclick={handleRun}
+					disabled={transactionState !== 'idle' && transactionState !== 'active'}
+					title={transactionState === 'failed'
+						? 'Roll back the failed transaction before running another query'
+						: 'Run selected or current statement'}
+				>
 					<Play class="h-3 w-3" fill="currentColor" />
 					Run <span class="text-primary-foreground/70 text-[9px]">⌘ ↵</span>
-				{/if}
-			</button>
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -675,9 +1018,29 @@
 		</div>
 
 		{#if errorMessage}
-			<div class="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-500">
-				<strong>Error:</strong>
-				{errorMessage}
+			<div
+				class="flex items-start gap-2.5 rounded-lg border border-red-500/35 bg-red-500/10 p-3 text-red-600 dark:text-red-400"
+			>
+				<TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
+				<div class="min-w-0">
+					<div class="flex flex-wrap items-center gap-2">
+						<strong class="text-xs">{errorMessage}</strong>
+						{#if errorCode}
+							<span
+								class="rounded border border-red-500/25 bg-red-500/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-wide"
+								>{errorCode}</span
+							>
+						{/if}
+					</div>
+					{#if errorHint}
+						<p class="mt-1 text-[10px] leading-relaxed opacity-85">{errorHint}</p>
+					{/if}
+					{#if transactionState === 'failed'}
+						<p class="mt-1.5 text-[10px] font-semibold">
+							This transaction cannot continue. Roll it back before running another query.
+						</p>
+					{/if}
+				</div>
 			</div>
 		{:else if queryResults.length > 0}
 			<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
@@ -719,7 +1082,10 @@
 				<div class="relative flex flex-col items-center gap-2">
 					{#if isRunning}
 						<Loader2 class="h-4 w-4 animate-spin opacity-50" />
-						<span>Query is running…</span>
+						<span>Query is running · {queryElapsedSeconds}s</span>
+					{:else if queryCancelled}
+						<Square class="h-4 w-4 opacity-50" />
+						<span>Query cancelled after {queryElapsedSeconds}s</span>
 					{:else}
 						<Play class="h-4 w-4 opacity-50" />
 						<span
@@ -731,6 +1097,72 @@
 		{/if}
 	</div>
 </div>
+
+{#if unsafeQueryPending}
+	<div class="fixed inset-0 z-[90] flex items-center justify-center p-6">
+		<button
+			type="button"
+			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
+			onclick={cancelUnsafeMutation}
+			aria-label="Cancel unfiltered mutation"
+		></button>
+		<div
+			class="rt-popover relative w-full max-w-md rounded-xl p-4"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="unsafe-mutation-title"
+		>
+			<div class="flex items-start gap-3">
+				<span
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500/10 text-red-600 dark:text-red-400"
+				>
+					<TriangleAlert class="h-4 w-4" />
+				</span>
+				<div class="min-w-0">
+					<h3 id="unsafe-mutation-title" class="text-sm font-bold">Run unfiltered mutation?</h3>
+					<p class="text-muted-foreground mt-1 text-[10px] leading-relaxed">
+						{unsafeMutationDetail}
+					</p>
+				</div>
+			</div>
+
+			<pre
+				class="bg-muted/60 mt-3 max-h-32 overflow-auto rounded-lg border p-3 font-mono text-[10px] leading-relaxed whitespace-pre-wrap"><code
+					>{unsafeQueryPending}</code
+				></pre>
+
+			<div
+				class="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[9px] leading-relaxed text-amber-700 dark:text-amber-300"
+			>
+				{#if transactionID}
+					The statement will run inside the active transaction. You can inspect the result and roll
+					it back before committing.
+				{:else}
+					Auto-commit is active, so affected rows cannot be restored by Rolling Thunder after this
+					statement succeeds.
+				{/if}
+			</div>
+
+			<div class="mt-4 flex justify-end gap-2">
+				<button
+					type="button"
+					class="rt-toolbar-button h-8 cursor-pointer px-3 text-[10px] font-semibold"
+					onclick={cancelUnsafeMutation}
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md bg-red-600 px-3 text-[10px] font-bold text-white transition-colors hover:bg-red-700"
+					onclick={confirmUnsafeMutation}
+				>
+					<TriangleAlert class="h-3 w-3" />
+					Run anyway
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <ExportDialog
 	open={exportDialogOpen}

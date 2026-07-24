@@ -149,7 +149,7 @@ func TestCancelConnectionAttemptStopsConnect(t *testing.T) {
 
 	select {
 	case detail := <-errorChannel:
-		if detail != "connection attempt cancelled" {
+		if detail != "Connection attempt cancelled." {
 			t.Fatalf("cancel error = %q", detail)
 		}
 	case <-time.After(time.Second):
@@ -203,7 +203,7 @@ func TestCancelWinsAgainstDriverReturningSuccess(t *testing.T) {
 
 	select {
 	case result := <-done:
-		if result.connected || result.error != "connection attempt cancelled" {
+		if result.connected || result.error != "Connection attempt cancelled." {
 			t.Fatalf("Connect after cancellation = %+v", result)
 		}
 	case <-time.After(time.Second):

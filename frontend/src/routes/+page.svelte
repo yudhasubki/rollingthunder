@@ -11,6 +11,7 @@
 		createConnectionAttemptID,
 		startConnectionElapsedTimer
 	} from '$lib/connection/attempt';
+	import { createServiceError } from '$lib/errors/service';
 	import {
 		ArrowLeft,
 		ArrowRight,
@@ -67,7 +68,9 @@
 		loadingProfiles = true;
 		try {
 			const response = await GetSavedConnections();
-			if (response.errors?.length) throw new Error(response.errors[0].detail);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not load saved profiles');
+			}
 			profiles = response.data || [];
 		} catch (error: any) {
 			message = error?.message || 'Could not load saved profiles';
@@ -109,14 +112,17 @@
 				})
 			);
 			if (response.errors?.length || !response.data?.connected) {
-				throw new Error(response.errors?.[0]?.detail || 'Connection failed');
+				throw createServiceError(response.errors?.[0], 'Connection failed');
 			}
 			await connectionStore.refreshConnections();
 			goto('/workspace');
 		} catch (error: any) {
 			const detail = error?.message || 'Could not connect to the database';
 			message = detail;
-			messageLevel = detail.toLowerCase().includes('cancelled') ? 'info' : 'error';
+			messageLevel =
+				error?.code === 'CONNECTION_CANCELLED' || detail.toLowerCase().includes('cancelled')
+					? 'info'
+					: 'error';
 		} finally {
 			if (connectionAttemptID === attemptID) {
 				connectionAttemptID = null;

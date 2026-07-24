@@ -139,7 +139,13 @@ func TestBuildPostgresExportQueryPreservesFilterSortAndPage(t *testing.T) {
 			Name:   "orders",
 			Offset: 200,
 			Limit:  100,
-			Filter: `"status" = 'open'`,
+			Filters: []database.Filter{
+				{
+					Column:   "status",
+					Operator: database.FilterEqual,
+					Value:    "open",
+				},
+			},
 			Sorts: []database.Sort{
 				{
 					Column:    "created_at",
@@ -152,15 +158,19 @@ func TestBuildPostgresExportQueryPreservesFilterSortAndPage(t *testing.T) {
 		database.Structures{
 			{Name: "id", IsPrimary: true},
 			{Name: "created_at"},
+			{Name: "status"},
 		},
 	)
 	if err != nil {
 		t.Fatalf("build export query: %v", err)
 	}
 
-	const expected = `SELECT * FROM "public"."orders" WHERE "status" = 'open' ORDER BY "created_at" DESC NULLS LAST, "id" ASC NULLS LAST LIMIT 100 OFFSET 200`
-	if query != expected {
-		t.Fatalf("query = %q, want %q", query, expected)
+	const expected = `SELECT * FROM "public"."orders" WHERE "status" = $1 ORDER BY "created_at" DESC NULLS LAST, "id" ASC NULLS LAST LIMIT 100 OFFSET 200`
+	if query.SQL != expected {
+		t.Fatalf("query = %q, want %q", query.SQL, expected)
+	}
+	if len(query.Args) != 1 || query.Args[0] != "open" {
+		t.Fatalf("query args = %#v, want [open]", query.Args)
 	}
 }
 
@@ -180,8 +190,8 @@ func TestBuildPostgresExportQueryOmitsPaginationForAllRows(t *testing.T) {
 	}
 
 	const expected = `SELECT * FROM "odd""schema"."order items" ORDER BY tableoid ASC, ctid ASC`
-	if query != expected {
-		t.Fatalf("query = %q, want %q", query, expected)
+	if query.SQL != expected {
+		t.Fatalf("query = %q, want %q", query.SQL, expected)
 	}
 }
 
@@ -211,7 +221,7 @@ func TestBuildPostgresExportQueryUsesPageBoundsForSelectedRows(t *testing.T) {
 	}
 
 	const expected = `SELECT * FROM "public"."orders" ORDER BY "id" ASC NULLS LAST LIMIT 100 OFFSET 200`
-	if query != expected {
-		t.Fatalf("query = %q, want %q", query, expected)
+	if query.SQL != expected {
+		t.Fatalf("query = %q, want %q", query.SQL, expected)
 	}
 }
