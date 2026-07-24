@@ -10,7 +10,7 @@
 		RefreshCw,
 		TriangleAlert
 	} from 'lucide-svelte';
-	import { ExecuteQuery } from '$lib/wailsjs/go/db/Service';
+	import { ExecuteQuery, ExportQueryResults } from '$lib/wailsjs/go/db/Service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
 	import {
 		addQueryToHistory,
@@ -23,6 +23,12 @@
 	import { registerSqlCompletionProvider } from '$lib/sql/autocomplete';
 	import { getQueryResultPage, QUERY_RESULT_PAGE_SIZE } from '$lib/query/results';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
+	import ExportDialog from '$lib/components/database/ExportDialog.svelte';
+	import {
+		buildCSVExportOptions,
+		formatExportBytes,
+		type CSVExportSettings
+	} from '$lib/export/csv';
 	import { database } from '$lib/wailsjs/go/models';
 	import type * as Monaco from 'monaco-editor';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
@@ -55,6 +61,8 @@
 	let executedQuery = $state<string>('');
 	let showHistory = $state(false);
 	let autocompleteRefreshing = $state(false);
+	let exportDialogOpen = $state(false);
+	let exporting = $state(false);
 	const visibleQueryResults = $derived(getQueryResultPage(queryResults, resultPage));
 	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata(tab.connectionId));
 
@@ -355,6 +363,38 @@
 		}
 	}
 
+	async function handleExport(settings: CSVExportSettings) {
+		if (queryResults.length === 0 || exporting) return;
+
+		exporting = true;
+		const request = new database.RowsExportRequest({
+			columns: resultColumns.map((column) => column.name),
+			rows: queryResults,
+			suggestedName: 'query-results.csv',
+			options: new database.ExportOptions(buildCSVExportOptions(settings))
+		});
+
+		try {
+			updateStatus(`Exporting ${queryResults.length.toLocaleString()} loaded query rows…`, 'info');
+			const response = await ExportQueryResults(request);
+			if (response.errors?.length) throw new Error(response.errors[0].detail);
+
+			if (response.data?.cancelled) {
+				updateStatus('Export cancelled', 'info');
+			} else if (response.data) {
+				updateStatus(
+					`Exported ${response.data.rows.toLocaleString()} rows (${formatExportBytes(response.data.bytes)}) to ${response.data.path}`,
+					'success'
+				);
+			}
+			exportDialogOpen = false;
+		} catch (error: any) {
+			updateStatus(error?.message ?? 'Failed to export query results', 'error');
+		} finally {
+			exporting = false;
+		}
+	}
+
 	function loadQueryFromHistory(item: QueryHistoryItem) {
 		if (editor) {
 			editor.setValue(item.query);
@@ -573,6 +613,8 @@
 						currentPage={resultPage}
 						pageSize={QUERY_RESULT_PAGE_SIZE}
 						onPageChange={(page) => (resultPage = page)}
+						onExport={() => (exportDialogOpen = true)}
+						{exporting}
 						gridTitle="Query results"
 						detailTitle="Query result"
 						readonly={true}
@@ -599,3 +641,14 @@
 		{/if}
 	</div>
 </div>
+
+<ExportDialog
+	open={exportDialogOpen}
+	source="query"
+	pageRows={visibleQueryResults.length}
+	totalRows={queryResults.length}
+	truncated={queryResultTruncated}
+	{exporting}
+	onClose={() => (exportDialogOpen = false)}
+	onExport={handleExport}
+/>

@@ -1,5 +1,21 @@
 export namespace database {
 	
+	export class CSVOptions {
+	    delimiter: string;
+	    includeHeader: boolean;
+	    nullValue: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CSVOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.delimiter = source["delimiter"];
+	        this.includeHeader = source["includeHeader"];
+	        this.nullValue = source["nullValue"];
+	    }
+	}
 	export class ColumnDefinition {
 	    name: string;
 	    type: string;
@@ -72,6 +88,58 @@ export namespace database {
 	        this.description = source["description"];
 	    }
 	}
+	export class ExportOptions {
+	    format: string;
+	    csv: CSVOptions;
+
+	    static createFrom(source: any = {}) {
+	        return new ExportOptions(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.format = source["format"];
+	        this.csv = this.convertValues(source["csv"], CSVOptions);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ExportResult {
+	    path: string;
+	    rows: number;
+	    bytes: number;
+	    cancelled: boolean;
+	    format: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ExportResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.rows = source["rows"];
+	        this.bytes = source["bytes"];
+	        this.cancelled = source["cancelled"];
+	        this.format = source["format"];
+	    }
+	}
 	export class Index {
 	    name: string;
 	    columns: string[];
@@ -123,6 +191,42 @@ export namespace database {
 	        this.truncated = source["truncated"];
 	        this.rowLimit = source["rowLimit"];
 	    }
+	}
+	export class RowsExportRequest {
+	    columns: string[];
+	    rows: any[];
+	    suggestedName: string;
+	    options: ExportOptions;
+
+	    static createFrom(source: any = {}) {
+	        return new RowsExportRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.columns = source["columns"];
+	        this.rows = source["rows"];
+	        this.suggestedName = source["suggestedName"];
+	        this.options = this.convertValues(source["options"], ExportOptions);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class Sort {
 	    Column: string;
@@ -238,6 +342,42 @@ export namespace database {
 	        this.data = source["data"];
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TableExportRequest {
+	    table: Table;
+	    scope: string;
+	    suggestedName: string;
+	    options: ExportOptions;
+
+	    static createFrom(source: any = {}) {
+	        return new TableExportRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.table = this.convertValues(source["table"], Table);
+	        this.scope = source["scope"];
+	        this.suggestedName = source["suggestedName"];
+	        this.options = this.convertValues(source["options"], ExportOptions);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -620,6 +760,38 @@ export namespace response {
 	        this.data = this.convertValues(source["data"], db.SavedConnection);
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_ExportResult_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.ExportResult;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_ExportResult_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.ExportResult);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;

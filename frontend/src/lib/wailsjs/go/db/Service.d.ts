@@ -21,6 +21,10 @@ export function DropTable(arg1:string,arg2:database.Table):Promise<response.Base
 
 export function ExecuteQuery(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_pkg_database_QueryResult_>;
 
+export function ExportQueryResults(arg1:database.RowsExportRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ExportResult_>;
+
+export function ExportTableData(arg1:string,arg2:database.TableExportRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ExportResult_>;
+
 export function GetActiveConnections():Promise<response.BaseResponse___rollingthunder_internal_db_ConnectionInfo_>;
 
 export function GetCollectionData(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;

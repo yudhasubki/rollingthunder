@@ -3,6 +3,8 @@ package postgres
 import (
 	"errors"
 	"testing"
+
+	"rollingthunder/pkg/database"
 )
 
 type fakeMappedRows struct {
@@ -127,5 +129,68 @@ func TestCollectQueryResultsReturnsScanAndIterationErrors(t *testing.T) {
 		10,
 	); !errors.Is(err, iterationFailure) {
 		t.Fatalf("expected iteration error, got %v", err)
+	}
+}
+
+func TestBuildPostgresExportQueryPreservesFilterSortAndPage(t *testing.T) {
+	query, err := buildPostgresExportQuery(
+		database.Table{
+			Schema: "public",
+			Name:   "orders",
+			Offset: 200,
+			Limit:  100,
+			Filter: `"status" = 'open'`,
+			Sorts: []database.Sort{
+				{
+					Column:    "created_at",
+					Direction: database.SortDescending,
+					Nulls:     database.NullsLast,
+				},
+			},
+		},
+		database.ExportScopePage,
+		database.Structures{
+			{Name: "id", IsPrimary: true},
+			{Name: "created_at"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build export query: %v", err)
+	}
+
+	const expected = `SELECT * FROM "public"."orders" WHERE "status" = 'open' ORDER BY "created_at" DESC NULLS LAST, "id" ASC NULLS LAST LIMIT 100 OFFSET 200`
+	if query != expected {
+		t.Fatalf("query = %q, want %q", query, expected)
+	}
+}
+
+func TestBuildPostgresExportQueryOmitsPaginationForAllRows(t *testing.T) {
+	query, err := buildPostgresExportQuery(
+		database.Table{
+			Schema: "odd\"schema",
+			Name:   "order items",
+			Offset: 400,
+			Limit:  100,
+		},
+		database.ExportScopeAll,
+		database.Structures{{Name: "name"}},
+	)
+	if err != nil {
+		t.Fatalf("build export query: %v", err)
+	}
+
+	const expected = `SELECT * FROM "odd""schema"."order items" ORDER BY tableoid ASC, ctid ASC`
+	if query != expected {
+		t.Fatalf("query = %q, want %q", query, expected)
+	}
+}
+
+func TestBuildPostgresExportQueryRejectsInvalidScope(t *testing.T) {
+	if _, err := buildPostgresExportQuery(
+		database.Table{Schema: "public", Name: "orders", Limit: 100},
+		database.ExportScope("selected"),
+		database.Structures{{Name: "id", IsPrimary: true}},
+	); err == nil {
+		t.Fatal("expected unsupported-scope error")
 	}
 }

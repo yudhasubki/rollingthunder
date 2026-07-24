@@ -19,7 +19,8 @@
 		Loader2,
 		PanelRightOpen,
 		Rows3,
-		X
+		X,
+		Download
 	} from 'lucide-svelte';
 	import { database } from '$lib/wailsjs/go/models';
 	import DataCellValue from '$lib/components/database/DataCellValue.svelte';
@@ -41,6 +42,8 @@
 		sorting?: SortingState;
 		onSortingChange?: (sorting: SortingState) => void;
 		onAddFilter?: () => void;
+		onExport?: () => void;
+		exporting?: boolean;
 		detailTitle?: string;
 		gridTitle?: string;
 		readonly?: boolean;
@@ -60,6 +63,8 @@
 		sorting = [],
 		onSortingChange,
 		onAddFilter,
+		onExport,
+		exporting = false,
 		detailTitle = 'Table row',
 		gridTitle = 'Data rows',
 		readonly = false,
@@ -377,6 +382,20 @@
 			</div>
 
 			<div class="flex shrink-0 items-center gap-1">
+				{#if onExport}
+					<button
+						class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium disabled:pointer-events-none disabled:opacity-40"
+						onclick={onExport}
+						disabled={exporting || loading}
+					>
+						{#if exporting}
+							<Loader2 class="h-3 w-3 animate-spin" />
+						{:else}
+							<Download class="h-3 w-3" />
+						{/if}
+						Export
+					</button>
+				{/if}
 				{#if onAddFilter}
 					<button
 						class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium"

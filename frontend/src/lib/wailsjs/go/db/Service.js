@@ -34,6 +34,14 @@ export function ExecuteQuery(arg1, arg2) {
   return window['go']['db']['Service']['ExecuteQuery'](arg1, arg2);
 }
 
+export function ExportQueryResults(arg1) {
+  return window['go']['db']['Service']['ExportQueryResults'](arg1);
+}
+
+export function ExportTableData(arg1, arg2) {
+  return window['go']['db']['Service']['ExportTableData'](arg1, arg2);
+}
+
 export function GetActiveConnections() {
   return window['go']['db']['Service']['GetActiveConnections']();
 }

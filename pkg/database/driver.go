@@ -1,5 +1,10 @@
 package database
 
+import (
+	"context"
+	"io"
+)
+
 type Driver interface {
 	Connect() error
 	Close() error
@@ -14,6 +19,7 @@ type Driver interface {
 	UpdateRow(table Table, data map[string]interface{}, primaryKey string) error
 	DeleteRow(table Table, primaryKey string, primaryValue interface{}) error
 	ExecuteQuery(query string, options QueryOptions) (QueryResult, error)
+	ExportTable(ctx context.Context, request TableExportRequest, writer io.Writer) (ExportStats, error)
 	// Table management
 	CreateTable(table Table, columns []ColumnDefinition) error
 	DropTable(table Table) error

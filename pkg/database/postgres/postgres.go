@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"rollingthunder/pkg/database"
 	"strings"
 
@@ -395,19 +396,7 @@ func (p *Postgres) CountCollectionData(table database.Table) (int, error) {
 	return result, err
 }
 
-func (p *Postgres) GetCollectionData(table database.Table) (database.Structures, []map[string]interface{}, error) {
-	if table.Limit < 0 {
-		return nil, nil, fmt.Errorf("table limit cannot be negative")
-	}
-	if table.Offset < 0 {
-		return nil, nil, fmt.Errorf("table offset cannot be negative")
-	}
-
-	columns, err := p.getCollectionStructures(table)
-	if err != nil {
-		return nil, nil, err
-	}
-
+func structuresFromColumns(columns Columns) database.Structures {
 	structures := make(database.Structures, 0, len(columns))
 	for _, column := range columns {
 		primaryLabel := ""
@@ -427,6 +416,22 @@ func (p *Postgres) GetCollectionData(table database.Table) (database.Structures,
 		applyColumnType(&structure, column)
 		structures = append(structures, structure)
 	}
+	return structures
+}
+
+func (p *Postgres) GetCollectionData(table database.Table) (database.Structures, []map[string]interface{}, error) {
+	if table.Limit < 0 {
+		return nil, nil, fmt.Errorf("table limit cannot be negative")
+	}
+	if table.Offset < 0 {
+		return nil, nil, fmt.Errorf("table offset cannot be negative")
+	}
+
+	columns, err := p.getCollectionStructures(table)
+	if err != nil {
+		return nil, nil, err
+	}
+	structures := structuresFromColumns(columns)
 
 	orderClause, err := buildPostgresOrderClause(table.Sorts, structures)
 	if err != nil {
@@ -595,6 +600,104 @@ func (p *Postgres) ExecuteQuery(query string, options database.QueryOptions) (da
 	defer rows.Close()
 
 	return collectQueryResults(rows, options.MaxRows)
+}
+
+type sqlxExportRows struct {
+	rows *sqlx.Rows
+}
+
+func (r *sqlxExportRows) Columns() ([]string, error) {
+	return r.rows.Columns()
+}
+
+func (r *sqlxExportRows) Next() bool {
+	return r.rows.Next()
+}
+
+func (r *sqlxExportRows) Values() ([]interface{}, error) {
+	return r.rows.SliceScan()
+}
+
+func (r *sqlxExportRows) Err() error {
+	return r.rows.Err()
+}
+
+func buildPostgresExportQuery(
+	table database.Table,
+	scope database.ExportScope,
+	structures database.Structures,
+) (string, error) {
+	if strings.TrimSpace(table.Schema) == "" || strings.TrimSpace(table.Name) == "" {
+		return "", fmt.Errorf("schema and table are required")
+	}
+	if table.Offset < 0 {
+		return "", fmt.Errorf("table offset cannot be negative")
+	}
+
+	orderClause, err := buildPostgresOrderClause(table.Sorts, structures)
+	if err != nil {
+		return "", err
+	}
+
+	query := fmt.Sprintf(
+		"SELECT * FROM %s",
+		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
+	)
+	if table.Filter != "" {
+		query += fmt.Sprintf(" WHERE %s", table.Filter)
+	}
+	query += orderClause
+
+	switch scope {
+	case database.ExportScopePage:
+		if table.Limit <= 0 {
+			return "", fmt.Errorf("current-page export requires a positive table limit")
+		}
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
+	case database.ExportScopeAll:
+	default:
+		return "", fmt.Errorf("unsupported table export scope %q", scope)
+	}
+
+	return query, nil
+}
+
+func (p *Postgres) ExportTable(
+	ctx context.Context,
+	request database.TableExportRequest,
+	writer io.Writer,
+) (database.ExportStats, error) {
+	if request.Options.Format != database.ExportFormatCSV {
+		return database.ExportStats{}, fmt.Errorf(
+			"unsupported table export format %q",
+			request.Options.Format,
+		)
+	}
+
+	columns, err := p.getCollectionStructures(request.Table)
+	if err != nil {
+		return database.ExportStats{}, err
+	}
+	query, err := buildPostgresExportQuery(
+		request.Table,
+		request.Scope,
+		structuresFromColumns(columns),
+	)
+	if err != nil {
+		return database.ExportStats{}, err
+	}
+
+	rows, err := p.conn.QueryxContext(ctx, query)
+	if err != nil {
+		return database.ExportStats{}, err
+	}
+	defer rows.Close()
+
+	return database.WriteCSVStream(
+		writer,
+		&sqlxExportRows{rows: rows},
+		request.Options.CSV,
+	)
 }
 
 // CreateTable creates a new table in the database

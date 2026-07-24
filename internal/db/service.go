@@ -40,11 +40,13 @@ type Service struct {
 	connections map[string]*Connection
 	activeID    string
 	mu          sync.RWMutex
+	saveDialog  saveFileDialogFunc
 }
 
 func NewService() *Service {
 	return &Service{
 		connections: make(map[string]*Connection),
+		saveDialog:  defaultSaveFileDialog,
 	}
 }
 

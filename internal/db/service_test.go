@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -11,9 +13,13 @@ import (
 type routingTestDriver struct {
 	name string
 
-	mu      sync.Mutex
-	queries []string
-	closed  bool
+	mu            sync.Mutex
+	queries       []string
+	closed        bool
+	exportContent string
+	exportCalls   int
+	exportRows    int64
+	exportErr     error
 
 	queryStarted chan struct{}
 	queryRelease chan struct{}
@@ -99,6 +105,29 @@ func (d *routingTestDriver) ExecuteQuery(
 	}, nil
 }
 
+func (d *routingTestDriver) ExportTable(
+	_ context.Context,
+	_ database.TableExportRequest,
+	writer io.Writer,
+) (database.ExportStats, error) {
+	d.mu.Lock()
+	d.exportCalls++
+	content := d.exportContent
+	rows := d.exportRows
+	exportErr := d.exportErr
+	d.mu.Unlock()
+
+	if content != "" {
+		if _, err := io.WriteString(writer, content); err != nil {
+			return database.ExportStats{}, err
+		}
+	}
+	if exportErr != nil {
+		return database.ExportStats{}, exportErr
+	}
+	return database.ExportStats{Rows: rows}, nil
+}
+
 func (d *routingTestDriver) CreateTable(database.Table, []database.ColumnDefinition) error {
 	return nil
 }
@@ -124,6 +153,13 @@ func (d *routingTestDriver) queryCount() int {
 	defer d.mu.Unlock()
 
 	return len(d.queries)
+}
+
+func (d *routingTestDriver) exportCallCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.exportCalls
 }
 
 func newRoutingTestService(drivers map[string]*routingTestDriver, activeID string) *Service {

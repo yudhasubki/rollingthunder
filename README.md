@@ -49,6 +49,17 @@
 - Create, truncate, and drop tables with confirmation.
 - Keep table, query, diagram, and create-table tabs open together.
 
+### Data export
+
+- Export the current table page or every filtered row as UTF-8 CSV.
+- Preserve the active table filters and server-side sort order in exported data.
+- Stream all-filtered table exports from PostgreSQL instead of loading the complete dataset in
+  memory.
+- Export the rows already loaded in a query result without rerunning arbitrary SQL.
+- Choose the delimiter, column header, and `NULL` representation before opening the native
+  destination picker.
+- Keep an existing destination file unchanged if an export fails before completion.
+
 ### SQL editor
 
 - Monaco-powered SQL editing and syntax highlighting.
@@ -79,8 +90,9 @@ user-facing only after the corresponding database drivers ship.
 Rolling Thunder currently has a table-first object explorer. It does not yet expose database views,
 materialized views, functions, procedures, triggers, sequences, or custom types.
 
-Exporting table data or query results to CSV, JSON, or SQL is not available yet. This is the next
-data-workflow priority in the [project roadmap](ROADMAP.md).
+CSV export is available for table data and loaded query results. JSON, SQL `INSERT`, selected-row
+export, configurable encodings, and granular progress/cancellation remain on the
+[project roadmap](ROADMAP.md).
 
 Other important limitations include:
 
@@ -139,9 +151,9 @@ npm run build
 
 ## Roadmap
 
-The next milestones cover data sorting and export, a complete database-object explorer, real MySQL
-and SQLite drivers, and production hardening. See [ROADMAP.md](ROADMAP.md) for priorities and
-acceptance criteria.
+The next milestones extend export formats and controls, add a complete database-object explorer,
+ship real MySQL and SQLite drivers, and harden the app for production. See
+[ROADMAP.md](ROADMAP.md) for priorities and acceptance criteria.
 
 ## Contributing
 

@@ -4,7 +4,13 @@
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import type { SortingState } from '@tanstack/table-core';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
+	import ExportDialog from '$lib/components/database/ExportDialog.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
+	import {
+		buildCSVExportOptions,
+		formatExportBytes,
+		type CSVExportSettings
+	} from '$lib/export/csv';
 	import { database } from '$lib/wailsjs/go/models';
 	import { getColumnTypeLabel } from '$lib/table/cells';
 	import { getForeignRelation } from '$lib/table/relations';
@@ -14,7 +20,8 @@
 		GetCollectionData,
 		GetCollectionStructures,
 		GetIndices,
-		GetTableDDL
+		GetTableDDL,
+		ExportTableData
 	} from '$lib/wailsjs/go/db/Service';
 	import {
 		LayoutGrid,
@@ -60,6 +67,8 @@
 	let tableTotalData = $state<number>(0);
 	let tableData = $state<Record<string, any>[]>([]);
 	let isLoadingData = $state(false);
+	let exportDialogOpen = $state(false);
+	let exporting = $state(false);
 	let dataLoadingTitle = $state('Preparing table data');
 	let dataLoadingDescription = $state('Waiting for the database');
 	let isLoadingStructure = $state(false);
@@ -124,6 +133,40 @@
 		filters = [];
 		appliedFilters = [];
 		currentPage = 0;
+	}
+
+	function buildFilterClause(currentFilters: FilterCondition[]): string {
+		if (currentFilters.length === 0) return '';
+
+		const conditions = currentFilters
+			.filter(
+				(filter) =>
+					filter.enabled &&
+					filter.column &&
+					(filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL' || filter.value)
+			)
+			.map((filter) => {
+				if (filter.operator === 'IS NULL' || filter.operator === 'IS NOT NULL') {
+					return `"${filter.column}" ${filter.operator}`;
+				}
+				if (filter.operator === 'LIKE') {
+					return `"${filter.column}" ILIKE '%${filter.value.replace(/'/g, "''")}'`;
+				}
+				return `"${filter.column}" ${filter.operator} '${filter.value.replace(/'/g, "''")}'`;
+			});
+
+		return conditions.length > 0 ? conditions.join(' AND ') : '';
+	}
+
+	function buildDatabaseSorts(currentSorting: SortingState): database.Sort[] {
+		return currentSorting.map(
+			(sort) =>
+				new database.Sort({
+					Column: sort.id,
+					Direction: sort.desc ? 'desc' : 'asc',
+					Nulls: 'last'
+				})
+		);
 	}
 
 	$effect(() => {
@@ -204,29 +247,6 @@
 			return;
 		}
 
-		const buildFilterClause = (): string => {
-			if (currentFilters.length === 0) return '';
-
-			const conditions = currentFilters
-				.filter(
-					(f) =>
-						f.enabled &&
-						f.column &&
-						(f.operator === 'IS NULL' || f.operator === 'IS NOT NULL' || f.value)
-				)
-				.map((f) => {
-					if (f.operator === 'IS NULL' || f.operator === 'IS NOT NULL') {
-						return `"${f.column}" ${f.operator}`;
-					} else if (f.operator === 'LIKE') {
-						return `"${f.column}" ILIKE '%${f.value.replace(/'/g, "''")}'`;
-					} else {
-						return `"${f.column}" ${f.operator} '${f.value.replace(/'/g, "''")}'`;
-					}
-				});
-
-			return conditions.length > 0 ? conditions.join(' AND ') : '';
-		};
-
 		const doLoadData = async () => {
 			const requestVersion = ++dataRequestVersion;
 			lastLoadKey = loadKey; // Set before async to prevent re-entry
@@ -242,15 +262,8 @@
 				reqTable.Schema = schemaName;
 				reqTable.Limit = tableLimit;
 				reqTable.Offset = offset;
-				reqTable.Filter = buildFilterClause();
-				reqTable.Sorts = currentSorting.map(
-					(sort) =>
-						new database.Sort({
-							Column: sort.id,
-							Direction: sort.desc ? 'desc' : 'asc',
-							Nulls: 'last'
-						})
-				);
+				reqTable.Filter = buildFilterClause(currentFilters);
+				reqTable.Sorts = buildDatabaseSorts(currentSorting);
 
 				const totalRes = await CountCollectionData(connectionId, reqTable);
 				if (requestVersion !== dataRequestVersion) return;
@@ -303,6 +316,51 @@
 	function handleSortingChange(nextSorting: SortingState) {
 		sorting = nextSorting;
 		currentPage = 0;
+	}
+
+	async function handleExport(settings: CSVExportSettings) {
+		if (!tab.schema || !tab.table || exporting) return;
+
+		exporting = true;
+		const table = new database.Table({
+			Schema: tab.schema,
+			Name: tab.table,
+			Limit: tableLimit,
+			Offset: currentPage * tableLimit,
+			Filter: buildFilterClause(appliedFilters),
+			Sorts: buildDatabaseSorts(sorting)
+		});
+		const request = new database.TableExportRequest({
+			table,
+			scope: settings.scope === 'all' ? 'all' : 'page',
+			suggestedName: `${tab.schema}-${tab.table}.csv`,
+			options: new database.ExportOptions(buildCSVExportOptions(settings))
+		});
+
+		try {
+			updateStatus(
+				settings.scope === 'all'
+					? `Exporting ${tableTotalData.toLocaleString()} filtered rows…`
+					: `Exporting page ${currentPage + 1}…`,
+				'info'
+			);
+			const response = await ExportTableData(tab.connectionId, request);
+			if (response.errors?.length) throw new Error(response.errors[0].detail);
+
+			if (response.data?.cancelled) {
+				updateStatus('Export cancelled', 'info');
+			} else if (response.data) {
+				updateStatus(
+					`Exported ${response.data.rows.toLocaleString()} rows (${formatExportBytes(response.data.bytes)}) to ${response.data.path}`,
+					'success'
+				);
+			}
+			exportDialogOpen = false;
+		} catch (error: any) {
+			updateStatus(error?.message ?? 'Failed to export table data', 'error');
+		} finally {
+			exporting = false;
+		}
 	}
 
 	function getColumnRelation(column: database.Structure) {
@@ -769,6 +827,8 @@
 					onPageChange={handlePageChange}
 					onSortingChange={handleSortingChange}
 					onAddFilter={addFilter}
+					onExport={() => (exportDialogOpen = true)}
+					{exporting}
 					detailTitle={tab.schema && tab.table ? `${tab.schema}.${tab.table}` : 'Table row'}
 					loading={isLoadingData}
 					loadingTitle={dataLoadingTitle}
@@ -800,3 +860,13 @@
 		</div>
 	</div>
 </div>
+
+<ExportDialog
+	open={exportDialogOpen}
+	source="table"
+	pageRows={tableData.length}
+	totalRows={tableTotalData}
+	{exporting}
+	onClose={() => (exportDialogOpen = false)}
+	onExport={handleExport}
+/>
