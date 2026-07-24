@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import {
 		Connect,
+		ChooseSQLiteDatabaseFile,
 		DeleteConnection,
 		GetSavedConnections,
 		SaveConnection,
@@ -26,6 +27,8 @@
 		Database,
 		Eye,
 		EyeOff,
+		FilePlus2,
+		FolderOpen,
 		Loader2,
 		Lock,
 		Play,
@@ -77,7 +80,7 @@
 			name: 'MySQL',
 			description: 'MySQL and compatible server connections.',
 			defaultPort: '3306',
-			available: false,
+			available: true,
 			mark: 'MY'
 		},
 		{
@@ -85,7 +88,7 @@
 			name: 'SQLite',
 			description: 'Open a local SQLite database file.',
 			defaultPort: '',
-			available: false,
+			available: true,
 			mark: 'SQ'
 		}
 	];
@@ -135,7 +138,11 @@
 			: profiles
 	);
 
-	const endpoint = $derived(`${host || 'host'}:${port || 'port'} / ${databaseName || 'database'}`);
+	const endpoint = $derived(
+		provider === 'sqlite'
+			? databaseName || 'Choose a local database file'
+			: `${host || 'host'}:${port || 'port'} / ${databaseName || 'database'}`
+	);
 	const selectedProvider = $derived(providers.find((item) => item.id === provider) ?? null);
 
 	$effect(() => {
@@ -207,8 +214,14 @@
 		editingId = profile.id;
 		connectionName = config.name || '';
 		connectionColor = config.color || '#ef5b50';
-		host = config.host || '127.0.0.1';
-		port = config.port || '5432';
+		const profileProvider = (config.driver as ProviderId) || 'postgres';
+		host = profileProvider === 'sqlite' ? '' : config.host || '127.0.0.1';
+		port =
+			profileProvider === 'sqlite'
+				? ''
+				: config.port ||
+					providers.find((item) => item.id === profileProvider)?.defaultPort ||
+					'5432';
 		username = config.user || '';
 		password = config.password || '';
 		databaseName = config.db || '';
@@ -216,7 +229,7 @@
 		sslRootCert = config.sslRootCert || '';
 		sslCert = config.sslCert || '';
 		sslKey = config.sslKey || '';
-		provider = (config.driver as ProviderId) || 'postgres';
+		provider = profileProvider;
 		deleteConfirm = false;
 		message = '';
 	}
@@ -244,25 +257,27 @@
 		return connectionStore.connections.some(
 			(connection) =>
 				connection.name === profile.config.name &&
+				connection.driver === (profile.config.driver || 'postgres') &&
 				connection.host === profile.config.host &&
 				connection.database === profile.config.db
 		);
 	}
 
 	function buildConfig() {
+		const sqlite = provider === 'sqlite';
 		return new database.Config({
 			name: connectionName.trim(),
 			color: connectionColor,
 			driver: provider || 'postgres',
-			host: host.trim(),
-			port: port.trim(),
-			user: username.trim(),
-			password,
+			host: sqlite ? '' : host.trim(),
+			port: sqlite ? '' : port.trim(),
+			user: sqlite ? '' : username.trim(),
+			password: sqlite ? '' : password,
 			db: databaseName.trim(),
-			sslMode,
-			sslRootCert: sslRootCert.trim(),
-			sslCert: sslCert.trim(),
-			sslKey: sslKey.trim()
+			sslMode: sqlite ? 'disable' : sslMode,
+			sslRootCert: sqlite ? '' : sslRootCert.trim(),
+			sslCert: sqlite ? '' : sslCert.trim(),
+			sslKey: sqlite ? '' : sslKey.trim()
 		});
 	}
 
@@ -271,7 +286,15 @@
 			showMessage('Add a profile name before saving.', 'error');
 			return false;
 		}
-		if (!host.trim() || !port.trim() || !databaseName.trim()) {
+		if (!provider) {
+			showMessage('Choose a database provider first.', 'error');
+			return false;
+		}
+		if (provider === 'sqlite' && !databaseName.trim()) {
+			showMessage('Choose an existing SQLite file or a path for a new database.', 'error');
+			return false;
+		}
+		if (provider !== 'sqlite' && (!host.trim() || !port.trim() || !databaseName.trim())) {
 			showMessage('Host, port, and database are required.', 'error');
 			return false;
 		}
@@ -286,7 +309,50 @@
 			port = nextProvider.defaultPort;
 		}
 		provider = nextProvider.id;
+		if (nextProvider.id === 'sqlite') {
+			host = '';
+			port = '';
+			username = '';
+			password = '';
+			sslMode = 'disable';
+		} else {
+			host ||= '127.0.0.1';
+		}
 		message = '';
+	}
+
+	function profileEndpoint(profile: db.SavedConnection): string {
+		const config = profile.config;
+		if ((config.driver || 'postgres') === 'sqlite') return config.db;
+		return `${config.host}:${config.port}/${config.db}`;
+	}
+
+	async function chooseSQLiteFile(create: boolean) {
+		if (action !== null) return;
+		try {
+			const response = await ChooseSQLiteDatabaseFile(create);
+			if (response.errors?.length) {
+				throw createServiceError(
+					response.errors[0],
+					create ? 'Could not choose a new SQLite file' : 'Could not open SQLite file'
+				);
+			}
+			if (response.data) {
+				databaseName = response.data;
+				if (!connectionName.trim()) {
+					const leaf = response.data.split(/[\\/]/).pop() || 'SQLite';
+					connectionName = leaf.replace(/\.(sqlite3?|db)$/i, '') || 'SQLite';
+				}
+				showMessage(
+					create
+						? 'The database file will be created when you connect.'
+						: 'SQLite database selected.',
+					'info'
+				);
+			}
+		} catch (error: any) {
+			showMessage(error?.message || 'Could not choose SQLite database', 'error');
+		}
 	}
 
 	async function saveProfile() {
@@ -325,7 +391,7 @@
 			connectionElapsedSeconds = seconds;
 		});
 		showMessage(
-			`Connecting to ${host}:${port}/${databaseName}. Automatic timeout after ${CONNECTION_TIMEOUT_SECONDS} seconds.`
+			`Connecting to ${endpoint}. Automatic timeout after ${CONNECTION_TIMEOUT_SECONDS} seconds.`
 		);
 
 		try {
@@ -367,7 +433,7 @@
 		if (!connectionAttemptID || cancellingConnection) return;
 		const attemptID = connectionAttemptID;
 		cancellingConnection = true;
-		showMessage(`Cancelling connection to ${host}:${port}/${databaseName}…`);
+		showMessage(`Cancelling connection to ${endpoint}…`);
 
 		try {
 			await cancelConnectionAttempt(attemptID);
@@ -513,7 +579,7 @@
 												{profile.config.name || 'Unnamed profile'}
 											</span>
 											<span class="mt-0.5 block truncate font-mono text-[8px]">
-												{profile.config.host}:{profile.config.port}/{profile.config.db}
+												{profileEndpoint(profile)}
 											</span>
 										</span>
 										{#if isConnected(profile)}
@@ -686,120 +752,168 @@
 									</div>
 								</div>
 
-								<div class="col-span-2 mt-1 flex items-center gap-2 border-b pb-2">
-									<Server class="text-muted-foreground h-3.5 w-3.5" />
-									<span class="text-[10px] font-bold">{selectedProvider.name} connection</span>
-								</div>
-								<div>
-									<label for="modal-host">Host</label>
-									<input
-										id="modal-host"
-										bind:value={host}
-										placeholder="127.0.0.1"
-										disabled={action !== null}
-									/>
-								</div>
-								<div class="grid grid-cols-[112px_minmax(0,1fr)] gap-3">
-									<div>
-										<label for="modal-port">Port</label>
-										<input
-											id="modal-port"
-											bind:value={port}
-											placeholder={selectedProvider.defaultPort}
-											disabled={action !== null}
-										/>
+								{#if provider === 'sqlite'}
+									<div class="col-span-2">
+										<div class="mt-1 flex items-center gap-2 border-b pb-2">
+											<Database class="text-muted-foreground h-3.5 w-3.5" />
+											<span class="text-[10px] font-bold">Local database file</span>
+										</div>
 									</div>
-									<div>
-										<label for="modal-database">Database name</label>
+									<div class="col-span-2">
+										<label for="modal-database">SQLite file path</label>
 										<input
 											id="modal-database"
 											bind:value={databaseName}
-											placeholder="postgres"
+											placeholder="/path/to/database.sqlite3"
 											disabled={action !== null}
 										/>
 									</div>
-								</div>
-
-								<div class="col-span-2 mt-1 flex items-center gap-2 border-b pb-2">
-									<Lock class="text-muted-foreground h-3.5 w-3.5" />
-									<span class="text-[10px] font-bold">Authentication & SSL</span>
-								</div>
-								<div>
-									<label for="modal-username">Username</label>
-									<input
-										id="modal-username"
-										bind:value={username}
-										placeholder="postgres"
-										disabled={action !== null}
-									/>
-								</div>
-								<div>
-									<label for="modal-password">Password</label>
-									<div class="relative">
-										<input
-											id="modal-password"
-											type={showPassword ? 'text' : 'password'}
-											bind:value={password}
-											placeholder="••••••••"
-											class="!pr-10"
-											disabled={action !== null}
-										/>
+									<div class="col-span-2 grid grid-cols-2 gap-3">
 										<button
 											type="button"
-											class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
-											onclick={() => (showPassword = !showPassword)}
-											aria-label={showPassword ? 'Hide password' : 'Show password'}
+											class="rt-toolbar-button h-9 gap-2 px-3 text-[10px] font-bold"
+											onclick={() => void chooseSQLiteFile(false)}
+											disabled={action !== null}
 										>
-											{#if showPassword}
-												<EyeOff class="h-3.5 w-3.5" />
-											{:else}
-												<Eye class="h-3.5 w-3.5" />
-											{/if}
+											<FolderOpen class="h-3.5 w-3.5" />
+											Open existing file
+										</button>
+										<button
+											type="button"
+											class="rt-toolbar-button h-9 gap-2 px-3 text-[10px] font-bold"
+											onclick={() => void chooseSQLiteFile(true)}
+											disabled={action !== null}
+										>
+											<FilePlus2 class="h-3.5 w-3.5" />
+											Create new file
 										</button>
 									</div>
-								</div>
-								<div class="col-span-2">
-									<label for="modal-ssl">SSL mode</label>
-									<FilterCombobox
-										id="modal-ssl"
-										options={sslOptions}
-										value={sslMode}
-										onChange={(value) => (sslMode = value)}
-										searchable={false}
-										disabled={action !== null}
-										triggerClass="h-9 px-3 text-xs"
-										placeholder="Select SSL mode"
-									/>
-								</div>
+									<div class="col-span-2 rounded-lg border bg-[var(--surface-sunken)] px-3.5 py-3">
+										<div class="text-[9px] font-bold">Safe local defaults</div>
+										<div class="text-muted-foreground mt-2 grid gap-1.5 text-[8px]">
+											<span>• Foreign-key enforcement is enabled for every session.</span>
+											<span>• WAL mode improves reader/writer concurrency.</span>
+											<span
+												>• Locked files wait up to five seconds and return an actionable error.</span
+											>
+										</div>
+									</div>
+								{:else}
+									<div class="col-span-2 mt-1 flex items-center gap-2 border-b pb-2">
+										<Server class="text-muted-foreground h-3.5 w-3.5" />
+										<span class="text-[10px] font-bold">{selectedProvider.name} connection</span>
+									</div>
+									<div>
+										<label for="modal-host">Host</label>
+										<input
+											id="modal-host"
+											bind:value={host}
+											placeholder="127.0.0.1"
+											disabled={action !== null}
+										/>
+									</div>
+									<div class="grid grid-cols-[112px_minmax(0,1fr)] gap-3">
+										<div>
+											<label for="modal-port">Port</label>
+											<input
+												id="modal-port"
+												bind:value={port}
+												placeholder={selectedProvider.defaultPort}
+												disabled={action !== null}
+											/>
+										</div>
+										<div>
+											<label for="modal-database">Database name</label>
+											<input
+												id="modal-database"
+												bind:value={databaseName}
+												placeholder={provider === 'mysql' ? 'app' : 'postgres'}
+												disabled={action !== null}
+											/>
+										</div>
+									</div>
 
-								{#if sslMode === 'verify-ca' || sslMode === 'verify-full'}
+									<div class="col-span-2 mt-1 flex items-center gap-2 border-b pb-2">
+										<Lock class="text-muted-foreground h-3.5 w-3.5" />
+										<span class="text-[10px] font-bold">Authentication & TLS</span>
+									</div>
+									<div>
+										<label for="modal-username">Username</label>
+										<input
+											id="modal-username"
+											bind:value={username}
+											placeholder={provider === 'mysql' ? 'root' : 'postgres'}
+											disabled={action !== null}
+										/>
+									</div>
+									<div>
+										<label for="modal-password">Password</label>
+										<div class="relative">
+											<input
+												id="modal-password"
+												type={showPassword ? 'text' : 'password'}
+												bind:value={password}
+												placeholder="••••••••"
+												class="!pr-10"
+												disabled={action !== null}
+											/>
+											<button
+												type="button"
+												class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
+												onclick={() => (showPassword = !showPassword)}
+												aria-label={showPassword ? 'Hide password' : 'Show password'}
+											>
+												{#if showPassword}
+													<EyeOff class="h-3.5 w-3.5" />
+												{:else}
+													<Eye class="h-3.5 w-3.5" />
+												{/if}
+											</button>
+										</div>
+									</div>
 									<div class="col-span-2">
-										<label for="modal-root-cert">CA certificate path</label>
-										<input
-											id="modal-root-cert"
-											bind:value={sslRootCert}
-											placeholder="/path/to/root.crt"
+										<label for="modal-ssl">TLS mode</label>
+										<FilterCombobox
+											id="modal-ssl"
+											options={sslOptions}
+											value={sslMode}
+											onChange={(value) => (sslMode = value)}
+											searchable={false}
 											disabled={action !== null}
+											triggerClass="h-9 px-3 text-xs"
+											placeholder="Select TLS mode"
 										/>
 									</div>
-									<div>
-										<label for="modal-client-cert">Client certificate path</label>
-										<input
-											id="modal-client-cert"
-											bind:value={sslCert}
-											placeholder="/path/to/client.crt"
-											disabled={action !== null}
-										/>
-									</div>
-									<div>
-										<label for="modal-client-key">Client key path</label>
-										<input
-											id="modal-client-key"
-											bind:value={sslKey}
-											placeholder="/path/to/client.key"
-											disabled={action !== null}
-										/>
-									</div>
+
+									{#if sslMode === 'verify-ca' || sslMode === 'verify-full'}
+										<div class="col-span-2">
+											<label for="modal-root-cert">CA certificate path</label>
+											<input
+												id="modal-root-cert"
+												bind:value={sslRootCert}
+												placeholder="/path/to/root.crt"
+												disabled={action !== null}
+											/>
+										</div>
+										<div>
+											<label for="modal-client-cert">Client certificate path</label>
+											<input
+												id="modal-client-cert"
+												bind:value={sslCert}
+												placeholder="/path/to/client.crt"
+												disabled={action !== null}
+											/>
+										</div>
+										<div>
+											<label for="modal-client-key">Client key path</label>
+											<input
+												id="modal-client-key"
+												bind:value={sslKey}
+												placeholder="/path/to/client.key"
+												disabled={action !== null}
+											/>
+										</div>
+									{/if}
 								{/if}
 							</div>
 						{/if}

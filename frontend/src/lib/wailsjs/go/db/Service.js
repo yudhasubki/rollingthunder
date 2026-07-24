@@ -26,6 +26,10 @@ export function CancelQuery(arg1) {
   return window['go']['db']['Service']['CancelQuery'](arg1);
 }
 
+export function ChooseSQLiteDatabaseFile(arg1) {
+  return window['go']['db']['Service']['ChooseSQLiteDatabaseFile'](arg1);
+}
+
 export function CommitTransaction(arg1) {
   return window['go']['db']['Service']['CommitTransaction'](arg1);
 }

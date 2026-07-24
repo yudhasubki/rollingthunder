@@ -16,10 +16,8 @@
 </p>
 
 > [!WARNING]
-> Rolling Thunder is under active development and is not ready for production-critical database
-> work. PostgreSQL is currently the only functional database backend. MySQL and SQLite are planned,
-> but their connection providers are intentionally disabled until their drivers reach feature
-> parity.
+> Rolling Thunder is under active development. Keep independent backups before using structural or
+> destructive workflows against production-critical databases.
 
 ## What works today
 
@@ -28,14 +26,16 @@
 - Save and edit reusable connection profiles.
 - Keep multiple database sessions open and switch between them.
 - Identify environments with profile colors.
-- Configure PostgreSQL SSL modes and client certificates.
+- Configure PostgreSQL or MySQL/MariaDB TLS modes and client certificates.
+- Open or create SQLite database files through the native file picker.
 - Open connection management as a modal without leaving the workspace.
 - Select the database provider before filling in provider-specific settings.
 
 ### Database workspace
 
-- Browse PostgreSQL schemas and tables.
-- Search tables and switch schemas.
+- Browse PostgreSQL schemas, MySQL/MariaDB databases, and SQLite attached databases.
+- Explore and search tables, views, materialized views, routines, triggers, sequences, types,
+  constraints, indexes, and PostgreSQL extensions according to each driver capability.
 - Inspect columns, constraints, relationships, indexes, and table DDL.
 - Identify primary and foreign keys explicitly and open referenced tables directly from Structure.
 - Open an interactive schema diagram.
@@ -51,11 +51,10 @@
 
 ### Data export
 
-- Export the current table page, checked rows, or every filtered row as CSV, JSON, or PostgreSQL
+- Export the current table page, checked rows, or every filtered row as CSV, JSON, or driver-owned
   `INSERT` statements.
 - Preserve the active table filters and server-side sort order in exported data.
-- Stream all-filtered table exports from PostgreSQL instead of loading the complete dataset in
-  memory.
+- Stream all-filtered table exports instead of loading the complete dataset in memory.
 - Export all loaded query results or only checked rows without rerunning arbitrary SQL.
 - Configure the CSV delimiter, column header, `NULL` representation, and UTF-8, UTF-8 BOM, or
   UTF-16 LE encoding.
@@ -63,8 +62,9 @@
   prefix.
 - Batch SQL rows into configurable multi-value `INSERT` statements and optionally wrap the file in
   `BEGIN` / `COMMIT`.
-- Let PostgreSQL quote native SQL values, omit generated columns, and preserve identity values with
-  `OVERRIDING SYSTEM VALUE` where required.
+- Let the active driver quote native SQL values and omit generated columns. PostgreSQL preserves
+  identity values with `OVERRIDING SYSTEM VALUE`; MySQL/MariaDB can add
+  `ON DUPLICATE KEY UPDATE`.
 - Select the destination through a format-aware native file picker.
 - Follow live row, byte, elapsed-time, and percentage progress for running exports.
 - Cancel a running export without replacing an existing destination file.
@@ -92,33 +92,27 @@
 - Lazy column metadata loading, including tables that were not part of the initial metadata warm-up.
 - Independent editor models for every query tab, without duplicate completion providers.
 
-The MySQL and SQLite completion catalogs are ready in the editor architecture, but they will become
-user-facing only after the corresponding database drivers ship.
-
 ## Database support
 
-| Engine          | Connect and query | Object metadata    | Dialect completion       |
-| --------------- | ----------------- | ------------------ | ------------------------ |
-| PostgreSQL      | Available         | Schemas and tables | Available                |
-| MySQL / MariaDB | Planned           | Planned            | Completion catalog ready |
-| SQLite          | Planned           | Planned            | Completion catalog ready |
+| Engine          | Connect and query | Object metadata                       | Completion |
+| --------------- | ----------------- | ------------------------------------- | ---------- |
+| PostgreSQL      | Available         | Full capability-based explorer        | Available  |
+| MySQL / MariaDB | Available         | Databases, tables, views, routines    | Available  |
+| SQLite          | Available         | Attached DBs, tables, views, triggers | Available  |
 
 ## Known gaps
 
-Rolling Thunder currently has a table-first object explorer. It does not yet expose database views,
-materialized views, functions, procedures, triggers, sequences, or custom types.
-
-CSV and JSON export are available for table data and loaded query results. PostgreSQL `INSERT`
-export is available for table data, but it intentionally does not reset sequence state. Arbitrary
-query results do not offer SQL `INSERT` export because they do not provide a reliable target table.
+CSV and JSON export are available for table data and loaded query results. Driver-owned `INSERT`
+export is available for table data, but PostgreSQL export intentionally does not reset sequence
+state. Arbitrary query results do not offer SQL `INSERT` export because they do not provide a
+reliable target table.
 
 Other important limitations include:
 
-- PostgreSQL is the only real database driver.
-- Indexes can be inspected but not created or edited visually.
-- Existing tables cannot yet be altered from the structure editor.
 - Multiple result sets and visual query plans are not implemented.
 - Saved credentials are not yet integrated with the operating-system keychain.
+- Live PostgreSQL and MySQL/MariaDB conformance tests require corresponding test servers. SQLite
+  conformance runs against a temporary database file by default.
 
 ## Tech stack
 
@@ -127,7 +121,7 @@ Other important limitations include:
 - **Frontend:** Svelte 5 and TypeScript
 - **UI:** Tailwind CSS, Melt UI, and Lucide
 - **SQL editor:** Monaco Editor
-- **Current database driver:** PostgreSQL
+- **Database drivers:** PostgreSQL, MySQL/MariaDB, and pure-Go SQLite
 
 ## Getting started
 
@@ -136,7 +130,7 @@ Other important limitations include:
 - Go 1.23 or newer
 - Node.js and npm
 - Wails 2 CLI
-- A PostgreSQL database for the current build
+- A supported database server, or a local SQLite database file
 
 ### Development
 
@@ -169,8 +163,7 @@ npm run build
 
 ## Roadmap
 
-The next milestones add a complete database-object explorer, real MySQL and SQLite drivers,
-power-user query tooling, and production hardening. See
+The next milestones add power-user query tooling and production hardening. See
 [ROADMAP.md](ROADMAP.md) for priorities and acceptance criteria.
 
 ## Contributing

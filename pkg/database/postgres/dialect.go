@@ -38,6 +38,7 @@ func (p *Postgres) Capabilities() database.Capabilities {
 		ManageViews:         true,
 		ManageRoutines:      true,
 		ManageTriggers:      true,
+		TriggerToggle:       true,
 		ManageIndexes:       true,
 		AlterTableStructure: true,
 		ExplainPlans:        true,

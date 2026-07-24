@@ -3,8 +3,11 @@ package db
 import (
 	"context"
 	"fmt"
+
 	"rollingthunder/pkg/database"
+	"rollingthunder/pkg/database/mysql"
 	"rollingthunder/pkg/database/postgres"
+	sqlitedriver "rollingthunder/pkg/database/sqlite"
 )
 
 type driverFactory func(
@@ -27,8 +30,22 @@ func NewDriver(ctx context.Context, driver string, cfg database.Config) (databas
 			SSLCert:     cfg.SSLCert,
 			SSLKey:      cfg.SSLKey,
 		}), nil
-	// case "mysql": return NewMySQL(cfg), nil
-	// case "sqlite": return NewSQLite(cfg), nil
+	case "mysql", "mariadb":
+		return mysql.NewMySQL(ctx, mysql.Config{
+			Host:        cfg.Host,
+			Port:        cfg.Port,
+			User:        cfg.User,
+			Password:    cfg.Password,
+			Db:          cfg.Db,
+			SSLMode:     cfg.SSLMode,
+			SSLRootCert: cfg.SSLRootCert,
+			SSLCert:     cfg.SSLCert,
+			SSLKey:      cfg.SSLKey,
+		}), nil
+	case "sqlite":
+		return sqlitedriver.NewSQLite(ctx, sqlitedriver.Config{
+			Db: cfg.Db,
+		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", driver)
 	}

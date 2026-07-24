@@ -77,6 +77,11 @@
 			objectKind === 'procedure' ||
 			objectKind === 'trigger'
 	);
+	const allowedActions = $derived(detail?.object.allowedActions || []);
+
+	function canChange(action: string): boolean {
+		return (allowedActions as string[]).includes(action);
+	}
 
 	$effect(() => {
 		const key = [
@@ -275,7 +280,7 @@
 							>
 								Reviewed structural changes
 							</div>
-							{#if canEditDefinition}
+							{#if canEditDefinition && canChange('replace')}
 								<button
 									type="button"
 									class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
@@ -290,20 +295,22 @@
 									</span>
 								</button>
 							{/if}
-							<button
-								type="button"
-								class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
-								onclick={() => openChange('rename')}
-							>
-								<Pencil class="mt-0.5 h-3.5 w-3.5" />
-								<span>
-									<span class="block text-[9px] font-semibold">Rename</span>
-									<span class="text-muted-foreground block text-[8px]"
-										>Keep the object identity</span
-									>
-								</span>
-							</button>
-							{#if objectKind === 'trigger'}
+							{#if canChange('rename')}
+								<button
+									type="button"
+									class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
+									onclick={() => openChange('rename')}
+								>
+									<Pencil class="mt-0.5 h-3.5 w-3.5" />
+									<span>
+										<span class="block text-[9px] font-semibold">Rename</span>
+										<span class="text-muted-foreground block text-[8px]"
+											>Keep the object identity</span
+										>
+									</span>
+								</button>
+							{/if}
+							{#if objectKind === 'trigger' && capabilities?.triggerToggle && canChange(triggerEnabled ? 'disable' : 'enable')}
 								<button
 									type="button"
 									class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
@@ -324,18 +331,20 @@
 									</span>
 								</button>
 							{/if}
-							<div class="bg-border my-1 h-px"></div>
-							<button
-								type="button"
-								class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left text-red-600 hover:bg-red-500/10 dark:text-red-400"
-								onclick={() => openChange('drop')}
-							>
-								<Trash2 class="mt-0.5 h-3.5 w-3.5" />
-								<span>
-									<span class="block text-[9px] font-semibold">Drop object</span>
-									<span class="block text-[8px] opacity-75">Permanent structural removal</span>
-								</span>
-							</button>
+							{#if canChange('drop')}
+								<div class="bg-border my-1 h-px"></div>
+								<button
+									type="button"
+									class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left text-red-600 hover:bg-red-500/10 dark:text-red-400"
+									onclick={() => openChange('drop')}
+								>
+									<Trash2 class="mt-0.5 h-3.5 w-3.5" />
+									<span>
+										<span class="block text-[9px] font-semibold">Drop object</span>
+										<span class="block text-[8px] opacity-75">Permanent structural removal</span>
+									</span>
+								</button>
+							{/if}
 						</div>
 					{/if}
 				</div>

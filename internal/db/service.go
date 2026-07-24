@@ -29,6 +29,7 @@ type Connection struct {
 type ConnectionInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
+	Driver   string `json:"driver"`
 	Database string `json:"database"`
 	Host     string `json:"host"`
 	Color    string `json:"color"`
@@ -41,6 +42,8 @@ type Service struct {
 	activeID            string
 	mu                  sync.RWMutex
 	saveDialog          saveFileDialogFunc
+	sqliteOpenDialog    openFileDialogFunc
+	sqliteSaveDialog    saveFileDialogFunc
 	exportJobs          map[string]*exportJob
 	exportMu            sync.RWMutex
 	newDriver           driverFactory
@@ -57,6 +60,8 @@ func NewService() *Service {
 	return &Service{
 		connections:        make(map[string]*Connection),
 		saveDialog:         defaultSaveFileDialog,
+		sqliteOpenDialog:   defaultOpenFileDialog,
+		sqliteSaveDialog:   defaultSaveFileDialog,
 		exportJobs:         make(map[string]*exportJob),
 		newDriver:          NewDriver,
 		connectionTimeout:  defaultConnectionTimeout,
@@ -507,6 +512,7 @@ func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo]
 		connections = append(connections, ConnectionInfo{
 			ID:       conn.ID,
 			Name:     conn.Name,
+			Driver:   conn.Config.Driver,
 			Database: conn.Config.Db,
 			Host:     conn.Config.Host,
 			Color:    conn.Color,

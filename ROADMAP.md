@@ -78,31 +78,31 @@ each engine can expose the objects it genuinely supports.
 
 ### Read and inspect
 
-- [ ] Views
-- [ ] Materialized views where supported
-- [ ] Functions and stored procedures
-- [ ] Triggers
-- [ ] Sequences and identity generators
-- [ ] Custom types, enums, and domains
-- [ ] Constraints and foreign-key dependencies
-- [ ] Extensions for PostgreSQL
+- [x] Views
+- [x] Materialized views where supported
+- [x] Functions and stored procedures
+- [x] Triggers
+- [x] Sequences and identity generators
+- [x] Custom types, enums, and domains
+- [x] Constraints and foreign-key dependencies
+- [x] Extensions for PostgreSQL
 
 Every supported object should provide:
 
-- [ ] Search and grouping in the explorer
-- [ ] Definition / DDL view
-- [ ] Dependency and dependent-object information
-- [ ] Copy-name and copy-qualified-name actions
-- [ ] Refresh without losing the current workspace
+- [x] Search and grouping in the explorer
+- [x] Definition / DDL view
+- [x] Dependency and dependent-object information
+- [x] Copy-name and copy-qualified-name actions
+- [x] Refresh without losing the current workspace
 
 ### Manage objects
 
-- [ ] Create, alter, rename, and drop views.
-- [ ] Create and edit functions/procedures with dialect-aware templates.
-- [ ] Enable, disable, create, and drop triggers where supported.
-- [ ] Create and drop indexes from the structure view.
-- [ ] Alter existing table columns and constraints.
-- [ ] Preview generated SQL before applying structural changes.
+- [x] Create, alter, rename, and drop views.
+- [x] Create and edit functions/procedures with dialect-aware templates.
+- [x] Enable, disable, create, and drop triggers where supported.
+- [x] Create and drop indexes from the structure view.
+- [x] Alter existing table columns and constraints.
+- [x] Preview generated SQL before applying structural changes.
 
 ## Milestone 3 — Real multi-engine support
 
@@ -111,25 +111,25 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 
 ### Driver capability contract
 
-- [ ] Declare support for schemas, databases, views, routines, triggers, DDL, explain plans, and
+- [x] Declare support for schemas, databases, views, routines, triggers, DDL, explain plans, and
       transactional DDL.
-- [ ] Centralize identifier quoting, placeholders, pagination, filtering, and sorting per dialect.
-- [ ] Normalize metadata without erasing engine-specific details.
-- [ ] Add a shared conformance test suite for every driver.
+- [x] Centralize identifier quoting, placeholders, pagination, filtering, and sorting per dialect.
+- [x] Normalize metadata without erasing engine-specific details.
+- [x] Add a shared conformance test suite for every driver.
 
 ### MySQL / MariaDB
 
-- [ ] Connect, reconnect, and configure TLS.
-- [ ] Browse databases, tables, views, routines, and triggers.
-- [ ] Map MySQL types, generated columns, indexes, and auto-increment behavior.
-- [ ] Support MySQL pagination, explain plans, and `ON DUPLICATE KEY` workflows.
+- [x] Connect, reconnect, and configure TLS.
+- [x] Browse databases, tables, views, routines, and triggers.
+- [x] Map MySQL types, generated columns, indexes, and auto-increment behavior.
+- [x] Support MySQL pagination, explain plans, and `ON DUPLICATE KEY` workflows.
 
 ### SQLite
 
-- [ ] Open and create local database files.
-- [ ] Support `main`, attached databases, tables, views, triggers, and indexes.
-- [ ] Map rowid, affinity, generated columns, and SQLite pragmas.
-- [ ] Handle file locking, busy timeouts, and WAL mode clearly.
+- [x] Open and create local database files.
+- [x] Support `main`, attached databases, tables, views, triggers, and indexes.
+- [x] Map rowid, affinity, generated columns, and SQLite pragmas.
+- [x] Handle file locking, busy timeouts, and WAL mode clearly.
 
 ## Milestone 4 — Power-user query tooling
 

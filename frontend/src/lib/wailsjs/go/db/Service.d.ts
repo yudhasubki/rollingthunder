@@ -17,6 +17,8 @@ export function CancelExport(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function CancelQuery(arg1:string):Promise<response.BaseResponse_bool_>;
 
+export function ChooseSQLiteDatabaseFile(arg1:boolean):Promise<response.BaseResponse_string_>;
+
 export function CommitTransaction(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
 
 export function Connect(arg1:db.ConnectRequest):Promise<response.BaseResponse_rollingthunder_internal_db_ConnectResponse_>;

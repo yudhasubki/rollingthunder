@@ -762,6 +762,13 @@
 															<span class="text-muted-foreground truncate font-mono text-[7px]">
 																{col.type_schema ? `${col.type_schema}.` : ''}{col.type_name}
 															</span>
+														{:else if col.affinity && col.affinity !== col.data_type}
+															<span
+																class="text-muted-foreground truncate font-mono text-[7px]"
+																title={`SQLite ${col.affinity} affinity`}
+															>
+																{col.affinity}
+															</span>
 														{/if}
 													</div>
 												</td>
@@ -793,6 +800,18 @@
 															<span
 																class="bg-muted text-muted-foreground inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[7px] font-medium"
 																>AUTO</span
+															>
+														{/if}
+														{#if col.is_generated}
+															<span
+																class="inline-flex h-5 shrink-0 items-center rounded bg-violet-500/10 px-1.5 text-[7px] font-medium text-violet-600 dark:text-violet-400"
+																title={col.generation || 'Generated column'}>GENERATED</span
+															>
+														{/if}
+														{#if col.is_rowid}
+															<span
+																class="bg-muted text-muted-foreground inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[7px] font-medium"
+																>ROWID</span
 															>
 														{/if}
 														<span class="text-muted-foreground truncate text-[8px]">
@@ -1063,6 +1082,7 @@
 	open={exportDialogOpen}
 	source="table"
 	sourceName={tab.schema && tab.table ? `${tab.schema}.${tab.table}` : ''}
+	engine={capabilities?.displayName || capabilities?.engine || ''}
 	pageRows={tableData.length}
 	totalRows={tableTotalData}
 	selectedRows={selectedRows.length}

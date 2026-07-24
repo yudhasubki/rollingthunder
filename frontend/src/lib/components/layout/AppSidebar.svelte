@@ -575,7 +575,7 @@
 				<Table2 class="h-3.5 w-3.5" />
 				New table
 			</button>
-			{#if capabilities?.views}
+			{#if capabilities?.manageViews}
 				<button
 					type="button"
 					use:melt={$ddItem}
@@ -586,7 +586,7 @@
 					New view
 				</button>
 			{/if}
-			{#if capabilities?.materializedViews}
+			{#if capabilities?.manageViews && capabilities?.materializedViews}
 				<button
 					type="button"
 					use:melt={$ddItem}
@@ -597,7 +597,7 @@
 					New materialized view
 				</button>
 			{/if}
-			{#if capabilities?.functions}
+			{#if capabilities?.manageRoutines && capabilities?.functions}
 				<button
 					type="button"
 					use:melt={$ddItem}
@@ -608,7 +608,7 @@
 					New function
 				</button>
 			{/if}
-			{#if capabilities?.procedures}
+			{#if capabilities?.manageRoutines && capabilities?.procedures}
 				<button
 					type="button"
 					use:melt={$ddItem}
@@ -619,7 +619,7 @@
 					New procedure
 				</button>
 			{/if}
-			{#if capabilities?.triggers}
+			{#if capabilities?.manageTriggers && capabilities?.triggers}
 				<button
 					type="button"
 					use:melt={$ddItem}

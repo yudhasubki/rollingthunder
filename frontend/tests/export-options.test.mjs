@@ -18,7 +18,8 @@ test('builds explicit CSV options for the backend contract', () => {
 			nullValue: 'NULL',
 			prettyJSON: true,
 			sqlBatchSize: 100,
-			includeTransaction: true
+			includeTransaction: true,
+			upsert: false
 		}),
 		{
 			format: 'csv',
@@ -43,7 +44,8 @@ test('builds JSON options without leaking CSV settings', () => {
 			nullValue: 'NULL',
 			prettyJSON: false,
 			sqlBatchSize: 100,
-			includeTransaction: true
+			includeTransaction: true,
+			upsert: false
 		}),
 		{
 			format: 'json',
@@ -67,13 +69,15 @@ test('builds PostgreSQL INSERT options without leaking other format settings', (
 			nullValue: '',
 			prettyJSON: true,
 			sqlBatchSize: 500,
-			includeTransaction: false
+			includeTransaction: false,
+			upsert: true
 		}),
 		{
 			format: 'sql',
 			sql: {
 				batchSize: 500,
-				includeTransaction: false
+				includeTransaction: false,
+				upsert: true
 			}
 		}
 	);

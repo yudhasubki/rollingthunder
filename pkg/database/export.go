@@ -62,6 +62,7 @@ const (
 type SQLInsertOptions struct {
 	BatchSize          int  `json:"batchSize"`
 	IncludeTransaction bool `json:"includeTransaction"`
+	Upsert             bool `json:"upsert"`
 }
 
 func (options SQLInsertOptions) EffectiveBatchSize() int {

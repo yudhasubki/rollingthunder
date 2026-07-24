@@ -82,12 +82,13 @@ type ObjectProperty struct {
 }
 
 type DatabaseObject struct {
-	Reference   ObjectReference  `json:"reference"`
-	DisplayName string           `json:"displayName"`
-	Description string           `json:"description,omitempty"`
-	CanOpenData bool             `json:"canOpenData"`
-	CanManage   bool             `json:"canManage"`
-	Properties  []ObjectProperty `json:"properties,omitempty"`
+	Reference      ObjectReference      `json:"reference"`
+	DisplayName    string               `json:"displayName"`
+	Description    string               `json:"description,omitempty"`
+	CanOpenData    bool                 `json:"canOpenData"`
+	CanManage      bool                 `json:"canManage"`
+	AllowedActions []ObjectChangeAction `json:"allowedActions,omitempty"`
+	Properties     []ObjectProperty     `json:"properties,omitempty"`
 }
 
 type ObjectFilter struct {

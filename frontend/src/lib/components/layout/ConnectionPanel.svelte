@@ -56,6 +56,11 @@
 			}
 		}
 	}
+
+	function connectionEndpoint(connection: (typeof connectionState.connections)[number]): string {
+		if (connection.driver === 'sqlite') return connection.database;
+		return `${connection.database} · ${connection.host}`;
+	}
 </script>
 
 <aside
@@ -77,7 +82,7 @@
 					: 'hover:border-border border-transparent hover:bg-[var(--surface-hover)]'}"
 				onclick={() => handleSwitch(conn.id)}
 				oncontextmenu={(e) => handleContextMenu(e, conn.id)}
-				title="{conn.name || conn.database} @ {conn.host}"
+				title="{conn.driver === 'sqlite' ? 'SQLite' : conn.driver} · {connectionEndpoint(conn)}"
 			>
 				<div class="flex h-7 w-7 items-center justify-center rounded-md">
 					<Database class="h-4 w-4 {conn.isActive ? 'text-foreground' : 'text-muted-foreground'}" />
@@ -130,7 +135,7 @@
 						>{contextMenuConnection.name || contextMenuConnection.database}</span
 					>
 					<span class="rt-context-meta"
-						>{contextMenuConnection.database} · {contextMenuConnection.host}</span
+						>{contextMenuConnection.driver} · {connectionEndpoint(contextMenuConnection)}</span
 					>
 				</span>
 			</div>

@@ -9,7 +9,9 @@ import (
 
 	"rollingthunder/pkg/response"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
+	modernsqlite "modernc.org/sqlite"
 )
 
 const (
@@ -117,6 +119,74 @@ func connectionFailure[T any](
 		}
 	}
 
+	var mysqlError *mysqldriver.MySQLError
+	if errors.As(connectErr, &mysqlError) {
+		switch mysqlError.Number {
+		case 1045:
+			return serviceErrorWithCode[T](
+				http.StatusUnauthorized,
+				errorCodeAuthenticationFailed,
+				"Authentication failed",
+				"MySQL or MariaDB rejected the username or password.",
+				"Verify the username, password, authentication plugin, and allowed client host.",
+			)
+		case 1049:
+			return serviceErrorWithCode[T](
+				http.StatusNotFound,
+				errorCodeDatabaseNotFound,
+				"Database not found",
+				"The requested MySQL or MariaDB database does not exist.",
+				"Check the database name or connect without a default database first.",
+			)
+		case 1044:
+			return serviceErrorWithCode[T](
+				http.StatusForbidden,
+				errorCodeAuthenticationFailed,
+				"Database access denied",
+				mysqlError.Message,
+				"Grant access to the selected database or choose a database available to this account.",
+			)
+		}
+	}
+
+	var sqliteError *modernsqlite.Error
+	if errors.As(connectErr, &sqliteError) {
+		switch sqliteError.Code() & 0xff {
+		case 5, 6:
+			return serviceErrorWithCode[T](
+				http.StatusLocked,
+				errorCodeConnectionFailed,
+				"SQLite database is locked",
+				sqliteError.Error(),
+				"Wait for the other writer to finish, then retry. Rolling Thunder waits up to five seconds before reporting a lock.",
+			)
+		case 8, 23:
+			return serviceErrorWithCode[T](
+				http.StatusForbidden,
+				errorCodeConnectionFailed,
+				"SQLite file is not writable",
+				sqliteError.Error(),
+				"Choose a writable database file and directory; WAL mode needs permission to create sidecar files.",
+			)
+		case 14:
+			return serviceErrorWithCode[T](
+				http.StatusNotFound,
+				errorCodeDatabaseNotFound,
+				"SQLite file could not be opened",
+				sqliteError.Error(),
+				"Check that the path exists or that its parent directory is writable for a new database.",
+			)
+		case 26:
+			return serviceErrorWithCode[T](
+				http.StatusBadRequest,
+				errorCodeConnectionFailed,
+				"File is not a SQLite database",
+				sqliteError.Error(),
+				"Choose a valid SQLite 3 database file.",
+			)
+		}
+	}
+
 	lowerDetail := strings.ToLower(connectErr.Error())
 	switch {
 	case strings.Contains(lowerDetail, "connection refused"):
@@ -125,7 +195,7 @@ func connectionFailure[T any](
 			errorCodeConnectionRefused,
 			"Connection refused",
 			"The database host actively refused the connection.",
-			"Check that PostgreSQL is running and listening on the configured host and port.",
+			"Check that the database server is running and listening on the configured host and port.",
 		)
 	case strings.Contains(lowerDetail, "certificate"),
 		strings.Contains(lowerDetail, "tls"),
@@ -222,6 +292,83 @@ func queryFailure[T any](
 				"Query syntax error",
 				detail,
 				hint,
+			)
+		}
+	}
+
+	var mysqlError *mysqldriver.MySQLError
+	if errors.As(queryErr, &mysqlError) {
+		detail := mysqlError.Message
+		switch mysqlError.Number {
+		case 1062, 1048, 1451, 1452, 3819, 4025:
+			return serviceErrorWithCode[T](
+				http.StatusConflict,
+				errorCodeQueryConstraint,
+				"Constraint violation",
+				detail,
+				"Review primary keys, foreign keys, unique values, checks, and required columns.",
+			)
+		case 1044, 1142, 1143, 1227:
+			return serviceErrorWithCode[T](
+				http.StatusForbidden,
+				errorCodeQueryPermission,
+				"Permission denied",
+				detail,
+				"Grant the required privilege or use an account with access to this operation.",
+			)
+		case 1064, 1054, 1146, 1305:
+			return serviceErrorWithCode[T](
+				http.StatusBadRequest,
+				errorCodeQuerySyntax,
+				"Query or identifier error",
+				detail,
+				"Check SQL syntax, database-qualified names, and identifiers for the active MySQL dialect.",
+			)
+		case 1205, 1213:
+			return serviceErrorWithCode[T](
+				http.StatusConflict,
+				errorCodeQueryFailed,
+				"Lock conflict",
+				detail,
+				"Retry the transaction after competing work completes; keep transactions short.",
+			)
+		}
+	}
+
+	var sqliteError *modernsqlite.Error
+	if errors.As(queryErr, &sqliteError) {
+		switch sqliteError.Code() & 0xff {
+		case 19:
+			return serviceErrorWithCode[T](
+				http.StatusConflict,
+				errorCodeQueryConstraint,
+				"Constraint violation",
+				sqliteError.Error(),
+				"Review primary keys, foreign keys, unique values, checks, and required columns.",
+			)
+		case 5, 6:
+			return serviceErrorWithCode[T](
+				http.StatusLocked,
+				errorCodeQueryFailed,
+				"SQLite database is locked",
+				sqliteError.Error(),
+				"Wait for the competing transaction to finish or rollback it, then retry.",
+			)
+		case 8, 23:
+			return serviceErrorWithCode[T](
+				http.StatusForbidden,
+				errorCodeQueryPermission,
+				"SQLite database is read-only",
+				sqliteError.Error(),
+				"Move the database to a writable location or run a read-only statement.",
+			)
+		case 1:
+			return serviceErrorWithCode[T](
+				http.StatusBadRequest,
+				errorCodeQuerySyntax,
+				"SQLite query error",
+				sqliteError.Error(),
+				"Check SQLite syntax and identifiers in the active main or attached database.",
 			)
 		}
 	}

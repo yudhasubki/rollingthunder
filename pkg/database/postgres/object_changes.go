@@ -162,19 +162,35 @@ func (p *Postgres) buildPostgresCreateObject(
 	request database.ObjectChangeRequest,
 ) (database.ObjectChangePlan, error) {
 	reference := request.Reference
-	var statement string
+	var statements []string
 	var err error
 	replace := request.Action == database.ObjectChangeReplace
 
 	switch reference.Kind {
 	case database.ObjectKindView:
+		var statement string
 		statement, err = postgresViewBody(reference, request.Definition, false, replace)
+		statements = []string{statement}
 	case database.ObjectKindMaterializedView:
+		var statement string
 		statement, err = postgresViewBody(reference, request.Definition, true, replace)
+		statements = []string{statement}
 	case database.ObjectKindFunction,
-		database.ObjectKindProcedure,
-		database.ObjectKindTrigger:
+		database.ObjectKindProcedure:
+		var statement string
 		statement, err = reviewedDDL(request.Definition, reference.Kind)
+		statements = []string{statement}
+	case database.ObjectKindTrigger:
+		var statement string
+		statement, err = reviewedDDL(request.Definition, reference.Kind)
+		statements = []string{statement}
+		if err == nil && replace {
+			var drop string
+			drop, err = postgresDropStatement(reference, false)
+			if err == nil {
+				statements = []string{drop, statement}
+			}
+		}
 	default:
 		return database.ObjectChangePlan{}, fmt.Errorf(
 			"creating %s objects is not supported by the structural editor",
@@ -191,7 +207,7 @@ func (p *Postgres) buildPostgresCreateObject(
 	}
 	return database.ObjectChangePlan{
 		Summary:       fmt.Sprintf("%s %s %s", verb, reference.Kind, reference.QualifiedName()),
-		Statements:    []string{statement},
+		Statements:    statements,
 		Transactional: true,
 		Refresh:       []database.ObjectReference{reference},
 	}, nil

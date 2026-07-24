@@ -10,6 +10,7 @@ import { resetSchemaInfo } from '$lib/stores/schema.svelte';
 export interface ConnectionInfo {
 	id: string;
 	name: string;
+	driver: string;
 	database: string;
 	host: string;
 	color: string;

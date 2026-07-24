@@ -12,6 +12,7 @@ export interface ExportSettings {
 	prettyJSON: boolean;
 	sqlBatchSize: number;
 	includeTransaction: boolean;
+	upsert: boolean;
 }
 
 export function buildExportOptions(settings: ExportSettings) {
@@ -20,7 +21,8 @@ export function buildExportOptions(settings: ExportSettings) {
 			format: 'sql',
 			sql: {
 				batchSize: settings.sqlBatchSize,
-				includeTransaction: settings.includeTransaction
+				includeTransaction: settings.includeTransaction,
+				upsert: settings.upsert
 			}
 		};
 	}

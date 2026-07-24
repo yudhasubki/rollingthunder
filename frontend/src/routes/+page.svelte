@@ -47,7 +47,7 @@
 		searchQuery.trim()
 			? profiles.filter((profile) => {
 					const config = profile.config;
-					return `${config.name} ${config.host} ${config.db} ${config.user}`
+					return `${config.name} ${config.driver || 'postgres'} ${config.host} ${config.db} ${config.user}`
 						.toLowerCase()
 						.includes(searchQuery.trim().toLowerCase());
 				})
@@ -84,9 +84,34 @@
 		return connectionStore.connections.some(
 			(connection) =>
 				connection.name === profile.config.name &&
+				connection.driver === (profile.config.driver || 'postgres') &&
 				connection.host === profile.config.host &&
 				connection.database === profile.config.db
 		);
+	}
+
+	function profileEndpoint(profile: db.SavedConnection): string {
+		if ((profile.config.driver || 'postgres') === 'sqlite') return profile.config.db;
+		return `${profile.config.host}:${profile.config.port} / ${profile.config.db}`;
+	}
+
+	function providerName(profile: db.SavedConnection): string {
+		switch (profile.config.driver || 'postgres') {
+			case 'mysql':
+			case 'mariadb':
+				return 'MySQL / MariaDB';
+			case 'sqlite':
+				return 'SQLite';
+			default:
+				return 'PostgreSQL';
+		}
+	}
+
+	function profileSecurity(profile: db.SavedConnection): string {
+		if ((profile.config.driver || 'postgres') === 'sqlite') {
+			return 'Local file · WAL · foreign keys on';
+		}
+		return `${profile.config.user || 'No username'} · TLS ${profile.config.sslMode || 'disable'}`;
 	}
 
 	async function connectProfile(profile: db.SavedConnection) {
@@ -100,13 +125,13 @@
 		stopConnectionElapsedTimer = startConnectionElapsedTimer((seconds) => {
 			connectionElapsedSeconds = seconds;
 		});
-		message = `Connecting to ${profile.config.host}:${profile.config.port}/${profile.config.db}. Automatic timeout after ${CONNECTION_TIMEOUT_SECONDS} seconds.`;
+		message = `Connecting to ${profileEndpoint(profile)}. Automatic timeout after ${CONNECTION_TIMEOUT_SECONDS} seconds.`;
 		messageLevel = 'info';
 
 		try {
 			const response = await Connect(
 				new db.ConnectRequest({
-					driver: 'postgres',
+					driver: profile.config.driver || 'postgres',
 					config: profile.config,
 					attemptId: attemptID
 				})
@@ -198,8 +223,8 @@
 				Move through your databases without losing context.
 			</h1>
 			<p class="text-muted-foreground mt-4 max-w-sm text-[11px] leading-relaxed">
-				Explore schemas, inspect data, and run SQL across multiple PostgreSQL connections from one
-				desktop workspace.
+				Explore objects, inspect data, and run dialect-aware SQL across PostgreSQL, MySQL, MariaDB,
+				and SQLite from one desktop workspace.
 			</p>
 
 			<div class="mt-8 space-y-4">
@@ -271,7 +296,7 @@
 					<input
 						type="search"
 						class="rt-input h-9 w-full pr-3 pl-9 text-[10px]"
-						placeholder="Filter by name, host, database, or user"
+						placeholder="Filter by name, provider, host, database, or user"
 						bind:value={searchQuery}
 					/>
 				</div>
@@ -327,7 +352,7 @@
 							<p class="mt-1 text-[9px] leading-relaxed">
 								{searchQuery
 									? 'Try a different name, host, database, or user.'
-									: 'Add your first PostgreSQL profile to open the workspace.'}
+									: 'Add your first database profile to open the workspace.'}
 							</p>
 							{#if !searchQuery}
 								<button
@@ -365,13 +390,17 @@
 												Connected
 											</span>
 										{/if}
+										<span
+											class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[7px] font-bold tracking-wide uppercase"
+										>
+											{providerName(profile)}
+										</span>
 									</div>
 									<p class="text-muted-foreground mt-1 truncate font-mono text-[8px]">
-										{profile.config.host}:{profile.config.port} / {profile.config.db}
+										{profileEndpoint(profile)}
 									</p>
 									<p class="text-muted-foreground mt-1 text-[8px]">
-										{profile.config.user || 'No username'} · SSL {profile.config.sslMode ||
-											'disable'}
+										{profileSecurity(profile)}
 									</p>
 								</div>
 								<div class="flex shrink-0 items-center gap-1">

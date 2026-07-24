@@ -204,6 +204,49 @@ func postgresObjectCanManage(
 	}
 }
 
+func postgresObjectAllowedActions(
+	kind database.ObjectKind,
+	capabilities database.Capabilities,
+) []database.ObjectChangeAction {
+	if !postgresObjectCanManage(kind, capabilities) {
+		return nil
+	}
+	switch kind {
+	case database.ObjectKindTable:
+		return []database.ObjectChangeAction{
+			database.ObjectChangeRename,
+			database.ObjectChangeDrop,
+		}
+	case database.ObjectKindView,
+		database.ObjectKindFunction, database.ObjectKindProcedure:
+		return []database.ObjectChangeAction{
+			database.ObjectChangeReplace,
+			database.ObjectChangeRename,
+			database.ObjectChangeDrop,
+		}
+	case database.ObjectKindMaterializedView:
+		return []database.ObjectChangeAction{
+			database.ObjectChangeRename,
+			database.ObjectChangeDrop,
+		}
+	case database.ObjectKindTrigger:
+		return []database.ObjectChangeAction{
+			database.ObjectChangeReplace,
+			database.ObjectChangeRename,
+			database.ObjectChangeEnable,
+			database.ObjectChangeDisable,
+			database.ObjectChangeDrop,
+		}
+	case database.ObjectKindIndex, database.ObjectKindConstraint:
+		return []database.ObjectChangeAction{
+			database.ObjectChangeRename,
+			database.ObjectChangeDrop,
+		}
+	default:
+		return nil
+	}
+}
+
 func postgresObjectFromRow(
 	row postgresObjectRow,
 	capabilities database.Capabilities,
@@ -262,8 +305,9 @@ func postgresObjectFromRow(
 		CanOpenData: kind == database.ObjectKindTable ||
 			kind == database.ObjectKindView ||
 			kind == database.ObjectKindMaterializedView,
-		CanManage:  postgresObjectCanManage(kind, capabilities),
-		Properties: properties,
+		CanManage:      postgresObjectCanManage(kind, capabilities),
+		AllowedActions: postgresObjectAllowedActions(kind, capabilities),
+		Properties:     properties,
 	}, nil
 }
 

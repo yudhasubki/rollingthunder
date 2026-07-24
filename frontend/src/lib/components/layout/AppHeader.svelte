@@ -94,6 +94,11 @@
 		const connectionId = connectionStore.activeConnection?.id;
 		if (connectionId) tabsStore.newQueryTab(connectionId);
 	}
+
+	function connectionEndpoint(connection: NonNullable<typeof connectionStore.activeConnection>) {
+		if (connection.driver === 'sqlite') return connection.database;
+		return `${connection.database} · ${connection.host}`;
+	}
 </script>
 
 <header
@@ -134,9 +139,8 @@
 								{connectionStore.activeConnection.name || connectionStore.activeConnection.database}
 							</span>
 							<span class="text-muted-foreground block max-w-44 truncate text-[9px]">
-								{connectionStore.activeConnection.database}
-								<span aria-hidden="true"> · </span>
-								{connectionStore.activeConnection.host}
+								{connectionStore.activeConnection.driver} ·
+								{connectionEndpoint(connectionStore.activeConnection)}
 							</span>
 						</span>
 					{:else}
@@ -200,7 +204,7 @@
 												>{conn.name || conn.database}</span
 											>
 											<span class="text-muted-foreground mt-0.5 block truncate text-[9px]"
-												>{conn.database} · {conn.host}</span
+												>{conn.driver} · {connectionEndpoint(conn)}</span
 											>
 										</span>
 										{#if conn.isActive}

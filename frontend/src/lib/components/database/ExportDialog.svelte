@@ -29,6 +29,7 @@
 		selectedRows?: number;
 		initialScope?: ExportScope;
 		truncated?: boolean;
+		engine?: string;
 		exporting?: boolean;
 		cancelling?: boolean;
 		progress?: database.ExportProgress | null;
@@ -46,6 +47,7 @@
 		selectedRows = 0,
 		initialScope,
 		truncated = false,
+		engine = '',
 		exporting = false,
 		cancelling = false,
 		progress = null,
@@ -63,6 +65,7 @@
 	let prettyJSON = $state(true);
 	let sqlBatchSize = $state(100);
 	let includeTransaction = $state(true);
+	let upsert = $state(false);
 	let wasOpen = false;
 	const sqlBatchOptions = [
 		{ value: '100', label: '100 rows' },
@@ -96,6 +99,7 @@
 			prettyJSON = true;
 			sqlBatchSize = 100;
 			includeTransaction = true;
+			upsert = false;
 		}
 		wasOpen = open;
 	});
@@ -124,7 +128,8 @@
 			nullValue,
 			prettyJSON,
 			sqlBatchSize,
-			includeTransaction
+			includeTransaction,
+			upsert
 		});
 	}
 
@@ -494,6 +499,26 @@
 							</label>
 						</div>
 
+						{#if engine.toLowerCase().includes('mysql') || engine.toLowerCase().includes('maria')}
+							<label
+								class="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-blue-500/20 bg-blue-500/5 px-2.5 py-2"
+							>
+								<input
+									type="checkbox"
+									class="accent-primary mt-0.5 h-3.5 w-3.5"
+									checked={upsert}
+									onchange={(event) => (upsert = event.currentTarget.checked)}
+									disabled={exporting}
+								/>
+								<span>
+									<span class="block text-[9px] font-semibold">Update duplicate keys</span>
+									<span class="text-muted-foreground mt-1 block text-[8px] leading-relaxed">
+										Append ON DUPLICATE KEY UPDATE for non-key columns.
+									</span>
+								</span>
+							</label>
+						{/if}
+
 						<div class="text-muted-foreground mt-3 border-t pt-3 text-[9px] leading-relaxed">
 							{#if sourceName}
 								<span class="text-foreground block truncate font-mono font-semibold">
@@ -501,8 +526,11 @@
 								</span>
 							{/if}
 							<span class:mt-1={sourceName !== ''} class="block">
-								PostgreSQL quotes native values. Generated columns are skipped; sequence state is
-								not changed.
+								{engine || 'The active driver'} quotes native values. Generated columns are skipped{engine
+									.toLowerCase()
+									.includes('postgres')
+									? '; sequence state is not changed.'
+									: '.'}
 							</span>
 						</div>
 					</div>

@@ -54,6 +54,7 @@ type Capabilities struct {
 	ManageViews         bool    `json:"manageViews"`
 	ManageRoutines      bool    `json:"manageRoutines"`
 	ManageTriggers      bool    `json:"manageTriggers"`
+	TriggerToggle       bool    `json:"triggerToggle"`
 	ManageIndexes       bool    `json:"manageIndexes"`
 	AlterTableStructure bool    `json:"alterTableStructure"`
 	ExplainPlans        bool    `json:"explainPlans"`
@@ -110,6 +111,9 @@ func (capabilities Capabilities) Validate() error {
 	}
 	if capabilities.ManageTriggers && !capabilities.Triggers {
 		return fmt.Errorf("trigger management requires trigger support")
+	}
+	if capabilities.TriggerToggle && !capabilities.ManageTriggers {
+		return fmt.Errorf("trigger toggling requires trigger management support")
 	}
 	if capabilities.AttachedDatabases && !capabilities.Databases {
 		return fmt.Errorf("attached databases require database support")

@@ -4,18 +4,18 @@ export namespace database {
 	    table: Table;
 	    name: string;
 	    definition?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConstraintChange(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.table = this.convertValues(source["table"], Table);
 	        this.name = source["name"];
 	        this.definition = source["definition"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -43,11 +43,11 @@ export namespace database {
 	    nullable?: boolean;
 	    default?: string;
 	    dropDefault?: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ColumnChange(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.table = this.convertValues(source["table"], Table);
@@ -59,7 +59,7 @@ export namespace database {
 	        this.default = source["default"];
 	        this.dropDefault = source["dropDefault"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -82,11 +82,11 @@ export namespace database {
 	    Column: string;
 	    Direction: string;
 	    Nulls: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Sort(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Column = source["Column"];
@@ -98,11 +98,11 @@ export namespace database {
 	    Column: string;
 	    Operator: string;
 	    Value: any;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Filter(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Column = source["Column"];
@@ -117,11 +117,11 @@ export namespace database {
 	    Limit: number;
 	    Filters: Filter[];
 	    Sorts: Sort[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Table(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Schema = source["Schema"];
@@ -131,7 +131,7 @@ export namespace database {
 	        this.Filters = this.convertValues(source["Filters"], Filter);
 	        this.Sorts = this.convertValues(source["Sorts"], Sort);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -157,11 +157,11 @@ export namespace database {
 	    unique: boolean;
 	    method?: string;
 	    where?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new IndexChange(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.table = this.convertValues(source["table"], Table);
@@ -171,7 +171,7 @@ export namespace database {
 	        this.method = source["method"];
 	        this.where = source["where"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -198,11 +198,11 @@ export namespace database {
 	    signature?: string;
 	    parentSchema?: string;
 	    parentName?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectReference(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -223,11 +223,11 @@ export namespace database {
 	    index?: IndexChange;
 	    column?: ColumnChange;
 	    constraint?: ConstraintChange;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectChangeRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.action = source["action"];
@@ -239,7 +239,7 @@ export namespace database {
 	        this.column = this.convertValues(source["column"], ColumnChange);
 	        this.constraint = this.convertValues(source["constraint"], ConstraintChange);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -261,17 +261,17 @@ export namespace database {
 	export class ApplyObjectChangeRequest {
 	    change: ObjectChangeRequest;
 	    fingerprint: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ApplyObjectChangeRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.change = this.convertValues(source["change"], ObjectChangeRequest);
 	        this.fingerprint = source["fingerprint"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -315,11 +315,11 @@ export namespace database {
 	    placeholderStyle: string;
 	    paginationStyle: string;
 	    supportsNullOrdering: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Dialect(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -352,6 +352,7 @@ export namespace database {
 	    manageViews: boolean;
 	    manageRoutines: boolean;
 	    manageTriggers: boolean;
+	    triggerToggle: boolean;
 	    manageIndexes: boolean;
 	    alterTableStructure: boolean;
 	    explainPlans: boolean;
@@ -363,11 +364,11 @@ export namespace database {
 	    attachedDatabases: boolean;
 	    generatedColumns: boolean;
 	    upsert: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Capabilities(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.engine = source["engine"];
@@ -391,6 +392,7 @@ export namespace database {
 	        this.manageViews = source["manageViews"];
 	        this.manageRoutines = source["manageRoutines"];
 	        this.manageTriggers = source["manageTriggers"];
+	        this.triggerToggle = source["triggerToggle"];
 	        this.manageIndexes = source["manageIndexes"];
 	        this.alterTableStructure = source["alterTableStructure"];
 	        this.explainPlans = source["explainPlans"];
@@ -403,7 +405,7 @@ export namespace database {
 	        this.generatedColumns = source["generatedColumns"];
 	        this.upsert = source["upsert"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -422,7 +424,7 @@ export namespace database {
 		    return a;
 		}
 	}
-
+	
 	export class ColumnDefinition {
 	    name: string;
 	    type: string;
@@ -479,7 +481,7 @@ export namespace database {
 	        this.sslRootCert = source["sslRootCert"];
 	    }
 	}
-
+	
 	export class DataType {
 	    name: string;
 	    category: string;
@@ -500,11 +502,11 @@ export namespace database {
 	    name: string;
 	    value: string;
 	    category?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectProperty(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
@@ -518,12 +520,13 @@ export namespace database {
 	    description?: string;
 	    canOpenData: boolean;
 	    canManage: boolean;
+	    allowedActions?: string[];
 	    properties?: ObjectProperty[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DatabaseObject(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.reference = this.convertValues(source["reference"], ObjectReference);
@@ -531,9 +534,10 @@ export namespace database {
 	        this.description = source["description"];
 	        this.canOpenData = source["canOpenData"];
 	        this.canManage = source["canManage"];
+	        this.allowedActions = source["allowedActions"];
 	        this.properties = this.convertValues(source["properties"], ObjectProperty);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -552,10 +556,11 @@ export namespace database {
 		    return a;
 		}
 	}
-
+	
 	export class SQLInsertOptions {
 	    batchSize: number;
 	    includeTransaction: boolean;
+	    upsert: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SQLInsertOptions(source);
@@ -565,6 +570,7 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.batchSize = source["batchSize"];
 	        this.includeTransaction = source["includeTransaction"];
+	        this.upsert = source["upsert"];
 	    }
 	}
 	export class JSONOptions {
@@ -649,7 +655,7 @@ export namespace database {
 	    static createFrom(source: any = {}) {
 	        return new ExportResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -659,7 +665,7 @@ export namespace database {
 	        this.format = source["format"];
 	    }
 	}
-
+	
 	export class Index {
 	    name: string;
 	    columns: string[];
@@ -680,7 +686,7 @@ export namespace database {
 	        this.algorithm = source["algorithm"];
 	    }
 	}
-
+	
 	export class Info {
 	    engine: string;
 	    version: string;
@@ -707,11 +713,11 @@ export namespace database {
 	    warnings: string[];
 	    fingerprint: string;
 	    refresh: ObjectReference[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectChangePreview(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.summary = source["summary"];
@@ -723,7 +729,7 @@ export namespace database {
 	        this.fingerprint = source["fingerprint"];
 	        this.refresh = this.convertValues(source["refresh"], ObjectReference);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -742,17 +748,17 @@ export namespace database {
 		    return a;
 		}
 	}
-
+	
 	export class ObjectChangeResult {
 	    applied: boolean;
 	    statementCount: number;
 	    fingerprint: string;
 	    refresh: ObjectReference[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectChangeResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.applied = source["applied"];
@@ -760,7 +766,7 @@ export namespace database {
 	        this.fingerprint = source["fingerprint"];
 	        this.refresh = this.convertValues(source["refresh"], ObjectReference);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -782,17 +788,17 @@ export namespace database {
 	export class ObjectDependency {
 	    reference: ObjectReference;
 	    description?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectDependency(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.reference = this.convertValues(source["reference"], ObjectReference);
 	        this.description = source["description"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -814,6 +820,8 @@ export namespace database {
 	export class Structure {
 	    name: string;
 	    data_type: string;
+	    native_type?: string;
+	    affinity?: string;
 	    type_schema?: string;
 	    type_name?: string;
 	    is_enum?: boolean;
@@ -824,20 +832,25 @@ export namespace database {
 	    is_primary_label?: string;
 	    is_unique?: boolean;
 	    is_autoinc?: boolean;
+	    is_generated?: boolean;
+	    generation?: string;
+	    is_rowid?: boolean;
 	    foreign_key?: string;
 	    foreign_schema?: string;
 	    foreign_table?: string;
 	    foreign_column?: string;
 	    comment?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Structure(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.data_type = source["data_type"];
+	        this.native_type = source["native_type"];
+	        this.affinity = source["affinity"];
 	        this.type_schema = source["type_schema"];
 	        this.type_name = source["type_name"];
 	        this.is_enum = source["is_enum"];
@@ -848,6 +861,9 @@ export namespace database {
 	        this.is_primary_label = source["is_primary_label"];
 	        this.is_unique = source["is_unique"];
 	        this.is_autoinc = source["is_autoinc"];
+	        this.is_generated = source["is_generated"];
+	        this.generation = source["generation"];
+	        this.is_rowid = source["is_rowid"];
 	        this.foreign_key = source["foreign_key"];
 	        this.foreign_schema = source["foreign_schema"];
 	        this.foreign_table = source["foreign_table"];
@@ -863,11 +879,11 @@ export namespace database {
 	    columns?: Structure[];
 	    dependencies?: ObjectDependency[];
 	    dependents?: ObjectDependency[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectDetail(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.object = this.convertValues(source["object"], DatabaseObject);
@@ -878,7 +894,7 @@ export namespace database {
 	        this.dependencies = this.convertValues(source["dependencies"], ObjectDependency);
 	        this.dependents = this.convertValues(source["dependents"], ObjectDependency);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -901,11 +917,11 @@ export namespace database {
 	    schema?: string;
 	    kinds?: string[];
 	    search?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ObjectFilter(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.schema = source["schema"];
@@ -913,19 +929,19 @@ export namespace database {
 	        this.search = source["search"];
 	    }
 	}
-
-
+	
+	
 	export class QueryRequest {
 	    connectionId: string;
 	    query: string;
 	    attemptId: string;
 	    transactionId?: string;
 	    allowUnfilteredMutation: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new QueryRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.connectionId = source["connectionId"];
@@ -955,11 +971,11 @@ export namespace database {
 	    original: Record<string, any>;
 	    values: Record<string, any>;
 	    changedColumns: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RowUpdate(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.original = source["original"];
@@ -1015,11 +1031,11 @@ export namespace database {
 	    inserted: number;
 	    updated: number;
 	    deleted: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TableChangeResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.inserted = source["inserted"];
@@ -1032,11 +1048,11 @@ export namespace database {
 	    added: any[];
 	    updated: RowUpdate[];
 	    deleted: any[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TableChangeSet(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.table = this.convertValues(source["table"], Table);
@@ -1044,7 +1060,7 @@ export namespace database {
 	        this.updated = this.convertValues(source["updated"], RowUpdate);
 	        this.deleted = source["deleted"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1139,6 +1155,7 @@ export namespace database {
 	}
 
 }
+
 export namespace db {
 	
 	export class ConnectRequest {
@@ -1192,6 +1209,7 @@ export namespace db {
 	export class ConnectionInfo {
 	    id: string;
 	    name: string;
+	    driver: string;
 	    database: string;
 	    host: string;
 	    color: string;
@@ -1205,6 +1223,7 @@ export namespace db {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.driver = source["driver"];
 	        this.database = source["database"];
 	        this.host = source["host"];
 	        this.color = source["color"];
@@ -1249,11 +1268,11 @@ export namespace db {
 	    state: string;
 	    // Go type: time
 	    startedAt: any;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TransactionInfo(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -1261,7 +1280,7 @@ export namespace db {
 	        this.state = source["state"];
 	        this.startedAt = this.convertValues(source["startedAt"], null);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1404,17 +1423,17 @@ export namespace response {
 	export class BaseResponse___rollingthunder_pkg_database_DatabaseObject_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.DatabaseObject[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse___rollingthunder_pkg_database_DatabaseObject_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.DatabaseObject);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1596,17 +1615,17 @@ export namespace response {
 	export class BaseResponse_rollingthunder_internal_db_TransactionInfo_ {
 	    errors?: BaseErrorResponse[];
 	    data?: db.TransactionInfo;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse_rollingthunder_internal_db_TransactionInfo_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], db.TransactionInfo);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1628,17 +1647,17 @@ export namespace response {
 	export class BaseResponse_rollingthunder_pkg_database_Capabilities_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.Capabilities;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse_rollingthunder_pkg_database_Capabilities_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.Capabilities);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1788,17 +1807,17 @@ export namespace response {
 	export class BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.ObjectChangePreview;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.ObjectChangePreview);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1820,17 +1839,17 @@ export namespace response {
 	export class BaseResponse_rollingthunder_pkg_database_ObjectChangeResult_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.ObjectChangeResult;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse_rollingthunder_pkg_database_ObjectChangeResult_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.ObjectChangeResult);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1852,17 +1871,17 @@ export namespace response {
 	export class BaseResponse_rollingthunder_pkg_database_ObjectDetail_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.ObjectDetail;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse_rollingthunder_pkg_database_ObjectDetail_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.ObjectDetail);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1948,17 +1967,17 @@ export namespace response {
 	export class BaseResponse_rollingthunder_pkg_database_TableChangeResult_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.TableChangeResult;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse_rollingthunder_pkg_database_TableChangeResult_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.TableChangeResult);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -2043,3 +2062,4 @@ export namespace response {
 	}
 
 }
+
