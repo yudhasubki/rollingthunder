@@ -1,13 +1,25 @@
 export type ExportScope = 'page' | 'all' | 'loaded';
+export type ExportFormat = 'csv' | 'json';
 
-export interface CSVExportSettings {
+export interface ExportSettings {
 	scope: ExportScope;
+	format: ExportFormat;
 	delimiter: ',' | ';' | '\t';
 	includeHeader: boolean;
 	nullValue: string;
+	prettyJSON: boolean;
 }
 
-export function buildCSVExportOptions(settings: CSVExportSettings) {
+export function buildExportOptions(settings: ExportSettings) {
+	if (settings.format === 'json') {
+		return {
+			format: 'json',
+			json: {
+				pretty: settings.prettyJSON
+			}
+		};
+	}
+
 	return {
 		format: 'csv',
 		csv: {
@@ -16,6 +28,10 @@ export function buildCSVExportOptions(settings: CSVExportSettings) {
 			nullValue: settings.nullValue
 		}
 	};
+}
+
+export function getExportExtension(format: ExportFormat): 'csv' | 'json' {
+	return format;
 }
 
 export function formatExportBytes(bytes: number): string {

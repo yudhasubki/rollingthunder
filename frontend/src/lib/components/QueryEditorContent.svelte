@@ -25,10 +25,11 @@
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import ExportDialog from '$lib/components/database/ExportDialog.svelte';
 	import {
-		buildCSVExportOptions,
+		buildExportOptions,
 		formatExportBytes,
-		type CSVExportSettings
-	} from '$lib/export/csv';
+		getExportExtension,
+		type ExportSettings
+	} from '$lib/export/options';
 	import { database } from '$lib/wailsjs/go/models';
 	import type * as Monaco from 'monaco-editor';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
@@ -363,19 +364,23 @@
 		}
 	}
 
-	async function handleExport(settings: CSVExportSettings) {
+	async function handleExport(settings: ExportSettings) {
 		if (queryResults.length === 0 || exporting) return;
 
 		exporting = true;
+		const extension = getExportExtension(settings.format);
 		const request = new database.RowsExportRequest({
 			columns: resultColumns.map((column) => column.name),
 			rows: queryResults,
-			suggestedName: 'query-results.csv',
-			options: new database.ExportOptions(buildCSVExportOptions(settings))
+			suggestedName: `query-results.${extension}`,
+			options: new database.ExportOptions(buildExportOptions(settings))
 		});
 
 		try {
-			updateStatus(`Exporting ${queryResults.length.toLocaleString()} loaded query rows…`, 'info');
+			updateStatus(
+				`Exporting ${queryResults.length.toLocaleString()} loaded query rows as ${settings.format.toUpperCase()}…`,
+				'info'
+			);
 			const response = await ExportQueryResults(request);
 			if (response.errors?.length) throw new Error(response.errors[0].detail);
 

@@ -667,11 +667,8 @@ func (p *Postgres) ExportTable(
 	request database.TableExportRequest,
 	writer io.Writer,
 ) (database.ExportStats, error) {
-	if request.Options.Format != database.ExportFormatCSV {
-		return database.ExportStats{}, fmt.Errorf(
-			"unsupported table export format %q",
-			request.Options.Format,
-		)
+	if err := database.ValidateExportOptions(request.Options); err != nil {
+		return database.ExportStats{}, err
 	}
 
 	columns, err := p.getCollectionStructures(request.Table)
@@ -693,11 +690,7 @@ func (p *Postgres) ExportTable(
 	}
 	defer rows.Close()
 
-	return database.WriteCSVStream(
-		writer,
-		&sqlxExportRows{rows: rows},
-		request.Options.CSV,
-	)
+	return database.WriteExportStream(writer, &sqlxExportRows{rows: rows}, request.Options)
 }
 
 // CreateTable creates a new table in the database

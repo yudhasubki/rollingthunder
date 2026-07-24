@@ -23,12 +23,37 @@ var defaultSaveFileDialog saveFileDialogFunc = wailsruntime.SaveFileDialog
 
 type exportWriterFunc func(io.Writer) (database.ExportStats, error)
 
-func validateExportOptions(options database.ExportOptions) error {
-	switch options.Format {
+type exportFileConfig struct {
+	title           string
+	defaultFilename string
+	extension       string
+	filter          wailsruntime.FileFilter
+}
+
+func exportFileConfiguration(format database.ExportFormat) (exportFileConfig, error) {
+	switch format {
 	case database.ExportFormatCSV:
-		return nil
+		return exportFileConfig{
+			title:           "Export CSV",
+			defaultFilename: "rollingthunder-export.csv",
+			extension:       ".csv",
+			filter: wailsruntime.FileFilter{
+				DisplayName: "CSV files (*.csv)",
+				Pattern:     "*.csv",
+			},
+		}, nil
+	case database.ExportFormatJSON:
+		return exportFileConfig{
+			title:           "Export JSON",
+			defaultFilename: "rollingthunder-export.json",
+			extension:       ".json",
+			filter: wailsruntime.FileFilter{
+				DisplayName: "JSON files (*.json)",
+				Pattern:     "*.json",
+			},
+		}, nil
 	default:
-		return fmt.Errorf("unsupported export format %q", options.Format)
+		return exportFileConfig{}, fmt.Errorf("unsupported export format %q", format)
 	}
 }
 
@@ -57,13 +82,18 @@ func sanitizeSuggestedFilename(value string, fallback string) string {
 }
 
 func ensureExportExtension(path string, format database.ExportFormat) string {
-	if filepath.Ext(path) != "" {
+	config, err := exportFileConfiguration(format)
+	if err != nil {
 		return path
 	}
-	if format == database.ExportFormatCSV {
-		return path + ".csv"
+	extension := filepath.Ext(path)
+	if strings.EqualFold(extension, config.extension) {
+		return path
 	}
-	return path
+	if extension == "" {
+		return path + config.extension
+	}
+	return strings.TrimSuffix(path, extension) + config.extension
 }
 
 func replaceExportFile(tempPath string, targetPath string) error {
@@ -109,23 +139,25 @@ func (s *Service) writeExport(
 	options database.ExportOptions,
 	write exportWriterFunc,
 ) (database.ExportResult, error) {
-	if err := validateExportOptions(options); err != nil {
+	if err := database.ValidateExportOptions(options); err != nil {
 		return database.ExportResult{}, err
 	}
 	if s.ctx == nil {
 		return database.ExportResult{}, fmt.Errorf("application context is unavailable")
 	}
 
-	defaultName := sanitizeSuggestedFilename(suggestedName, "rollingthunder-export.csv")
+	fileConfig, err := exportFileConfiguration(options.Format)
+	if err != nil {
+		return database.ExportResult{}, err
+	}
+	defaultName := ensureExportExtension(
+		sanitizeSuggestedFilename(suggestedName, fileConfig.defaultFilename),
+		options.Format,
+	)
 	path, err := s.saveDialog(s.ctx, wailsruntime.SaveDialogOptions{
-		Title:           "Export CSV",
-		DefaultFilename: defaultName,
-		Filters: []wailsruntime.FileFilter{
-			{
-				DisplayName: "CSV files (*.csv)",
-				Pattern:     "*.csv",
-			},
-		},
+		Title:                fileConfig.title,
+		DefaultFilename:      defaultName,
+		Filters:              []wailsruntime.FileFilter{fileConfig.filter},
 		CanCreateDirectories: true,
 	})
 	if err != nil {
@@ -204,12 +236,7 @@ func (s *Service) ExportQueryResults(
 	request database.RowsExportRequest,
 ) response.BaseResponse[database.ExportResult] {
 	result, err := s.writeExport(request.SuggestedName, request.Options, func(writer io.Writer) (database.ExportStats, error) {
-		return database.WriteCSVRows(
-			writer,
-			request.Columns,
-			request.Rows,
-			request.Options.CSV,
-		)
+		return database.WriteExportRows(writer, request.Columns, request.Rows, request.Options)
 	})
 	if err != nil {
 		return serviceError[database.ExportResult](err.Error())

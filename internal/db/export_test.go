@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -20,6 +21,15 @@ func csvExportOptions() database.ExportOptions {
 			Delimiter:     ",",
 			IncludeHeader: true,
 			NullValue:     "NULL",
+		},
+	}
+}
+
+func jsonExportOptions(pretty bool) database.ExportOptions {
+	return database.ExportOptions{
+		Format: database.ExportFormatJSON,
+		JSON: database.JSONOptions{
+			Pretty: pretty,
 		},
 	}
 }
@@ -89,6 +99,83 @@ func TestExportQueryResultsHandlesDialogCancellation(t *testing.T) {
 	}
 	if !response.Data.Cancelled {
 		t.Fatal("expected cancelled export result")
+	}
+}
+
+func TestExportQueryResultsWritesFormatAwareJSONFile(t *testing.T) {
+	service := NewService()
+	service.Start(context.Background())
+	targetWithoutExtension := filepath.Join(t.TempDir(), "query-results")
+	var dialogOptions wailsruntime.SaveDialogOptions
+	service.saveDialog = func(
+		_ context.Context,
+		options wailsruntime.SaveDialogOptions,
+	) (string, error) {
+		dialogOptions = options
+		return targetWithoutExtension, nil
+	}
+
+	response := service.ExportQueryResults(database.RowsExportRequest{
+		Columns: []string{"id", "metadata"},
+		Rows: []map[string]interface{}{
+			{"id": 1, "metadata": map[string]interface{}{"active": true}},
+		},
+		SuggestedName: "query-results.csv",
+		Options:       jsonExportOptions(true),
+	})
+	if len(response.Errors) != 0 {
+		t.Fatalf("export JSON returned errors: %+v", response.Errors)
+	}
+	if response.Data.Path != targetWithoutExtension+".json" {
+		t.Fatalf("path = %q, want JSON extension", response.Data.Path)
+	}
+	if response.Data.Format != database.ExportFormatJSON {
+		t.Fatalf("format = %q, want JSON", response.Data.Format)
+	}
+	if dialogOptions.Title != "Export JSON" {
+		t.Fatalf("dialog title = %q", dialogOptions.Title)
+	}
+	if dialogOptions.DefaultFilename != "query-results.json" {
+		t.Fatalf("default filename = %q", dialogOptions.DefaultFilename)
+	}
+	if len(dialogOptions.Filters) != 1 || dialogOptions.Filters[0].Pattern != "*.json" {
+		t.Fatalf("dialog filters = %+v", dialogOptions.Filters)
+	}
+
+	content, err := os.ReadFile(response.Data.Path)
+	if err != nil {
+		t.Fatalf("read JSON export: %v", err)
+	}
+	if !json.Valid(content) {
+		t.Fatalf("invalid JSON export: %s", content)
+	}
+	if !strings.Contains(string(content), "\n    \"metadata\"") {
+		t.Fatalf("expected pretty JSON output: %s", content)
+	}
+}
+
+func TestEnsureExportExtensionMatchesSelectedFormat(t *testing.T) {
+	tests := map[string]struct {
+		path   string
+		format database.ExportFormat
+		want   string
+	}{
+		"append csv":  {path: "orders", format: database.ExportFormatCSV, want: "orders.csv"},
+		"keep csv":    {path: "orders.CSV", format: database.ExportFormatCSV, want: "orders.CSV"},
+		"replace csv": {path: "orders.csv", format: database.ExportFormatJSON, want: "orders.json"},
+		"replace text": {
+			path:   "orders.txt",
+			format: database.ExportFormatJSON,
+			want:   "orders.json",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := ensureExportExtension(test.path, test.format); got != test.want {
+				t.Fatalf("ensureExportExtension(%q) = %q, want %q", test.path, got, test.want)
+			}
+		})
 	}
 }
 

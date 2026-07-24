@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCSVExportOptions, formatExportBytes } from '../src/lib/export/csv.ts';
+import {
+	buildExportOptions,
+	formatExportBytes,
+	getExportExtension
+} from '../src/lib/export/options.ts';
 
 test('builds explicit CSV options for the backend contract', () => {
 	assert.deepEqual(
-		buildCSVExportOptions({
+		buildExportOptions({
 			scope: 'all',
+			format: 'csv',
 			delimiter: '\t',
 			includeHeader: false,
-			nullValue: 'NULL'
+			nullValue: 'NULL',
+			prettyJSON: true
 		}),
 		{
 			format: 'csv',
@@ -20,6 +26,27 @@ test('builds explicit CSV options for the backend contract', () => {
 			}
 		}
 	);
+});
+
+test('builds JSON options without leaking CSV settings', () => {
+	assert.deepEqual(
+		buildExportOptions({
+			scope: 'loaded',
+			format: 'json',
+			delimiter: ';',
+			includeHeader: false,
+			nullValue: 'NULL',
+			prettyJSON: false
+		}),
+		{
+			format: 'json',
+			json: {
+				pretty: false
+			}
+		}
+	);
+	assert.equal(getExportExtension('csv'), 'csv');
+	assert.equal(getExportExtension('json'), 'json');
 });
 
 test('formats exported file sizes for completion feedback', () => {

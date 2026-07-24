@@ -21,7 +21,7 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Context-aware SQL completion for schemas, tables, aliases, and columns
 - [x] PostgreSQL, MySQL, and SQLite keyword/function completion catalogs
 - [x] Regression tests for SQL context parsing and dialect catalogs
-- [x] Streaming CSV export for table pages, all filtered rows, and loaded query results
+- [x] Streaming CSV and JSON export for table pages, all filtered rows, and loaded query results
 - [x] Dark and light appearance modes
 - [x] Activity console and informative loading states
 
@@ -44,7 +44,7 @@ explicit, tested ordering behavior.
 ### Export
 
 - [x] Export table rows and loaded query results as CSV.
-- [ ] Export as JSON.
+- [x] Export table rows and loaded query results as JSON.
 - [ ] Export rows as SQL `INSERT` statements.
 - [x] Choose between the current table page or all filtered rows.
 - [ ] Export selected rows.

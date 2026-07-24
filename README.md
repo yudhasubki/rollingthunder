@@ -51,13 +51,15 @@
 
 ### Data export
 
-- Export the current table page or every filtered row as UTF-8 CSV.
+- Export the current table page or every filtered row as UTF-8 CSV or JSON.
 - Preserve the active table filters and server-side sort order in exported data.
-- Stream all-filtered table exports from PostgreSQL instead of loading the complete dataset in
+- Stream all-filtered CSV and JSON exports from PostgreSQL instead of loading the complete dataset in
   memory.
 - Export the rows already loaded in a query result without rerunning arbitrary SQL.
-- Choose the delimiter, column header, and `NULL` representation before opening the native
-  destination picker.
+- Configure the CSV delimiter, column header, and `NULL` representation.
+- Choose pretty-printed or compact JSON; dates use ISO 8601 and binary values carry a `base64:`
+  prefix.
+- Select the destination through a format-aware native file picker.
 - Keep an existing destination file unchanged if an export fails before completion.
 
 ### SQL editor
@@ -90,8 +92,8 @@ user-facing only after the corresponding database drivers ship.
 Rolling Thunder currently has a table-first object explorer. It does not yet expose database views,
 materialized views, functions, procedures, triggers, sequences, or custom types.
 
-CSV export is available for table data and loaded query results. JSON, SQL `INSERT`, selected-row
-export, configurable encodings, and granular progress/cancellation remain on the
+CSV and JSON export are available for table data and loaded query results. SQL `INSERT`,
+selected-row export, configurable encodings, and granular progress/cancellation remain on the
 [project roadmap](ROADMAP.md).
 
 Other important limitations include:

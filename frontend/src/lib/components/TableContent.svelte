@@ -7,10 +7,11 @@
 	import ExportDialog from '$lib/components/database/ExportDialog.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import {
-		buildCSVExportOptions,
+		buildExportOptions,
 		formatExportBytes,
-		type CSVExportSettings
-	} from '$lib/export/csv';
+		getExportExtension,
+		type ExportSettings
+	} from '$lib/export/options';
 	import { database } from '$lib/wailsjs/go/models';
 	import { getColumnTypeLabel } from '$lib/table/cells';
 	import { getForeignRelation } from '$lib/table/relations';
@@ -318,10 +319,11 @@
 		currentPage = 0;
 	}
 
-	async function handleExport(settings: CSVExportSettings) {
+	async function handleExport(settings: ExportSettings) {
 		if (!tab.schema || !tab.table || exporting) return;
 
 		exporting = true;
+		const extension = getExportExtension(settings.format);
 		const table = new database.Table({
 			Schema: tab.schema,
 			Name: tab.table,
@@ -333,15 +335,15 @@
 		const request = new database.TableExportRequest({
 			table,
 			scope: settings.scope === 'all' ? 'all' : 'page',
-			suggestedName: `${tab.schema}-${tab.table}.csv`,
-			options: new database.ExportOptions(buildCSVExportOptions(settings))
+			suggestedName: `${tab.schema}-${tab.table}.${extension}`,
+			options: new database.ExportOptions(buildExportOptions(settings))
 		});
 
 		try {
 			updateStatus(
 				settings.scope === 'all'
-					? `Exporting ${tableTotalData.toLocaleString()} filtered rows…`
-					: `Exporting page ${currentPage + 1}…`,
+					? `Exporting ${tableTotalData.toLocaleString()} filtered rows as ${settings.format.toUpperCase()}…`
+					: `Exporting page ${currentPage + 1} as ${settings.format.toUpperCase()}…`,
 				'info'
 			);
 			const response = await ExportTableData(tab.connectionId, request);
