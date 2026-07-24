@@ -1,5 +1,295 @@
 export namespace database {
 	
+	export class ConstraintChange {
+	    table: Table;
+	    name: string;
+	    definition?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ConstraintChange(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.table = this.convertValues(source["table"], Table);
+	        this.name = source["name"];
+	        this.definition = source["definition"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ColumnChange {
+	    table: Table;
+	    name: string;
+	    newName?: string;
+	    dataType?: string;
+	    using?: string;
+	    nullable?: boolean;
+	    default?: string;
+	    dropDefault?: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ColumnChange(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.table = this.convertValues(source["table"], Table);
+	        this.name = source["name"];
+	        this.newName = source["newName"];
+	        this.dataType = source["dataType"];
+	        this.using = source["using"];
+	        this.nullable = source["nullable"];
+	        this.default = source["default"];
+	        this.dropDefault = source["dropDefault"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Sort {
+	    Column: string;
+	    Direction: string;
+	    Nulls: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Sort(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Column = source["Column"];
+	        this.Direction = source["Direction"];
+	        this.Nulls = source["Nulls"];
+	    }
+	}
+	export class Filter {
+	    Column: string;
+	    Operator: string;
+	    Value: any;
+
+	    static createFrom(source: any = {}) {
+	        return new Filter(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Column = source["Column"];
+	        this.Operator = source["Operator"];
+	        this.Value = source["Value"];
+	    }
+	}
+	export class Table {
+	    Schema: string;
+	    Name: string;
+	    Offset: number;
+	    Limit: number;
+	    Filters: Filter[];
+	    Sorts: Sort[];
+
+	    static createFrom(source: any = {}) {
+	        return new Table(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Schema = source["Schema"];
+	        this.Name = source["Name"];
+	        this.Offset = source["Offset"];
+	        this.Limit = source["Limit"];
+	        this.Filters = this.convertValues(source["Filters"], Filter);
+	        this.Sorts = this.convertValues(source["Sorts"], Sort);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class IndexChange {
+	    table: Table;
+	    name: string;
+	    columns: string[];
+	    unique: boolean;
+	    method?: string;
+	    where?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new IndexChange(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.table = this.convertValues(source["table"], Table);
+	        this.name = source["name"];
+	        this.columns = source["columns"];
+	        this.unique = source["unique"];
+	        this.method = source["method"];
+	        this.where = source["where"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ObjectReference {
+	    id?: string;
+	    kind: string;
+	    schema?: string;
+	    name: string;
+	    signature?: string;
+	    parentSchema?: string;
+	    parentName?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectReference(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	        this.signature = source["signature"];
+	        this.parentSchema = source["parentSchema"];
+	        this.parentName = source["parentName"];
+	    }
+	}
+	export class ObjectChangeRequest {
+	    action: string;
+	    reference: ObjectReference;
+	    newName?: string;
+	    definition?: string;
+	    cascade?: boolean;
+	    index?: IndexChange;
+	    column?: ColumnChange;
+	    constraint?: ConstraintChange;
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectChangeRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.action = source["action"];
+	        this.reference = this.convertValues(source["reference"], ObjectReference);
+	        this.newName = source["newName"];
+	        this.definition = source["definition"];
+	        this.cascade = source["cascade"];
+	        this.index = this.convertValues(source["index"], IndexChange);
+	        this.column = this.convertValues(source["column"], ColumnChange);
+	        this.constraint = this.convertValues(source["constraint"], ConstraintChange);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ApplyObjectChangeRequest {
+	    change: ObjectChangeRequest;
+	    fingerprint: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ApplyObjectChangeRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.change = this.convertValues(source["change"], ObjectChangeRequest);
+	        this.fingerprint = source["fingerprint"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class CSVOptions {
 	    delimiter: string;
 	    includeHeader: boolean;
@@ -132,6 +422,7 @@ export namespace database {
 		    return a;
 		}
 	}
+
 	export class ColumnDefinition {
 	    name: string;
 	    type: string;
@@ -188,6 +479,7 @@ export namespace database {
 	        this.sslRootCert = source["sslRootCert"];
 	    }
 	}
+
 	export class DataType {
 	    name: string;
 	    category: string;
@@ -218,30 +510,6 @@ export namespace database {
 	        this.name = source["name"];
 	        this.value = source["value"];
 	        this.category = source["category"];
-	    }
-	}
-	export class ObjectReference {
-	    id?: string;
-	    kind: string;
-	    schema?: string;
-	    name: string;
-	    signature?: string;
-	    parentSchema?: string;
-	    parentName?: string;
-
-	    static createFrom(source: any = {}) {
-	        return new ObjectReference(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.kind = source["kind"];
-	        this.schema = source["schema"];
-	        this.name = source["name"];
-	        this.signature = source["signature"];
-	        this.parentSchema = source["parentSchema"];
-	        this.parentName = source["parentName"];
 	    }
 	}
 	export class DatabaseObject {
@@ -381,7 +649,7 @@ export namespace database {
 	    static createFrom(source: any = {}) {
 	        return new ExportResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -391,22 +659,7 @@ export namespace database {
 	        this.format = source["format"];
 	    }
 	}
-	export class Filter {
-	    Column: string;
-	    Operator: string;
-	    Value: any;
 
-	    static createFrom(source: any = {}) {
-	        return new Filter(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Column = source["Column"];
-	        this.Operator = source["Operator"];
-	        this.Value = source["Value"];
-	    }
-	}
 	export class Index {
 	    name: string;
 	    columns: string[];
@@ -427,6 +680,7 @@ export namespace database {
 	        this.algorithm = source["algorithm"];
 	    }
 	}
+
 	export class Info {
 	    engine: string;
 	    version: string;
@@ -444,6 +698,87 @@ export namespace database {
 	    }
 	}
 	
+	export class ObjectChangePreview {
+	    summary: string;
+	    sql: string;
+	    statementCount: number;
+	    destructive: boolean;
+	    transactional: boolean;
+	    warnings: string[];
+	    fingerprint: string;
+	    refresh: ObjectReference[];
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectChangePreview(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.summary = source["summary"];
+	        this.sql = source["sql"];
+	        this.statementCount = source["statementCount"];
+	        this.destructive = source["destructive"];
+	        this.transactional = source["transactional"];
+	        this.warnings = source["warnings"];
+	        this.fingerprint = source["fingerprint"];
+	        this.refresh = this.convertValues(source["refresh"], ObjectReference);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+	export class ObjectChangeResult {
+	    applied: boolean;
+	    statementCount: number;
+	    fingerprint: string;
+	    refresh: ObjectReference[];
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectChangeResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.applied = source["applied"];
+	        this.statementCount = source["statementCount"];
+	        this.fingerprint = source["fingerprint"];
+	        this.refresh = this.convertValues(source["refresh"], ObjectReference);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ObjectDependency {
 	    reference: ObjectReference;
 	    description?: string;
@@ -673,63 +1008,9 @@ export namespace database {
 		}
 	}
 	
-	export class Sort {
-	    Column: string;
-	    Direction: string;
-	    Nulls: string;
 	
-	    static createFrom(source: any = {}) {
-	        return new Sort(source);
-	    }
 	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Column = source["Column"];
-	        this.Direction = source["Direction"];
-	        this.Nulls = source["Nulls"];
-	    }
-	}
 	
-	export class Table {
-	    Schema: string;
-	    Name: string;
-	    Offset: number;
-	    Limit: number;
-	    Filters: Filter[];
-	    Sorts: Sort[];
-	
-	    static createFrom(source: any = {}) {
-	        return new Table(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Schema = source["Schema"];
-	        this.Name = source["Name"];
-	        this.Offset = source["Offset"];
-	        this.Limit = source["Limit"];
-	        this.Filters = this.convertValues(source["Filters"], Filter);
-	        this.Sorts = this.convertValues(source["Sorts"], Sort);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class TableChangeResult {
 	    inserted: number;
 	    updated: number;
@@ -1486,6 +1767,70 @@ export namespace response {
 	        this.data = this.convertValues(source["data"], database.Info);
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.ObjectChangePreview;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.ObjectChangePreview);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_ObjectChangeResult_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.ObjectChangeResult;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_ObjectChangeResult_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.ObjectChangeResult);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;

@@ -127,6 +127,64 @@ func FindTransactionControl(query string) string {
 	return ""
 }
 
+// CountSQLStatements counts non-empty top-level SQL statements while ignoring
+// semicolons inside strings, comments, parentheses, and PostgreSQL dollar
+// quoted bodies.
+func CountSQLStatements(query string) int {
+	tokens := tokenizeSQLForSafety(query)
+	count := 0
+	statementHasToken := false
+	for _, token := range tokens {
+		if token.depth != 0 {
+			continue
+		}
+		if token.word == ";" {
+			if statementHasToken {
+				count++
+				statementHasToken = false
+			}
+			continue
+		}
+		statementHasToken = true
+	}
+	if statementHasToken {
+		count++
+	}
+	return count
+}
+
+func HasTopLevelStatementSeparator(query string) bool {
+	for _, token := range tokenizeSQLForSafety(query) {
+		if token.depth == 0 && token.word == ";" {
+			return true
+		}
+	}
+	return false
+}
+
+// LeadingSQLKeywords returns the first top-level words in a statement. It is
+// intended for validating reviewed DDL templates, not for parsing arbitrary
+// SQL grammar.
+func LeadingSQLKeywords(query string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	keywords := make([]string, 0, limit)
+	for _, token := range tokenizeSQLForSafety(query) {
+		if token.depth != 0 {
+			continue
+		}
+		if token.word == ";" {
+			break
+		}
+		keywords = append(keywords, token.word)
+		if len(keywords) == limit {
+			break
+		}
+	}
+	return keywords
+}
+
 func previousTokenAtDepth(
 	tokens []sqlSafetyToken,
 	index int,

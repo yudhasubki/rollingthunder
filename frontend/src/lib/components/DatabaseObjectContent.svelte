@@ -9,16 +9,23 @@
 		FileCode2,
 		GitBranch,
 		Loader2,
-		RefreshCw
+		RefreshCw,
+		Settings2,
+		Pencil,
+		Power,
+		PowerOff,
+		Trash2
 	} from 'lucide-svelte';
 	import type { Tab } from '$lib/models/Tab';
 	import { database } from '$lib/wailsjs/go/models';
-	import { GetDatabaseObject } from '$lib/wailsjs/go/db/Service';
+	import { GetCapabilities, GetDatabaseObject } from '$lib/wailsjs/go/db/Service';
 	import { ClipboardSetText } from '$lib/wailsjs/runtime/runtime';
 	import { databaseObjectKindLabel, databaseObjectQualifiedName } from '$lib/database/objects';
 	import { createServiceError } from '$lib/errors/service';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import ObjectChangeDialog from '$lib/components/database/ObjectChangeDialog.svelte';
+	import type { StructuralChangeIntent } from '$lib/database/changeTemplates';
 
 	interface Props {
 		tab: Tab;
@@ -29,11 +36,14 @@
 	type InspectorSection = 'definition' | 'dependencies' | 'properties';
 
 	let detail = $state<database.ObjectDetail | null>(null);
+	let capabilities = $state<database.Capabilities | null>(null);
 	let loading = $state(false);
 	let error = $state('');
 	let errorHint = $state('');
 	let activeSection = $state<InspectorSection>('definition');
 	let copied = $state('');
+	let manageMenuOpen = $state(false);
+	let changeIntent = $state<StructuralChangeIntent | null>(null);
 	let loadGeneration = 0;
 
 	const reference = $derived(
@@ -58,6 +68,15 @@
 	const dependents = $derived(detail?.dependents || []);
 	const properties = $derived(detail?.properties || []);
 	const columns = $derived(detail?.columns || []);
+	const triggerEnabled = $derived(
+		properties.find((property) => property.name === 'Enabled')?.value !== 'false'
+	);
+	const canEditDefinition = $derived(
+		objectKind === 'view' ||
+			objectKind === 'function' ||
+			objectKind === 'procedure' ||
+			objectKind === 'trigger'
+	);
 
 	$effect(() => {
 		const key = [
@@ -79,12 +98,18 @@
 		error = '';
 		errorHint = '';
 		try {
-			const response = await GetDatabaseObject(tab.connectionId, reference);
+			const [response, capabilityResponse] = await Promise.all([
+				GetDatabaseObject(tab.connectionId, reference),
+				GetCapabilities(tab.connectionId)
+			]);
 			if (generation !== loadGeneration) return;
 			if (response.errors?.length) {
 				throw createServiceError(response.errors[0], 'Could not inspect database object');
 			}
 			detail = response.data || null;
+			if (!capabilityResponse.errors?.length) {
+				capabilities = capabilityResponse.data || null;
+			}
 			if (!detail) {
 				throw new Error('The database returned no object details.');
 			}
@@ -134,6 +159,42 @@
 		const target = dependency.reference;
 		if (target?.name) return databaseObjectQualifiedName(target);
 		return dependency.description || 'Database object';
+	}
+
+	function openChange(intent: StructuralChangeIntent) {
+		manageMenuOpen = false;
+		changeIntent = intent;
+	}
+
+	function handleStructuralChangeApplied(result: database.ObjectChangeResult) {
+		window.dispatchEvent(
+			new CustomEvent('database-objects-changed', {
+				detail: { connectionId: tab.connectionId, schema: tab.schema }
+			})
+		);
+		const appliedIntent = changeIntent;
+		const refreshed = result.refresh?.[0];
+		changeIntent = null;
+		if (appliedIntent === 'drop') {
+			tabsStore.closeTab(tab.id);
+			return;
+		}
+		if (refreshed?.name) {
+			const signature = refreshed.signature ? `(${refreshed.signature})` : '';
+			tabsStore.updateTab(tab.id, {
+				title: `${refreshed.name}${signature}`,
+				schema: refreshed.schema || tab.schema,
+				objectId: refreshed.id || tab.objectId,
+				objectKind: refreshed.kind || tab.objectKind,
+				objectName: refreshed.name,
+				objectSignature: refreshed.signature || tab.objectSignature,
+				parentSchema: refreshed.parentSchema || tab.parentSchema,
+				parentName: refreshed.parentName || tab.parentName,
+				revision: Date.now()
+			});
+		} else {
+			tabsStore.updateTab(tab.id, { revision: Date.now() });
+		}
 	}
 </script>
 
@@ -190,6 +251,95 @@
 			>
 				<RefreshCw class="h-3.5 w-3.5 {loading ? 'animate-spin' : ''}" />
 			</button>
+			{#if detail?.object.canManage}
+				<div class="relative">
+					<button
+						type="button"
+						class="rt-primary-button inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[9px] font-semibold"
+						onclick={() => (manageMenuOpen = !manageMenuOpen)}
+						aria-expanded={manageMenuOpen}
+					>
+						<Settings2 class="h-3.5 w-3.5" />
+						Manage
+					</button>
+					{#if manageMenuOpen}
+						<button
+							type="button"
+							class="fixed inset-0 z-40 cursor-default"
+							onclick={() => (manageMenuOpen = false)}
+							aria-label="Close object management menu"
+						></button>
+						<div class="rt-popover absolute top-9 right-0 z-50 w-56 rounded-lg p-1.5">
+							<div
+								class="text-muted-foreground px-2 py-1 text-[8px] font-bold tracking-[0.1em] uppercase"
+							>
+								Reviewed structural changes
+							</div>
+							{#if canEditDefinition}
+								<button
+									type="button"
+									class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
+									onclick={() => openChange('edit')}
+								>
+									<Pencil class="mt-0.5 h-3.5 w-3.5" />
+									<span>
+										<span class="block text-[9px] font-semibold">Edit definition</span>
+										<span class="text-muted-foreground block text-[8px]"
+											>Preview replacement DDL</span
+										>
+									</span>
+								</button>
+							{/if}
+							<button
+								type="button"
+								class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
+								onclick={() => openChange('rename')}
+							>
+								<Pencil class="mt-0.5 h-3.5 w-3.5" />
+								<span>
+									<span class="block text-[9px] font-semibold">Rename</span>
+									<span class="text-muted-foreground block text-[8px]"
+										>Keep the object identity</span
+									>
+								</span>
+							</button>
+							{#if objectKind === 'trigger'}
+								<button
+									type="button"
+									class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--surface-hover)]"
+									onclick={() => openChange(triggerEnabled ? 'disable' : 'enable')}
+								>
+									{#if triggerEnabled}
+										<PowerOff class="mt-0.5 h-3.5 w-3.5" />
+									{:else}
+										<Power class="mt-0.5 h-3.5 w-3.5" />
+									{/if}
+									<span>
+										<span class="block text-[9px] font-semibold">
+											{triggerEnabled ? 'Disable trigger' : 'Enable trigger'}
+										</span>
+										<span class="text-muted-foreground block text-[8px]">
+											{triggerEnabled ? 'Stop firing without dropping' : 'Resume trigger execution'}
+										</span>
+									</span>
+								</button>
+							{/if}
+							<div class="bg-border my-1 h-px"></div>
+							<button
+								type="button"
+								class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left text-red-600 hover:bg-red-500/10 dark:text-red-400"
+								onclick={() => openChange('drop')}
+							>
+								<Trash2 class="mt-0.5 h-3.5 w-3.5" />
+								<span>
+									<span class="block text-[9px] font-semibold">Drop object</span>
+									<span class="block text-[8px] opacity-75">Permanent structural removal</span>
+								</span>
+							</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	</header>
 
@@ -487,3 +637,21 @@
 		{/if}
 	</div>
 </div>
+
+<ObjectChangeDialog
+	open={changeIntent !== null}
+	connectionId={tab.connectionId}
+	intent={changeIntent}
+	{capabilities}
+	reference={detail?.object.reference || reference}
+	definition={detail?.definition || ''}
+	table={detail?.object.reference.parentName
+		? new database.Table({
+				Schema: detail.object.reference.parentSchema || detail.object.reference.schema,
+				Name: detail.object.reference.parentName
+			})
+		: null}
+	{columns}
+	onClose={() => (changeIntent = null)}
+	onApplied={handleStructuralChangeApplied}
+/>

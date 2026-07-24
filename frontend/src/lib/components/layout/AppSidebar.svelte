@@ -62,6 +62,8 @@
 		groupDatabaseObjects
 	} from '$lib/database/objects';
 	import { createServiceError } from '$lib/errors/service';
+	import ObjectChangeDialog from '$lib/components/database/ObjectChangeDialog.svelte';
+	import type { StructuralChangeIntent } from '$lib/database/changeTemplates';
 
 	interface Props {
 		connectionId: string;
@@ -80,6 +82,7 @@
 	let selectedItem = $state<string | null>(null);
 	let searchQuery = $state('');
 	let historyExpanded = $state(true);
+	let changeIntent = $state<StructuralChangeIntent | null>(null);
 	let expandedGroups = $state<Record<string, boolean>>({
 		tables: true,
 		views: true,
@@ -177,6 +180,9 @@
 						tabsStore.closeTab(tabId);
 					}
 					tables = tables.filter((t) => t !== tableName);
+					objects = objects.filter(
+						(object) => object.reference.kind !== 'table' || object.reference.name !== tableName
+					);
 				}
 			} catch (e: any) {
 				updateStatus(e?.message ?? 'Failed to drop table', 'error');
@@ -236,7 +242,17 @@
 			selectedSchema = ''; // Reset schema selection
 			loadSchemas(); // Reload schemas for new connection
 		};
+		const handleObjectsChanged = (event: Event) => {
+			const detail = (event as CustomEvent<{ connectionId?: string; schema?: string }>).detail;
+			if (
+				detail?.connectionId === connectionId &&
+				(!detail.schema || detail.schema === selectedSchema)
+			) {
+				void loadTables();
+			}
+		};
 		window.addEventListener('connection-switched', handleConnectionSwitch);
+		window.addEventListener('database-objects-changed', handleObjectsChanged);
 
 		// Cleanup
 		return () => {
@@ -244,6 +260,7 @@
 			setSidebarAddTable(null);
 			setSidebarRemoveTable(null);
 			window.removeEventListener('connection-switched', handleConnectionSwitch);
+			window.removeEventListener('database-objects-changed', handleObjectsChanged);
 		};
 	});
 
@@ -429,6 +446,16 @@
 		updateStatus(`Opening schema diagram for ${selectedSchema}…`, 'info');
 	}
 
+	function openStructuralChange(intent: StructuralChangeIntent) {
+		ddOpen.set(false);
+		changeIntent = intent;
+	}
+
+	async function handleStructuralChangeApplied() {
+		changeIntent = null;
+		await loadTables();
+	}
+
 	function handleContextMenu(e: MouseEvent, object: database.DatabaseObject) {
 		e.preventDefault();
 		contextMenuObject = object;
@@ -548,6 +575,61 @@
 				<Table2 class="h-3.5 w-3.5" />
 				New table
 			</button>
+			{#if capabilities?.views}
+				<button
+					type="button"
+					use:melt={$ddItem}
+					class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
+					onclick={() => openStructuralChange('create-view')}
+				>
+					<PanelsTopLeft class="h-3.5 w-3.5" />
+					New view
+				</button>
+			{/if}
+			{#if capabilities?.materializedViews}
+				<button
+					type="button"
+					use:melt={$ddItem}
+					class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
+					onclick={() => openStructuralChange('create-materialized-view')}
+				>
+					<Layers3 class="h-3.5 w-3.5" />
+					New materialized view
+				</button>
+			{/if}
+			{#if capabilities?.functions}
+				<button
+					type="button"
+					use:melt={$ddItem}
+					class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
+					onclick={() => openStructuralChange('create-function')}
+				>
+					<FileCode2 class="h-3.5 w-3.5" />
+					New function
+				</button>
+			{/if}
+			{#if capabilities?.procedures}
+				<button
+					type="button"
+					use:melt={$ddItem}
+					class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
+					onclick={() => openStructuralChange('create-procedure')}
+				>
+					<FileCode2 class="h-3.5 w-3.5" />
+					New procedure
+				</button>
+			{/if}
+			{#if capabilities?.triggers}
+				<button
+					type="button"
+					use:melt={$ddItem}
+					class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
+					onclick={() => openStructuralChange('create-trigger')}
+				>
+					<Zap class="h-3.5 w-3.5" />
+					New trigger
+				</button>
+			{/if}
 			<button
 				type="button"
 				use:melt={$ddItem}
@@ -958,6 +1040,17 @@
 		</div>
 	{/if}
 </aside>
+
+<ObjectChangeDialog
+	open={changeIntent !== null}
+	{connectionId}
+	intent={changeIntent}
+	{capabilities}
+	reference={null}
+	table={new database.Table({ Schema: selectedSchema, Name: '' })}
+	onClose={() => (changeIntent = null)}
+	onApplied={handleStructuralChangeApplied}
+/>
 
 <!-- Confirmation Dialog -->
 {#if $dialogOpen}

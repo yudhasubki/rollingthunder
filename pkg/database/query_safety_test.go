@@ -1,6 +1,9 @@
 package database
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestAnalyzeQuerySafetyFindsUnfilteredUpdateAndDelete(t *testing.T) {
 	for _, query := range []string{
@@ -108,5 +111,41 @@ func TestFindTransactionControl(t *testing.T) {
 		"SELECT 'COMMIT', $$BEGIN$$",
 	); control != "" {
 		t.Fatalf("non-control query returned %q", control)
+	}
+}
+
+func TestCountSQLStatementsIgnoresRoutineBodySemicolons(t *testing.T) {
+	query := `
+		CREATE FUNCTION public.answer() RETURNS integer AS $body$
+		BEGIN
+			RETURN 42;
+		END;
+		$body$ LANGUAGE plpgsql;
+	`
+	if got := CountSQLStatements(query); got != 1 {
+		t.Fatalf("CountSQLStatements = %d, want 1", got)
+	}
+	if got := CountSQLStatements("SELECT 1; SELECT 2;"); got != 2 {
+		t.Fatalf("CountSQLStatements(two statements) = %d, want 2", got)
+	}
+}
+
+func TestLeadingSQLKeywordsSkipsComments(t *testing.T) {
+	keywords := LeadingSQLKeywords(
+		"-- reviewed\nCREATE OR REPLACE VIEW public.report AS SELECT 1",
+		4,
+	)
+	want := []string{"CREATE", "OR", "REPLACE", "VIEW"}
+	if !reflect.DeepEqual(keywords, want) {
+		t.Fatalf("LeadingSQLKeywords = %#v, want %#v", keywords, want)
+	}
+}
+
+func TestHasTopLevelStatementSeparatorIgnoresQuotedSemicolon(t *testing.T) {
+	if HasTopLevelStatementSeparator(`';'`) {
+		t.Fatal("quoted semicolon was treated as a statement separator")
+	}
+	if !HasTopLevelStatementSeparator(`value; DROP TABLE users`) {
+		t.Fatal("top-level statement separator was not detected")
 	}
 }

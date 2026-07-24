@@ -5,6 +5,8 @@ import {response} from '../models';
 import {db} from '../models';
 import {context} from '../models';
 
+export function ApplyDatabaseObjectChange(arg1:string,arg2:database.ApplyObjectChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectChangeResult_>;
+
 export function ApplyTableChanges(arg1:string,arg2:database.TableChangeSet):Promise<response.BaseResponse_rollingthunder_pkg_database_TableChangeResult_>;
 
 export function BeginTransaction(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
@@ -66,6 +68,8 @@ export function GetSchemas(arg1:string):Promise<response.BaseResponse___string_>
 export function GetTableDDL(arg1:string,arg2:database.Table):Promise<response.BaseResponse_string_>;
 
 export function InsertRow(arg1:string,arg2:database.Table,arg3:Record<string, any>):Promise<response.BaseResponse_bool_>;
+
+export function PreviewDatabaseObjectChange(arg1:string,arg2:database.ObjectChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_>;
 
 export function RollbackTransaction(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
 

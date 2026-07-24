@@ -6,6 +6,7 @@
 	import type { SortingState } from '@tanstack/table-core';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import ExportDialog from '$lib/components/database/ExportDialog.svelte';
+	import ObjectChangeDialog from '$lib/components/database/ObjectChangeDialog.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import {
 		buildExportOptions,
@@ -37,7 +38,8 @@
 		GetIndices,
 		GetTableDDL,
 		ExportQueryResults,
-		ExportTableData
+		ExportTableData,
+		GetCapabilities
 	} from '$lib/wailsjs/go/db/Service';
 	import {
 		LayoutGrid,
@@ -48,8 +50,11 @@
 		Loader2,
 		KeyRound,
 		Link2,
-		X
+		X,
+		Settings2,
+		Trash2
 	} from 'lucide-svelte';
+	import type { StructuralChangeIntent } from '$lib/database/changeTemplates';
 
 	interface Props {
 		tab: Tab;
@@ -77,6 +82,9 @@
 	let filters = $state<FilterCondition[]>([]);
 	let appliedFilters = $state<FilterCondition[]>([]);
 	let sorting = $state<SortingState>([]);
+	let capabilities = $state<database.Capabilities | null>(null);
+	let changeIntent = $state<StructuralChangeIntent | null>(null);
+	let changeReference = $state<database.ObjectReference | null>(null);
 	const primaryKeyCount = $derived(columns.filter((column) => column.is_primary).length);
 	const relationCount = $derived(
 		columns.filter((column) => getColumnRelation(column) !== null).length
@@ -152,6 +160,8 @@
 
 	$effect(() => {
 		if (tab.kind !== 'table' || !tab.schema || !tab.table) return;
+		const structureRevision = tab.revision ?? 0;
+		void structureRevision;
 
 		updateStatus('', 'info');
 		const nextTableKey = `${tab.connectionId}:${tab.schema}.${tab.table}`;
@@ -169,13 +179,17 @@
 				reqTable.Name = tab.table;
 				reqTable.Schema = tab.schema;
 
-				const [cols, idxs] = await Promise.all([
+				const [cols, idxs, capabilityResponse] = await Promise.all([
 					GetCollectionStructures(tab.connectionId, reqTable),
-					GetIndices(tab.connectionId, reqTable)
+					GetIndices(tab.connectionId, reqTable),
+					GetCapabilities(tab.connectionId)
 				]);
 
 				if (cols.errors?.length) throw new Error(cols.errors[0].detail);
 				if (idxs.errors?.length) throw new Error(idxs.errors[0].detail);
+				if (!capabilityResponse.errors?.length) {
+					capabilities = capabilityResponse.data || null;
+				}
 
 				indices = idxs.data || [];
 				const primaryColumns = new Set(
@@ -474,6 +488,38 @@
 		updateStatus(`Opened ${relation.schema}.${relation.table}`, 'info');
 	}
 
+	function openTableChange(
+		intent: StructuralChangeIntent,
+		reference: database.ObjectReference | null = null
+	) {
+		changeReference = reference;
+		changeIntent = intent;
+	}
+
+	function openDropIndex(index: database.Index) {
+		openTableChange(
+			'drop',
+			new database.ObjectReference({
+				kind: 'index',
+				schema: tab.schema || '',
+				name: index.name,
+				parentSchema: tab.schema || '',
+				parentName: tab.table || ''
+			})
+		);
+	}
+
+	function handleStructureChangeApplied() {
+		changeIntent = null;
+		changeReference = null;
+		tabsStore.updateTab(tab.id, { revision: Date.now() });
+		window.dispatchEvent(
+			new CustomEvent('database-objects-changed', {
+				detail: { connectionId: tab.connectionId, schema: tab.schema }
+			})
+		);
+	}
+
 	// Load DDL when DDL tab is selected
 	$effect(() => {
 		const subTab = $tabValue;
@@ -554,6 +600,52 @@
 				</div>
 			{:else}
 				<div class="space-y-3 pr-1 pb-3">
+					{#if capabilities?.manageIndexes || capabilities?.alterTableStructure}
+						<div
+							class="flex min-h-10 items-center justify-between gap-3 rounded-lg border bg-[var(--surface-raised)] px-3 py-1.5"
+						>
+							<div class="flex min-w-0 items-center gap-2">
+								<Settings2 class="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+								<div class="min-w-0">
+									<div class="text-[9px] font-bold">Reviewed structure changes</div>
+									<div class="text-muted-foreground truncate text-[8px]">
+										Every action opens an exact SQL preview before apply.
+									</div>
+								</div>
+							</div>
+							<div class="flex shrink-0 items-center gap-1">
+								{#if capabilities?.manageIndexes}
+									<button
+										type="button"
+										class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold"
+										onclick={() => openTableChange('create-index')}
+									>
+										<Plus class="h-3 w-3" />
+										New index
+									</button>
+								{/if}
+								{#if capabilities?.alterTableStructure}
+									<button
+										type="button"
+										class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold"
+										onclick={() => openTableChange('alter-column')}
+										disabled={columns.length === 0}
+									>
+										<Settings2 class="h-3 w-3" />
+										Alter column
+									</button>
+									<button
+										type="button"
+										class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold"
+										onclick={() => openTableChange('add-constraint')}
+									>
+										<KeyRound class="h-3 w-3" />
+										Add constraint
+									</button>
+								{/if}
+							</div>
+						</div>
+					{/if}
 					<section
 						class="grid shrink-0 grid-cols-4 divide-x overflow-hidden rounded-lg border bg-[var(--surface-raised)]"
 					>
@@ -785,6 +877,17 @@
 														: 'non-unique'}
 											</div>
 										</div>
+										{#if capabilities?.manageIndexes && !idx.is_primary}
+											<button
+												type="button"
+												class="rt-toolbar-button h-7 w-7 shrink-0 cursor-pointer text-red-500 hover:bg-red-500/10"
+												onclick={() => openDropIndex(idx)}
+												title={`Drop index ${idx.name}`}
+												aria-label={`Drop index ${idx.name}`}
+											>
+												<Trash2 class="h-3 w-3" />
+											</button>
+										{/if}
 									</div>
 								{:else}
 									<div class="text-muted-foreground px-4 py-10 text-center">
@@ -970,4 +1073,27 @@
 	onClose={() => (exportDialogOpen = false)}
 	onCancelExport={cancelRunningExport}
 	onExport={handleExport}
+/>
+
+<ObjectChangeDialog
+	open={changeIntent !== null}
+	connectionId={tab.connectionId}
+	intent={changeIntent}
+	{capabilities}
+	reference={changeReference ||
+		new database.ObjectReference({
+			kind: 'table',
+			schema: tab.schema || '',
+			name: tab.table || ''
+		})}
+	table={new database.Table({
+		Schema: tab.schema || '',
+		Name: tab.table || ''
+	})}
+	{columns}
+	onClose={() => {
+		changeIntent = null;
+		changeReference = null;
+	}}
+	onApplied={handleStructureChangeApplied}
 />

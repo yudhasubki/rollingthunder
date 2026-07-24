@@ -335,7 +335,6 @@ func (p *Postgres) resolveObject(
 		}
 		objects, err := p.ListObjects(ctx, database.ObjectFilter{
 			Schema: reference.Schema,
-			Search: reference.Name,
 		})
 		if err != nil {
 			return database.DatabaseObject{}, "", 0, err
@@ -454,17 +453,30 @@ func (p *Postgres) objectDefinition(
 		return definition, properties, nil, err
 
 	case database.ObjectKindTrigger:
-		var definition string
+		type triggerMetadata struct {
+			Definition string `db:"definition"`
+			Enabled    string `db:"enabled"`
+		}
+		var metadata triggerMetadata
 		err := p.conn.GetContext(
 			ctx,
-			&definition,
-			"SELECT pg_get_triggerdef($1::oid, true)",
+			&metadata,
+			`SELECT
+				pg_get_triggerdef($1::oid, true) AS definition,
+				tgenabled::text AS enabled
+			FROM pg_trigger
+			WHERE oid = $1::oid`,
 			oid,
 		)
-		if err == nil && definition != "" {
-			definition += ";\n"
+		if err == nil && metadata.Definition != "" {
+			metadata.Definition += ";\n"
 		}
-		return definition, properties, nil, err
+		properties = append(properties, database.ObjectProperty{
+			Name:     "Enabled",
+			Value:    strconv.FormatBool(metadata.Enabled != "D"),
+			Category: "trigger",
+		})
+		return metadata.Definition, properties, nil, err
 
 	case database.ObjectKindIndex:
 		var definition string

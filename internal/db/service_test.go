@@ -45,6 +45,11 @@ type routingTestDriver struct {
 	objects         []database.DatabaseObject
 	objectDetail    database.ObjectDetail
 	objectErr       error
+
+	changePlan     database.ObjectChangePlan
+	changePlanErr  error
+	appliedPlan    database.ObjectChangePlan
+	applyChangeErr error
 }
 
 func (d *routingTestDriver) Capabilities() database.Capabilities {
@@ -206,6 +211,25 @@ func (d *routingTestDriver) GetObjectDetail(
 	defer d.mu.Unlock()
 	d.objectReference = reference
 	return d.objectDetail, d.objectErr
+}
+
+func (d *routingTestDriver) BuildObjectChange(
+	_ context.Context,
+	_ database.ObjectChangeRequest,
+) (database.ObjectChangePlan, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.changePlan, d.changePlanErr
+}
+
+func (d *routingTestDriver) ApplyObjectChange(
+	_ context.Context,
+	plan database.ObjectChangePlan,
+) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.appliedPlan = plan
+	return d.applyChangeErr
 }
 
 func (d *routingTestDriver) tableChangeRequest() database.TableChangeSet {
