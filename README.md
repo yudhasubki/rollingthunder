@@ -117,7 +117,7 @@
 - Headless end-to-end coverage for connect, edit, export, truncate, and drop workflows.
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.0/8.4 LTS, and MariaDB 10.11/11.4 LTS.
 - Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
-  attestations. macOS archives are explicitly distributed unsigned.
+  attestations. macOS packaging does not require an Apple Developer account.
 
 ## Database support
 
@@ -138,8 +138,8 @@ Other important limitations include:
 
 - Linux desktop packages currently target WebKitGTK 4.1 and require compatible GTK/WebKit runtime
   libraries from the distribution.
-- macOS release archives are unsigned and not notarized, so Gatekeeper can require users to approve
-  the first launch manually.
+- macOS release archives are not code-signed or notarized, so Gatekeeper can require approval on the
+  first launch.
 - Windows and Linux tagged-release signing depends on repository signing certificates/keys and
   intentionally fails closed when they are absent.
 - Automated accessibility contracts cover common regressions, but every stable release still
@@ -155,6 +155,21 @@ Other important limitations include:
 - **Database drivers:** PostgreSQL, MySQL/MariaDB, and pure-Go SQLite
 
 ## Getting started
+
+### Download
+
+Prebuilt packages are available from
+[GitHub Releases](https://github.com/yudhasubki/rollingthunder/releases):
+
+- macOS Intel: `rollingthunder_<version>_darwin_amd64.zip`
+- macOS Apple Silicon: `rollingthunder_<version>_darwin_arm64.zip`
+- Windows: `rollingthunder_<version>_windows_amd64_installer.exe`
+- Linux: `rollingthunder_<version>_linux_amd64.tar.gz`
+
+Every release includes `SHA256SUMS` and GitHub provenance attestations. macOS may show a Gatekeeper
+prompt on first launch because the app is currently distributed without code signing or
+notarization. See [release packaging and verification](docs/RELEASING.md) for verification and
+first-launch guidance.
 
 ### Prerequisites
 
