@@ -14,8 +14,9 @@ export interface Tab {
 	parentSchema?: string;
 	parentName?: string;
 	sql?: string;
+	savedQueryId?: string;
 	status?: string;
 	level?: 'info' | 'warn' | 'error';
-	activeSubTab?: 'structure' | 'data';
+	activeSubTab?: 'structure' | 'data' | 'ddl';
 	revision?: number;
 }

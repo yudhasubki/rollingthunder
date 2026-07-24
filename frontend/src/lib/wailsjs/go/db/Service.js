@@ -26,6 +26,10 @@ export function CancelQuery(arg1) {
   return window['go']['db']['Service']['CancelQuery'](arg1);
 }
 
+export function ChooseImportFile() {
+  return window['go']['db']['Service']['ChooseImportFile']();
+}
+
 export function ChooseSQLiteDatabaseFile(arg1) {
   return window['go']['db']['Service']['ChooseSQLiteDatabaseFile'](arg1);
 }
@@ -64,6 +68,10 @@ export function DropTable(arg1, arg2) {
 
 export function ExecuteQuery(arg1) {
   return window['go']['db']['Service']['ExecuteQuery'](arg1);
+}
+
+export function ExplainQuery(arg1) {
+  return window['go']['db']['Service']['ExplainQuery'](arg1);
 }
 
 export function ExportQueryResults(arg1) {
@@ -130,8 +138,16 @@ export function GetTableDDL(arg1, arg2) {
   return window['go']['db']['Service']['GetTableDDL'](arg1, arg2);
 }
 
+export function ImportData(arg1) {
+  return window['go']['db']['Service']['ImportData'](arg1);
+}
+
 export function InsertRow(arg1, arg2, arg3) {
   return window['go']['db']['Service']['InsertRow'](arg1, arg2, arg3);
+}
+
+export function InspectImportFile(arg1) {
+  return window['go']['db']['Service']['InspectImportFile'](arg1);
 }
 
 export function PreviewDatabaseObjectChange(arg1, arg2) {

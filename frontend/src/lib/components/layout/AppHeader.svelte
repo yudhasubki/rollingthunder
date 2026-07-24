@@ -9,7 +9,8 @@
 		Database,
 		Plug,
 		Settings2,
-		Unplug
+		Unplug,
+		Search
 	} from 'lucide-svelte';
 	import { createDropdownMenu, melt } from '@melt-ui/svelte';
 	import { onMount } from 'svelte';
@@ -93,6 +94,10 @@
 	function openQueryTab() {
 		const connectionId = connectionStore.activeConnection?.id;
 		if (connectionId) tabsStore.newQueryTab(connectionId);
+	}
+
+	function openCommandPalette() {
+		window.dispatchEvent(new CustomEvent('open-command-palette'));
 	}
 
 	function connectionEndpoint(connection: NonNullable<typeof connectionStore.activeConnection>) {
@@ -259,6 +264,17 @@
 	</div>
 
 	<div class="flex shrink-0 items-center gap-1">
+		<button
+			type="button"
+			class="rt-toolbar-button hidden h-8 cursor-pointer gap-2 px-2.5 text-[10px] font-semibold md:inline-flex"
+			onclick={openCommandPalette}
+			title="Command palette"
+			aria-label="Open command palette"
+		>
+			<Search class="h-3.5 w-3.5" />
+			<span>Commands</span>
+			<span class="text-muted-foreground rounded border px-1 py-0.5 font-mono text-[8px]">⌘K</span>
+		</button>
 		<button
 			class="rt-primary-button inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-xs font-semibold"
 			onclick={openQueryTab}

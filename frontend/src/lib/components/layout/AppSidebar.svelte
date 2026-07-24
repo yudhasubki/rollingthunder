@@ -36,7 +36,8 @@
 		ListTree,
 		PanelsTopLeft,
 		Puzzle,
-		Zap
+		Zap,
+		Import
 	} from 'lucide-svelte';
 	import { createDropdownMenu, createDialog, melt } from '@melt-ui/svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
@@ -429,6 +430,11 @@
 		updateStatus('', 'info');
 	}
 
+	function openImportData() {
+		ddOpen.set(false);
+		window.dispatchEvent(new CustomEvent('open-import-data'));
+	}
+
 	function openNewTableTab() {
 		if (!selectedSchema) {
 			updateStatus('Please select a schema first', 'error');
@@ -638,6 +644,15 @@
 			>
 				<Code class="h-3.5 w-3.5" />
 				New query
+			</button>
+			<button
+				type="button"
+				use:melt={$ddItem}
+				class="hover:bg-accent flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none"
+				onclick={openImportData}
+			>
+				<Import class="h-3.5 w-3.5" />
+				Import CSV / JSON
 			</button>
 			<div class="bg-border my-1 h-px"></div>
 			<button

@@ -125,6 +125,26 @@ func (s *Service) ExecuteQuery(
 		)
 	}
 
+	statements, err := database.SplitSQLStatements(request.Query)
+	if err != nil {
+		return serviceErrorWithCode[database.QueryResult](
+			http.StatusBadRequest,
+			errorCodeInvalidRequest,
+			"Invalid query batch",
+			err.Error(),
+			"Run fewer statements at once or select one statement in the editor.",
+		)
+	}
+	if len(statements) == 0 {
+		return serviceErrorWithCode[database.QueryResult](
+			http.StatusBadRequest,
+			errorCodeInvalidRequest,
+			"Query is empty",
+			"The selected SQL contains no executable statement.",
+			"Select a statement or place the cursor inside one before running it.",
+		)
+	}
+
 	safety := database.AnalyzeQuerySafety(request.Query)
 	if safety.RequiresConfirmation() && !request.AllowUnfilteredMutation {
 		mutations := strings.Join(safety.UnfilteredMutations, " and ")
@@ -152,33 +172,8 @@ func (s *Service) ExecuteQuery(
 	}
 	defer s.finishQueryAttempt(attempt)
 
-	options := database.QueryOptions{
-		MaxRows: database.DefaultQueryResultLimit,
-	}
-	var result database.QueryResult
 	inTransaction := strings.TrimSpace(request.TransactionID) != ""
-
-	if inTransaction {
-		result, err = s.executeTransactionQuery(
-			ctx,
-			request.ConnectionID,
-			request.TransactionID,
-			request.Query,
-			options,
-		)
-	} else {
-		var driver database.Driver
-		var release func()
-		driver, release, err = s.driverFor(request.ConnectionID)
-		if err == nil {
-			defer release()
-			result, err = driver.ExecuteQuery(
-				ctx,
-				request.Query,
-				options,
-			)
-		}
-	}
+	result, err := s.executeQueryBatch(ctx, request, statements)
 
 	if err != nil {
 		if attempt.cancelled.Load() {
@@ -216,6 +211,122 @@ func (s *Service) ExecuteQuery(
 		return queryFailure[database.QueryResult](err, inTransaction)
 	}
 	return response.BaseResponse[database.QueryResult]{Data: result}
+}
+
+type queryStatementRunner func(
+	context.Context,
+	string,
+	database.QueryOptions,
+) (database.QueryResult, error)
+
+func (s *Service) executeQueryBatch(
+	ctx context.Context,
+	request database.QueryRequest,
+	statements []string,
+) (database.QueryResult, error) {
+	var (
+		capabilityDriver database.CapabilityDriver
+		run              queryStatementRunner
+		release          func()
+	)
+
+	if strings.TrimSpace(request.TransactionID) != "" {
+		s.transactionMu.RLock()
+		session := s.transactions[strings.TrimSpace(request.TransactionID)]
+		s.transactionMu.RUnlock()
+		if session == nil {
+			return database.QueryResult{}, errTransactionNotActive
+		}
+		if session.connectionID != request.ConnectionID {
+			return database.QueryResult{}, errTransactionMismatch
+		}
+
+		session.connection.mu.RLock()
+		if session.connection.closed {
+			session.connection.mu.RUnlock()
+			return database.QueryResult{}, errTransactionConnectionClosed
+		}
+		session.mu.Lock()
+		if session.closed {
+			session.mu.Unlock()
+			session.connection.mu.RUnlock()
+			return database.QueryResult{}, errTransactionNotActive
+		}
+		capabilityDriver = session.connection.Driver
+		run = session.transaction.ExecuteQuery
+		release = func() {
+			session.mu.Unlock()
+			session.connection.mu.RUnlock()
+		}
+	} else {
+		driver, driverRelease, err := s.driverFor(request.ConnectionID)
+		if err != nil {
+			return database.QueryResult{}, err
+		}
+		capabilityDriver = driver
+		run = driver.ExecuteQuery
+		release = driverRelease
+	}
+	defer release()
+
+	batch := database.QueryResult{
+		Rows:           make([]map[string]interface{}, 0),
+		Columns:        make([]string, 0),
+		RowLimit:       database.DefaultQueryResultLimit,
+		ResultSets:     make([]database.QueryResultSet, 0, len(statements)),
+		StatementCount: len(statements),
+	}
+
+	for index, statement := range statements {
+		boundQuery, args, err := database.BindQueryVariables(
+			statement,
+			capabilityDriver,
+			request.Variables,
+		)
+		if err != nil {
+			return database.QueryResult{}, fmt.Errorf(
+				"statement %d: %w",
+				index+1,
+				err,
+			)
+		}
+		result, err := run(ctx, boundQuery, database.QueryOptions{
+			MaxRows: database.DefaultQueryResultLimit,
+			Args:    args,
+		})
+		if err != nil {
+			return database.QueryResult{}, fmt.Errorf(
+				"statement %d of %d failed: %w",
+				index+1,
+				len(statements),
+				err,
+			)
+		}
+		set := database.QueryResultSet{
+			Index:     index,
+			Statement: statement,
+			Columns:   result.Columns,
+			Rows:      result.Rows,
+			Truncated: result.Truncated,
+			RowLimit:  result.RowLimit,
+		}
+		if set.Columns == nil {
+			set.Columns = make([]string, 0)
+		}
+		if set.Rows == nil {
+			set.Rows = make([]map[string]interface{}, 0)
+		}
+		batch.ResultSets = append(batch.ResultSets, set)
+	}
+
+	if len(batch.ResultSets) > 0 {
+		first := batch.ResultSets[0]
+		batch.Rows = first.Rows
+		batch.Columns = first.Columns
+		batch.Truncated = first.Truncated
+		batch.RowLimit = first.RowLimit
+	}
+	return batch, nil
 }
 
 type transactionSession struct {

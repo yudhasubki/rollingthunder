@@ -6,11 +6,61 @@ import {
 	findWorkspaceForTab,
 	type ConnectionWorkspace
 } from '$lib/tabs/workspaces';
+import {
+	emptyWorkspaceEnvelope,
+	parseWorkspaceEnvelope,
+	persistableWorkspace,
+	restoreQueryTabs,
+	WORKSPACE_STORAGE_KEY
+} from '$lib/tabs/persistence';
 
 const state = $state({
 	activeConnectionId: null as string | null,
-	workspaces: {} as Record<string, ConnectionWorkspace>
+	workspaces: {} as Record<string, ConnectionWorkspace>,
+	workspaceKeys: {} as Record<string, string>
 });
+
+let persisted = emptyWorkspaceEnvelope();
+let hydrated = false;
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function hydratePersistence(): void {
+	if (hydrated || typeof window === 'undefined') return;
+	hydrated = true;
+	persisted = parseWorkspaceEnvelope(localStorage.getItem(WORKSPACE_STORAGE_KEY));
+}
+
+function writePersistence(): void {
+	if (typeof window === 'undefined') return;
+	localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(persisted));
+}
+
+function persistWorkspace(connectionId: string, immediate = false): void {
+	hydratePersistence();
+	if (!hydrated) return;
+	const key = state.workspaceKeys[connectionId];
+	const workspace = state.workspaces[connectionId];
+	if (!key || !workspace) return;
+
+	const save = () => {
+		persistTimers.delete(key);
+		persisted = {
+			...persisted,
+			workspaces: {
+				...persisted.workspaces,
+				[key]: persistableWorkspace(workspace.tabs, workspace.activeTabId)
+			}
+		};
+		writePersistence();
+	};
+	const pending = persistTimers.get(key);
+	if (pending) globalThis.clearTimeout(pending);
+	if (immediate) {
+		save();
+	} else {
+		persistTimers.set(key, globalThis.setTimeout(save, 180));
+	}
+}
 
 function requireConnectionId(connectionId: string): string {
 	if (!connectionId) {
@@ -43,6 +93,7 @@ function appendTab(connectionId: string, tab: Tab): string {
 
 	workspace.tabs = [...workspace.tabs, tab];
 	workspace.activeTabId = tab.id;
+	persistWorkspace(connectionId);
 	return tab.id;
 }
 
@@ -73,11 +124,21 @@ export const tabsStore = {
 		return activeTab;
 	},
 
-	setActiveConnection(connectionId: string | null) {
+	setActiveConnection(connectionId: string | null, workspaceKey?: string) {
+		hydratePersistence();
 		state.activeConnectionId = connectionId;
 		if (!connectionId) return;
 
 		const workspace = getWorkspace(connectionId);
+		if (workspaceKey) {
+			state.workspaceKeys[connectionId] = workspaceKey;
+		}
+		const stableKey = state.workspaceKeys[connectionId];
+		if (workspace && workspace.tabs.length === 0 && stableKey) {
+			const saved = persisted.workspaces[stableKey];
+			workspace.tabs = restoreQueryTabs(connectionId, saved);
+			workspace.activeTabId = saved?.activeTabId ?? workspace.tabs.at(-1)?.id ?? null;
+		}
 		if (workspace && !workspace.activeTabId && workspace.tabs.length > 0) {
 			workspace.activeTabId = workspace.tabs.at(-1)?.id ?? null;
 		}
@@ -85,10 +146,12 @@ export const tabsStore = {
 
 	removeWorkspace(connectionId: string) {
 		if (!connectionId || !state.workspaces[connectionId]) return;
+		persistWorkspace(connectionId, true);
 		for (const tab of state.workspaces[connectionId].tabs) {
 			clearTabState(tab.id);
 		}
 		delete state.workspaces[connectionId];
+		delete state.workspaceKeys[connectionId];
 		if (state.activeConnectionId === connectionId) {
 			state.activeConnectionId = null;
 		}
@@ -219,18 +282,22 @@ export const tabsStore = {
 		if (!workspace) return;
 
 		const closingIndex = workspace.tabs.findIndex((tab) => tab.id === id);
+		const connectionId = workspace.tabs[closingIndex]?.connectionId;
 		workspace.tabs = workspace.tabs.filter((tab) => tab.id !== id);
 		clearTabState(id);
 		if (workspace.activeTabId === id) {
 			const nextIndex = Math.min(closingIndex, workspace.tabs.length - 1);
 			workspace.activeTabId = nextIndex >= 0 ? workspace.tabs[nextIndex].id : null;
 		}
+		if (connectionId) persistWorkspace(connectionId);
 	},
 
 	setActive(id: string) {
 		const workspace = getActiveWorkspace();
 		if (workspace?.tabs.some((tab) => tab.id === id)) {
 			workspace.activeTabId = id;
+			const tab = workspace.tabs.find((candidate) => candidate.id === id);
+			if (tab) persistWorkspace(tab.connectionId);
 		}
 	},
 
@@ -240,6 +307,8 @@ export const tabsStore = {
 		workspace.tabs = workspace.tabs.map((tab) =>
 			tab.id === id ? { ...tab, ...patch, id: tab.id, connectionId: tab.connectionId } : tab
 		);
+		const tab = workspace.tabs.find((candidate) => candidate.id === id);
+		if (tab) persistWorkspace(tab.connectionId);
 	},
 
 	findTableTab(connectionId: string, schema: string, table: string) {

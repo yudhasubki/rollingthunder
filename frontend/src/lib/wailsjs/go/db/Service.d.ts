@@ -17,6 +17,8 @@ export function CancelExport(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function CancelQuery(arg1:string):Promise<response.BaseResponse_bool_>;
 
+export function ChooseImportFile():Promise<response.BaseResponse_rollingthunder_pkg_database_ImportFileSelection_>;
+
 export function ChooseSQLiteDatabaseFile(arg1:boolean):Promise<response.BaseResponse_string_>;
 
 export function CommitTransaction(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
@@ -36,6 +38,8 @@ export function DisconnectConnection(arg1:string):Promise<response.BaseResponse_
 export function DropTable(arg1:string,arg2:database.Table):Promise<response.BaseResponse_bool_>;
 
 export function ExecuteQuery(arg1:database.QueryRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_QueryResult_>;
+
+export function ExplainQuery(arg1:database.QueryRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ExplainPlan_>;
 
 export function ExportQueryResults(arg1:database.RowsExportRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ExportResult_>;
 
@@ -69,7 +73,11 @@ export function GetSchemas(arg1:string):Promise<response.BaseResponse___string_>
 
 export function GetTableDDL(arg1:string,arg2:database.Table):Promise<response.BaseResponse_string_>;
 
+export function ImportData(arg1:database.ImportRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ImportResult_>;
+
 export function InsertRow(arg1:string,arg2:database.Table,arg3:Record<string, any>):Promise<response.BaseResponse_bool_>;
+
+export function InspectImportFile(arg1:database.ImportPreviewRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ImportPreview_>;
 
 export function PreviewDatabaseObjectChange(arg1:string,arg2:database.ObjectChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_>;
 

@@ -16,6 +16,17 @@ type fakeMappedRows struct {
 	resultError error
 }
 
+func (f *fakeMappedRows) Columns() ([]string, error) {
+	if len(f.rows) == 0 {
+		return []string{}, nil
+	}
+	columns := make([]string, 0, len(f.rows[0]))
+	for column := range f.rows[0] {
+		columns = append(columns, column)
+	}
+	return columns, nil
+}
+
 func (f *fakeMappedRows) Next() bool {
 	f.nextCalls++
 	if f.index >= len(f.rows) {

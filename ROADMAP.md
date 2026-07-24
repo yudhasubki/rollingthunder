@@ -133,15 +133,15 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 
 ## Milestone 4 — Power-user query tooling
 
-- [ ] Persist query tabs and restore them on launch.
-- [ ] Saved snippets and named queries.
-- [ ] Multiple result sets.
-- [ ] Explain-plan viewer with cost and row-estimate visualization.
-- [ ] SQL formatting and configurable linting.
-- [ ] Find references and jump from an identifier to its object.
-- [ ] Parameterized query variables.
-- [ ] Import CSV/JSON into an existing or new table.
-- [ ] Command palette and customizable keyboard shortcuts.
+- [x] Persist query tabs and restore them on launch.
+- [x] Saved snippets and named queries.
+- [x] Multiple result sets.
+- [x] Explain-plan viewer with cost and row-estimate visualization.
+- [x] SQL formatting and configurable linting.
+- [x] Find references and jump from an identifier to its object.
+- [x] Parameterized query variables.
+- [x] Import CSV/JSON into an existing or new table.
+- [x] Command palette and customizable keyboard shortcuts.
 
 ## Milestone 5 — Release readiness
 

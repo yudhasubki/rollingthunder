@@ -12,13 +12,20 @@
 		CircleDot,
 		CheckCheck,
 		Undo2,
-		Square
+		Square,
+		Bookmark,
+		ChartNoAxesCombined,
+		ListChecks,
+		LocateFixed,
+		Settings2,
+		WandSparkles
 	} from 'lucide-svelte';
 	import {
 		BeginTransaction,
 		CancelQuery,
 		CommitTransaction,
 		ExecuteQuery,
+		ExplainQuery,
 		ExportQueryResults,
 		RollbackTransaction
 	} from '$lib/wailsjs/go/db/Service';
@@ -51,6 +58,17 @@
 	import type * as Monaco from 'monaco-editor';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import type { Tab } from '$lib/models/Tab';
+	import ExplainPlanViewer from '$lib/components/query/ExplainPlanViewer.svelte';
+	import QueryVariablesDialog from '$lib/components/query/QueryVariablesDialog.svelte';
+	import SavedQueriesDrawer from '$lib/components/query/SavedQueriesDrawer.svelte';
+	import QueryToolingSettings from '$lib/components/query/QueryToolingSettings.svelte';
+	import { extractQueryVariableNames, type QueryVariableInput } from '$lib/query/variables';
+	import { formatSql, lintSql } from '$lib/sql/tooling';
+	import { queryToolingStore } from '$lib/stores/queryTooling.svelte';
+	import { getSqlIdentifierAtOffset, resolveSqlObjectTarget } from '$lib/sql/navigation';
+	import { ensureColumnsForTables } from '$lib/stores/schema.svelte';
+	import { getStatementAtCursor, parseTableReferences } from '$lib/sql/context';
+	import type { SavedQuery } from '$lib/query/snippets';
 
 	interface Props {
 		tab: Tab;
@@ -76,6 +94,8 @@
 	let queryElapsedTimer: ReturnType<typeof setInterval> | null = null;
 	let queryCancelled = $state(false);
 	let queryResults = $state<Record<string, any>[]>([]);
+	let queryResultSets = $state<database.QueryResultSet[]>([]);
+	let activeResultSetIndex = $state(0);
 	let queryResultTruncated = $state(false);
 	let queryResultLimit = $state(0);
 	let resultPage = $state(0);
@@ -85,6 +105,7 @@
 	let errorHint = $state<string>('');
 	let executedQuery = $state<string>('');
 	let unsafeQueryPending = $state<string>('');
+	let unsafeQueryVariables = $state<database.QueryVariable[]>([]);
 	let unsafeMutationDetail = $state('');
 	let transactionID = $state('');
 	let transactionState = $state<
@@ -101,6 +122,16 @@
 	let exportInitialScope = $state<ExportScope>('loaded');
 	let selectedRows = $state<Record<string, any>[]>([]);
 	let selectedRowIndexes = $state<number[]>([]);
+	let explainPlan = $state<database.ExplainPlan | null>(null);
+	let explainLoading = $state(false);
+	let savedQueriesOpen = $state(false);
+	let toolingSettingsOpen = $state(false);
+	let variableDialogOpen = $state(false);
+	let variableNames = $state<string[]>([]);
+	let pendingQueryAction = $state<'run' | 'explain' | null>(null);
+	let pendingVariableQuery = $state('');
+	let lintTimer: ReturnType<typeof setTimeout> | null = null;
+	let queryCommandHandler: ((event: Event) => void) | null = null;
 	const visibleQueryResults = $derived(getQueryResultPage(queryResults, resultPage));
 	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata(tab.connectionId));
 
@@ -175,6 +206,7 @@
 
 		contentChangeRegistration = editor.onDidChangeModelContent(() => {
 			tabsStore.updateTab(tab.id, { sql: editor?.getValue() || '' });
+			scheduleLint();
 		});
 		focusRegistration = editor.onDidFocusEditorText(() => {
 			if (autocompleteMetadata.error || autocompleteMetadata.tables.length === 0) {
@@ -201,12 +233,56 @@
 		editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
 			handleRun();
 		});
+		editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF, () => {
+			formatEditor();
+		});
+		editor.addCommand(monaco.KeyCode.F12, () => {
+			void jumpToIdentifier();
+		});
+		editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F12, () => {
+			findIdentifierReferences();
+		});
+
+		queryCommandHandler = (event: Event) => {
+			const detail = (
+				event as CustomEvent<{
+					tabId?: string;
+					command?: string;
+				}>
+			).detail;
+			if (detail?.tabId && detail.tabId !== tab.id) return;
+			switch (detail?.command) {
+				case 'runQuery':
+					void handleRun();
+					break;
+				case 'formatQuery':
+					formatEditor();
+					break;
+				case 'explainQuery':
+					void handleExplain();
+					break;
+				case 'saveQuery':
+					savedQueriesOpen = true;
+					break;
+				case 'findReferences':
+					findIdentifierReferences();
+					break;
+				case 'jumpToObject':
+					void jumpToIdentifier();
+					break;
+			}
+		};
+		window.addEventListener('rollingthunder-query-command', queryCommandHandler);
+		scheduleLint();
 	});
 
 	onDestroy(() => {
 		destroyed = true;
 		if (connectionSwitchHandler) {
 			window.removeEventListener('connection-switched', connectionSwitchHandler);
+		}
+		if (queryCommandHandler) {
+			window.removeEventListener('rollingthunder-query-command', queryCommandHandler);
 		}
 		themeObserver?.disconnect();
 		focusRegistration?.dispose();
@@ -216,6 +292,7 @@
 		editorModel?.dispose();
 		stopExportProgressPolling?.();
 		if (queryElapsedTimer) globalThis.clearInterval(queryElapsedTimer);
+		if (lintTimer) globalThis.clearTimeout(lintTimer);
 		if (queryAttemptID) {
 			void CancelQuery(queryAttemptID).catch(() => {});
 		}
@@ -239,88 +316,219 @@
 		const position = editor.getPosition();
 		if (!position) return fullText;
 
-		// Find statement boundaries
 		const offset = editor.getModel()?.getOffsetAt(position) || 0;
-		const statements = splitStatements(fullText);
-
-		let currentOffset = 0;
-		for (const stmt of statements) {
-			const stmtEnd = currentOffset + stmt.length;
-			if (offset >= currentOffset && offset <= stmtEnd) {
-				return stmt.trim();
-			}
-			currentOffset = stmtEnd + 1; // +1 for the semicolon
-		}
-
-		// Fallback to full text
-		return fullText.trim();
+		return getStatementAtCursor(fullText, offset).text.trim();
 	}
 
-	// Split SQL text by semicolons (respecting strings and comments)
-	function splitStatements(sql: string): string[] {
-		const statements: string[] = [];
-		let current = '';
-		let inString = false;
-		let stringChar = '';
-		let inLineComment = false;
-		let inBlockComment = false;
+	function scheduleLint() {
+		if (lintTimer) globalThis.clearTimeout(lintTimer);
+		lintTimer = globalThis.setTimeout(() => {
+			if (!editorModel || !monaco) return;
+			const issues = lintSql(editorModel.getValue(), queryToolingStore.lint);
+			monaco.editor.setModelMarkers(
+				editorModel,
+				`rollingthunder-sql-lint-${tab.id}`,
+				issues.map((issue) => {
+					const start = editorModel!.getPositionAt(issue.start);
+					const end = editorModel!.getPositionAt(Math.max(issue.end, issue.start + 1));
+					return {
+						startLineNumber: start.lineNumber,
+						startColumn: start.column,
+						endLineNumber: end.lineNumber,
+						endColumn: end.column,
+						message: issue.message,
+						code: issue.rule,
+						source: 'Rolling Thunder SQL lint',
+						severity:
+							issue.severity === 'error'
+								? monaco!.MarkerSeverity.Error
+								: monaco!.MarkerSeverity.Warning
+					};
+				})
+			);
+		}, 180);
+	}
 
-		for (let i = 0; i < sql.length; i++) {
-			const char = sql[i];
-			const nextChar = sql[i + 1] || '';
+	function formatEditor() {
+		if (!editor || !editorModel) return;
+		const selection = editor.getSelection();
+		const range = selection && !selection.isEmpty() ? selection : editorModel.getFullModelRange();
+		const source = editorModel.getValueInRange(range);
+		if (!source.trim()) return;
+		const formatted = formatSql(source, autocompleteMetadata.dialect, queryToolingStore.format);
+		editor.executeEdits('rollingthunder-format', [
+			{
+				range,
+				text: formatted,
+				forceMoveMarkers: true
+			}
+		]);
+		editor.pushUndoStop();
+		updateStatus('SQL formatted with the active dialect settings', 'success');
+	}
 
-			// Handle line comments
-			if (!inString && !inBlockComment && char === '-' && nextChar === '-') {
-				inLineComment = true;
-				current += char;
-				continue;
-			}
-			if (inLineComment && char === '\n') {
-				inLineComment = false;
-				current += char;
-				continue;
-			}
-
-			// Handle block comments
-			if (!inString && !inLineComment && char === '/' && nextChar === '*') {
-				inBlockComment = true;
-				current += char;
-				continue;
-			}
-			if (inBlockComment && char === '*' && nextChar === '/') {
-				inBlockComment = false;
-				current += char;
-				continue;
-			}
-
-			// Handle strings
-			if (!inLineComment && !inBlockComment && (char === "'" || char === '"')) {
-				if (!inString) {
-					inString = true;
-					stringChar = char;
-				} else if (char === stringChar) {
-					inString = false;
-				}
-			}
-
-			// Handle semicolons
-			if (!inString && !inLineComment && !inBlockComment && char === ';') {
-				if (current.trim()) {
-					statements.push(current);
-				}
-				current = '';
-				continue;
-			}
-
-			current += char;
+	function findIdentifierReferences() {
+		if (!editor || !editorModel) return;
+		const position = editor.getPosition();
+		if (!position) return;
+		const identifier = getSqlIdentifierAtOffset(
+			editorModel.getValue(),
+			editorModel.getOffsetAt(position)
+		);
+		if (!identifier) {
+			updateStatus('Place the cursor on an identifier first', 'warn');
+			return;
 		}
+		const start = editorModel.getPositionAt(identifier.start);
+		const end = editorModel.getPositionAt(identifier.end);
+		editor.setSelection({
+			startLineNumber: start.lineNumber,
+			startColumn: start.column,
+			endLineNumber: end.lineNumber,
+			endColumn: end.column
+		});
+		void editor.getAction('actions.find')?.run();
+		updateStatus(`Finding references to ${identifier.text}`, 'info');
+	}
 
-		// Don't forget the last statement
-		if (current.trim()) {
-			statements.push(current);
+	async function jumpToIdentifier() {
+		if (!editor || !editorModel) return;
+		const position = editor.getPosition();
+		if (!position) return;
+		const sql = editorModel.getValue();
+		const identifier = getSqlIdentifierAtOffset(sql, editorModel.getOffsetAt(position));
+		if (!identifier) {
+			updateStatus('Place the cursor on a table or column first', 'warn');
+			return;
 		}
+		await ensureColumnsForTables(tab.connectionId, parseTableReferences(sql));
+		const target = resolveSqlObjectTarget(
+			sql,
+			identifier,
+			getSqlAutocompleteMetadata(tab.connectionId)
+		);
+		if (!target) {
+			updateStatus(`No unique database object matches ${identifier.text}`, 'warn');
+			return;
+		}
+		const targetTabID = tabsStore.newTableTab(tab.connectionId, target.schema, target.table);
+		tabsStore.updateTab(targetTabID, { activeSubTab: 'structure' });
+		updateStatus(
+			`Opened ${target.schema}.${target.table}${target.column ? ` · ${target.column}` : ''}`,
+			'success'
+		);
+	}
 
-		return statements;
+	function selectResultSet(index: number) {
+		const result = queryResultSets[index];
+		if (!result) return;
+		activeResultSetIndex = index;
+		queryResults = result.rows || [];
+		queryResultTruncated = Boolean(result.truncated);
+		queryResultLimit = result.rowLimit || 0;
+		resultPage = 0;
+		selectedRows = [];
+		selectedRowIndexes = [];
+		executedQuery = result.statement;
+		const columnNames =
+			result.columns?.length > 0
+				? result.columns
+				: queryResults.length > 0
+					? Object.keys(queryResults[0])
+					: [];
+		resultColumns = columnNames.map((key) => ({
+			name: key,
+			data_type:
+				queryResults.length > 0 && typeof queryResults[0]?.[key] === 'number' ? 'number' : 'text',
+			nullable: true
+		})) as database.Structure[];
+	}
+
+	function prepareQueryAction(query: string, action: 'run' | 'explain') {
+		const names = extractQueryVariableNames(query);
+		if (names.length === 0) {
+			if (action === 'run') void executeQuery(query, false, []);
+			else void executeExplain(query, []);
+			return;
+		}
+		variableNames = names;
+		pendingVariableQuery = query;
+		pendingQueryAction = action;
+		variableDialogOpen = true;
+	}
+
+	async function submitQueryVariables(inputs: QueryVariableInput[]) {
+		const variables = inputs.map(
+			(input) =>
+				new database.QueryVariable({
+					name: input.name,
+					value: input.value,
+					type: input.type
+				})
+		);
+		variableDialogOpen = false;
+		const query = pendingVariableQuery;
+		const action = pendingQueryAction;
+		pendingVariableQuery = '';
+		pendingQueryAction = null;
+		if (action === 'run') await executeQuery(query, false, variables);
+		if (action === 'explain') await executeExplain(query, variables);
+	}
+
+	function closeVariableDialog() {
+		if (isRunning || explainLoading) return;
+		variableDialogOpen = false;
+		pendingVariableQuery = '';
+		pendingQueryAction = null;
+	}
+
+	async function handleExplain() {
+		if (!editor || isRunning || explainLoading) return;
+		const query = getQueryToExecute();
+		if (!query.trim()) {
+			updateStatus('Enter or select one statement to explain', 'warn');
+			return;
+		}
+		prepareQueryAction(query, 'explain');
+	}
+
+	async function executeExplain(query: string, variables: database.QueryVariable[]) {
+		explainLoading = true;
+		errorMessage = '';
+		errorCode = '';
+		errorHint = '';
+		updateStatus('Building a safe estimated query plan…', 'info');
+		try {
+			const response = await ExplainQuery(
+				new database.QueryRequest({
+					connectionId: tab.connectionId,
+					query,
+					variables
+				})
+			);
+			if (response.errors?.length) {
+				const serviceError = response.errors[0];
+				throw {
+					message: serviceError.detail,
+					code: serviceError.code,
+					hint: serviceError.hint
+				};
+			}
+			explainPlan = response.data || null;
+			if (!explainPlan) throw new Error('The driver returned no explain plan.');
+			updateStatus(
+				`${explainPlan.engine} plan ready · estimates only, query was not executed`,
+				'success'
+			);
+			addConsoleLog(`Explain plan ready: ${explainPlan.summary}`, 'info');
+		} catch (error: any) {
+			errorCode = error?.code || 'QUERY_FAILED';
+			errorMessage = error?.message || 'Could not build explain plan';
+			errorHint = error?.hint || '';
+			updateStatus(errorMessage, 'error');
+		} finally {
+			explainLoading = false;
+		}
 	}
 
 	function startQueryTimer() {
@@ -367,10 +575,14 @@
 			return;
 		}
 
-		await executeQuery(query, false);
+		prepareQueryAction(query, 'run');
 	}
 
-	async function executeQuery(query: string, allowUnfilteredMutation: boolean) {
+	async function executeQuery(
+		query: string,
+		allowUnfilteredMutation: boolean,
+		variables: database.QueryVariable[]
+	) {
 		if (isRunning) return;
 
 		const attemptID = crypto.randomUUID();
@@ -383,6 +595,9 @@
 		errorCode = '';
 		errorHint = '';
 		queryResults = [];
+		queryResultSets = [];
+		activeResultSetIndex = 0;
+		explainPlan = null;
 		queryResultTruncated = false;
 		queryResultLimit = 0;
 		resultPage = 0;
@@ -411,7 +626,8 @@
 					query,
 					attemptId: attemptID,
 					transactionId: transactionID || undefined,
-					allowUnfilteredMutation
+					allowUnfilteredMutation,
+					variables
 				})
 			);
 
@@ -422,6 +638,7 @@
 					!allowUnfilteredMutation
 				) {
 					unsafeQueryPending = query;
+					unsafeQueryVariables = variables;
 					unsafeMutationDetail = serviceError.detail;
 					updateStatus(serviceError.detail, 'warn');
 					addConsoleLog(`Safety check: ${serviceError.detail}`, 'warn');
@@ -434,19 +651,25 @@
 				};
 			}
 
-			queryResults = response.data?.rows || [];
-			queryResultTruncated = Boolean(response.data?.truncated);
-			queryResultLimit = response.data?.rowLimit || 0;
-
-			// Generate columns from first result row
-			if (queryResults.length > 0) {
-				const firstRow = queryResults[0];
-				resultColumns = Object.keys(firstRow).map((key) => ({
-					name: key,
-					data_type: typeof firstRow[key] === 'number' ? 'number' : 'text',
-					nullable: true
-				})) as database.Structure[];
-			}
+			const returnedSets = response.data?.resultSets || [];
+			queryResultSets =
+				returnedSets.length > 0
+					? returnedSets
+					: [
+							new database.QueryResultSet({
+								index: 0,
+								statement: query,
+								columns: response.data?.columns || [],
+								rows: response.data?.rows || [],
+								truncated: Boolean(response.data?.truncated),
+								rowLimit: response.data?.rowLimit || 0
+							})
+						];
+			let preferredSet = 0;
+			queryResultSets.forEach((result, index) => {
+				if (result.rows?.length > 0 || result.columns?.length > 0) preferredSet = index;
+			});
+			selectResultSet(preferredSet);
 
 			const executionTime = Date.now() - startTime;
 			if (queryResultTruncated) {
@@ -459,11 +682,30 @@
 					`Query returned more than ${limit.toLocaleString()} rows; only the first ${limit.toLocaleString()} are shown`,
 					'warn'
 				);
+			} else if (queryResultSets.length > 1) {
+				const totalRows = queryResultSets.reduce(
+					(total, result) => total + (result.rows?.length || 0),
+					0
+				);
+				updateStatus(
+					`${queryResultSets.length} statements completed · ${totalRows.toLocaleString()} loaded rows · ${executionTime}ms`,
+					'success'
+				);
+				addConsoleLog(
+					`✓ ${queryResultSets.length} statements completed in ${executionTime}ms`,
+					'info'
+				);
 			} else {
 				updateStatus(`Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
 				addConsoleLog(`✓ Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
 			}
-			addQueryToHistory(query, 'success', queryResults.length, undefined, executionTime);
+			addQueryToHistory(
+				query,
+				'success',
+				queryResultSets.reduce((total, result) => total + (result.rows?.length || 0), 0),
+				undefined,
+				executionTime
+			);
 		} catch (e: any) {
 			const executionTime = Date.now() - startTime;
 			errorCode = e?.code || 'QUERY_FAILED';
@@ -627,15 +869,18 @@
 
 	function cancelUnsafeMutation() {
 		unsafeQueryPending = '';
+		unsafeQueryVariables = [];
 		unsafeMutationDetail = '';
 		updateStatus('Unfiltered mutation was not executed', 'info');
 	}
 
 	function confirmUnsafeMutation() {
 		const query = unsafeQueryPending;
+		const variables = unsafeQueryVariables;
 		unsafeQueryPending = '';
+		unsafeQueryVariables = [];
 		unsafeMutationDetail = '';
-		if (query) void executeQuery(query, true);
+		if (query) void executeQuery(query, true, variables);
 	}
 
 	function openExportDialog(preferredScope?: 'selected') {
@@ -749,6 +994,26 @@
 		}
 	}
 
+	function loadSavedQuery(query: SavedQuery) {
+		editor?.setValue(query.query);
+		tabsStore.updateTab(tab.id, {
+			title: query.name,
+			sql: query.query,
+			savedQueryId: query.id
+		});
+		savedQueriesOpen = false;
+		updateStatus(`Loaded named query “${query.name}”`, 'success');
+	}
+
+	function handleNamedQuerySaved(query: SavedQuery) {
+		tabsStore.updateTab(tab.id, {
+			title: query.name,
+			savedQueryId: query.id,
+			sql: editor?.getValue() || query.query
+		});
+		updateStatus(`Saved named query “${query.name}”`, 'success');
+	}
+
 	function formatTimestamp(date: Date): string {
 		const now = new Date();
 		const diff = now.getTime() - date.getTime();
@@ -767,7 +1032,7 @@
 	}}
 />
 
-<div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)] p-3">
+<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)] p-3">
 	<!-- Toolbar -->
 	<div class="mb-2 flex min-h-8 shrink-0 items-center justify-between gap-3">
 		<div class="flex min-w-0 items-center gap-2">
@@ -812,6 +1077,46 @@
 			>
 				<History class="h-3 w-3" />
 				History
+			</button>
+			<button
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px]"
+				onclick={() => (savedQueriesOpen = true)}
+				title="Save or open a named query"
+			>
+				<Bookmark class="h-3 w-3" />
+				Saved
+			</button>
+			<button
+				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				onclick={formatEditor}
+				title="Format SQL (Shift+Alt+F)"
+				aria-label="Format SQL"
+			>
+				<WandSparkles class="h-3.5 w-3.5" />
+			</button>
+			<button
+				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				onclick={findIdentifierReferences}
+				title="Find identifier references (Shift+F12)"
+				aria-label="Find identifier references"
+			>
+				<ListChecks class="h-3.5 w-3.5" />
+			</button>
+			<button
+				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				onclick={() => void jumpToIdentifier()}
+				title="Jump to database object (F12)"
+				aria-label="Jump to database object"
+			>
+				<LocateFixed class="h-3.5 w-3.5" />
+			</button>
+			<button
+				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				onclick={() => (toolingSettingsOpen = true)}
+				title="SQL tooling settings"
+				aria-label="SQL tooling settings"
+			>
+				<Settings2 class="h-3.5 w-3.5" />
 			</button>
 			<span class="bg-border mx-0.5 h-4 w-px"></span>
 
@@ -876,6 +1181,20 @@
 					{/if}
 				</button>
 			{/if}
+
+			<button
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold disabled:pointer-events-none disabled:opacity-45"
+				onclick={() => void handleExplain()}
+				disabled={isRunning || explainLoading}
+				title="Build an estimated explain plan without executing the query"
+			>
+				{#if explainLoading}
+					<Loader2 class="h-3 w-3 animate-spin" />
+				{:else}
+					<ChartNoAxesCombined class="h-3 w-3" />
+				{/if}
+				Explain
+			</button>
 
 			{#if isRunning}
 				<button
@@ -995,8 +1314,8 @@
 	<div class="mt-3 flex min-h-0 flex-1 flex-col">
 		<div class="mb-2 flex h-6 items-center justify-between">
 			<h4 class="text-[11px] font-bold">
-				Results
-				{#if queryResults.length > 0}
+				{explainPlan ? 'Explain plan' : 'Results'}
+				{#if !explainPlan && queryResults.length > 0}
 					<span class="bg-muted text-muted-foreground ml-1 rounded px-1.5 py-0.5 text-[9px]"
 						>{queryResults.length.toLocaleString()}{queryResultTruncated ? '+' : ''} rows</span
 					>
@@ -1016,6 +1335,35 @@
 				</span>
 			{/if}
 		</div>
+
+		{#if !explainPlan && queryResultSets.length > 1}
+			<nav
+				class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto rounded-lg border bg-[var(--surface-sunken)] p-1"
+				aria-label="Query result sets"
+			>
+				{#each queryResultSets as result, index (`${result.index}-${index}`)}
+					<button
+						type="button"
+						class="flex h-7 min-w-24 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-left text-[8px] transition-colors {activeResultSetIndex ===
+						index
+							? 'text-foreground bg-[var(--surface-raised)] shadow-sm'
+							: 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => selectResultSet(index)}
+						title={result.statement}
+					>
+						<span
+							class="bg-muted flex h-4 min-w-4 items-center justify-center rounded px-1 font-bold"
+						>
+							{index + 1}
+						</span>
+						<span class="max-w-28 truncate font-mono">
+							{result.statement.trim().split(/\s+/).slice(0, 3).join(' ')}
+						</span>
+						<span class="ml-auto tabular-nums">{result.rows?.length || 0}</span>
+					</button>
+				{/each}
+			</nav>
+		{/if}
 
 		{#if errorMessage}
 			<div
@@ -1042,6 +1390,8 @@
 					{/if}
 				</div>
 			</div>
+		{:else if explainPlan}
+			<ExplainPlanViewer plan={explainPlan} />
 		{:else if queryResults.length > 0}
 			<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
 				{#if queryResultTruncated}
@@ -1178,4 +1528,29 @@
 	onClose={() => (exportDialogOpen = false)}
 	onCancelExport={cancelRunningExport}
 	onExport={handleExport}
+/>
+
+<QueryVariablesDialog
+	open={variableDialogOpen}
+	names={variableNames}
+	busy={isRunning || explainLoading}
+	actionLabel={pendingQueryAction === 'explain' ? 'Explain query' : 'Run query'}
+	onClose={closeVariableDialog}
+	onSubmit={submitQueryVariables}
+/>
+
+<QueryToolingSettings
+	open={toolingSettingsOpen}
+	onClose={() => (toolingSettingsOpen = false)}
+	onChanged={scheduleLint}
+/>
+
+<SavedQueriesDrawer
+	open={savedQueriesOpen}
+	currentSql={tab.sql || ''}
+	engine={autocompleteMetadata.dialect}
+	savedQueryId={tab.savedQueryId}
+	onClose={() => (savedQueriesOpen = false)}
+	onLoad={loadSavedQuery}
+	onSaved={handleNamedQuerySaved}
 />

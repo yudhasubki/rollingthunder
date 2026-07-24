@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { writable } from 'svelte/store';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import type { Tab } from '$lib/models/Tab';
 	import { createTabs, melt } from '@melt-ui/svelte';
@@ -104,11 +105,24 @@
 	let currentPage = $state(0);
 
 	// Melt-UI Tabs
+	const tableTabValueStore = writable(tab.activeSubTab || 'structure');
 	const {
 		elements: { root: tabsRoot, list: tabsList, trigger: tabTrigger, content: tabContent },
 		states: { value: tabValue }
 	} = createTabs({
-		defaultValue: 'structure'
+		value: tableTabValueStore,
+		autoSet: false,
+		defaultValue: tab.activeSubTab || 'structure',
+		onValueChange: ({ next }) => {
+			if (next === 'structure' || next === 'data' || next === 'ddl') {
+				tabsStore.updateTab(tab.id, { activeSubTab: next });
+			}
+			return next;
+		}
+	});
+
+	$effect(() => {
+		tableTabValueStore.set(tab.activeSubTab || 'structure');
 	});
 
 	// Filter management functions

@@ -44,6 +44,9 @@ type Service struct {
 	saveDialog          saveFileDialogFunc
 	sqliteOpenDialog    openFileDialogFunc
 	sqliteSaveDialog    saveFileDialogFunc
+	importOpenDialog    openFileDialogFunc
+	importFiles         map[string]importFileGrant
+	importFileMu        sync.RWMutex
 	exportJobs          map[string]*exportJob
 	exportMu            sync.RWMutex
 	newDriver           driverFactory
@@ -62,6 +65,8 @@ func NewService() *Service {
 		saveDialog:         defaultSaveFileDialog,
 		sqliteOpenDialog:   defaultOpenFileDialog,
 		sqliteSaveDialog:   defaultSaveFileDialog,
+		importOpenDialog:   defaultOpenFileDialog,
+		importFiles:        make(map[string]importFileGrant),
 		exportJobs:         make(map[string]*exportJob),
 		newDriver:          NewDriver,
 		connectionTimeout:  defaultConnectionTimeout,

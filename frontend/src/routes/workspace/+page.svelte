@@ -6,6 +6,8 @@
 	import SchemaDiagramContent from '$lib/components/SchemaDiagramContent.svelte';
 	import DatabaseObjectContent from '$lib/components/DatabaseObjectContent.svelte';
 	import ConnectionManagerModal from '$lib/components/ConnectionManagerModal.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import ImportDataDialog from '$lib/components/database/ImportDataDialog.svelte';
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import {
@@ -69,6 +71,8 @@
 	import ConnectionPanel from '$lib/components/layout/ConnectionPanel.svelte';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import { goto } from '$app/navigation';
+	import { commandDefinitions, matchesShortcut, type CommandID } from '$lib/commands/shortcuts';
+	import { shortcutStore } from '$lib/stores/shortcuts.svelte';
 
 	const tabs = $derived(tabsStore.tabs);
 	const allTabs = $derived(tabsStore.allTabs);
@@ -101,6 +105,8 @@
 	// Guard: redirect to login if no connections (after checking)
 	let hasCheckedConnections = $state(false);
 	let connectionManagerOpen = $state(false);
+	let commandPaletteOpen = $state(false);
+	let importDialogOpen = $state(false);
 	let tabStripElement = $state<HTMLDivElement | null>(null);
 	let reviewOpen = $state(false);
 	let reviewTab = $state<Tab | null>(null);
@@ -224,9 +230,27 @@
 		const handleOpenConnectionManager = () => {
 			connectionManagerOpen = true;
 		};
+		const handleOpenCommandPalette = () => {
+			commandPaletteOpen = true;
+		};
+		const handleOpenImportData = () => {
+			if (!activeConnectionId) {
+				updateStatus('Connect a database before importing data', 'warn');
+				return;
+			}
+			importDialogOpen = true;
+		};
 
 		// Keyboard shortcuts
 		function handleKeydown(e: KeyboardEvent) {
+			if (commandPaletteOpen) return;
+			for (const command of commandDefinitions) {
+				if (!matchesShortcut(e, shortcutStore.get(command.id))) continue;
+				e.preventDefault();
+				executeWorkspaceCommand(command.id);
+				return;
+			}
+
 			const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 			const modifier = isMac ? e.metaKey : e.ctrlKey;
 
@@ -255,12 +279,67 @@
 
 		document.addEventListener('keydown', handleKeydown);
 		window.addEventListener('open-connection-manager', handleOpenConnectionManager);
+		window.addEventListener('open-command-palette', handleOpenCommandPalette);
+		window.addEventListener('open-import-data', handleOpenImportData);
 
 		return () => {
 			document.removeEventListener('keydown', handleKeydown);
 			window.removeEventListener('open-connection-manager', handleOpenConnectionManager);
+			window.removeEventListener('open-command-palette', handleOpenCommandPalette);
+			window.removeEventListener('open-import-data', handleOpenImportData);
 		};
 	});
+
+	function cycleTab(direction: 1 | -1): void {
+		if (tabs.length < 2) return;
+		const currentIndex = tabs.findIndex((tab) => tab.id === activeTabId);
+		const nextIndex = (Math.max(currentIndex, 0) + direction + tabs.length) % tabs.length;
+		tabsStore.setActive(tabs[nextIndex].id);
+	}
+
+	function dispatchQueryCommand(command: CommandID): void {
+		if (activeTab?.kind !== 'query') {
+			updateStatus('Open a query tab to use this command', 'warn');
+			return;
+		}
+		window.dispatchEvent(
+			new CustomEvent('rollingthunder-query-command', {
+				detail: { tabId: activeTab.id, command }
+			})
+		);
+	}
+
+	function executeWorkspaceCommand(command: CommandID): void {
+		switch (command) {
+			case 'commandPalette':
+				commandPaletteOpen = true;
+				break;
+			case 'newQuery':
+				if (activeConnectionId) tabsStore.newQueryTab(activeConnectionId);
+				break;
+			case 'runQuery':
+			case 'formatQuery':
+			case 'explainQuery':
+			case 'saveQuery':
+				dispatchQueryCommand(command);
+				break;
+			case 'importData':
+				if (activeConnectionId) importDialogOpen = true;
+				break;
+			case 'nextTab':
+				cycleTab(1);
+				break;
+			case 'previousTab':
+				cycleTab(-1);
+				break;
+			case 'toggleConsole':
+				toggleConsole();
+				break;
+			case 'manageConnections':
+				connectionManagerOpen = true;
+				break;
+		}
+	}
 
 	function handleTableClick(schema: string, table: string) {
 		const connectionId = activeConnectionId;
@@ -276,6 +355,23 @@
 			tabsStore.newTableTab(connectionId, schema, table);
 		}
 		updateStatus('', 'info');
+	}
+
+	async function handleImportedData(schema: string, table: string): Promise<void> {
+		const connectionId = activeConnectionId;
+		if (!connectionId) return;
+		window.dispatchEvent(
+			new CustomEvent('database-objects-changed', {
+				detail: { connectionId, schema }
+			})
+		);
+		const tabId = tabsStore.newTableTab(connectionId, schema, table);
+		tabsStore.updateTab(tabId, {
+			activeSubTab: 'data',
+			revision: Date.now()
+		});
+		updateStatus(`Imported data into ${schema}.${table}`, 'success');
+		addConsoleLog(`Import committed: ${schema}.${table}`, 'success');
 	}
 
 	async function requestApplyChanges() {
@@ -470,6 +566,22 @@
 		onClose={() => (connectionManagerOpen = false)}
 		onConnected={() => connectionStore.refreshConnections()}
 	/>
+	<CommandPalette
+		open={commandPaletteOpen}
+		hasConnection={Boolean(activeConnectionId)}
+		activeTabKind={activeTab?.kind}
+		onClose={() => (commandPaletteOpen = false)}
+		onExecute={executeWorkspaceCommand}
+	/>
+	{#if activeConnectionId}
+		<ImportDataDialog
+			open={importDialogOpen}
+			connectionId={activeConnectionId}
+			initialSchema={activeTab?.schema}
+			onClose={() => (importDialogOpen = false)}
+			onImported={handleImportedData}
+		/>
+	{/if}
 
 	<!-- Main Content -->
 	<div class="flex min-h-0 flex-1 overflow-hidden">

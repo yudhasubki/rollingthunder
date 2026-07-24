@@ -5,6 +5,7 @@ import {
 } from '$lib/wailsjs/go/db/Service';
 import { tabsStore } from '$lib/stores/tabs.svelte';
 import { resetSchemaInfo } from '$lib/stores/schema.svelte';
+import { getConnectionWorkspaceKey } from '$lib/tabs/persistence';
 
 // Types
 export interface ConnectionInfo {
@@ -13,6 +14,7 @@ export interface ConnectionInfo {
 	driver: string;
 	database: string;
 	host: string;
+	profileId?: string;
 	color: string;
 	isActive: boolean;
 }
@@ -31,7 +33,12 @@ export async function refreshConnections() {
 		// Always update - use empty array if no data
 		connectionState.connections = res.data || [];
 		connectionState.activeConnection = connectionState.connections.find((c) => c.isActive) || null;
-		tabsStore.setActiveConnection(connectionState.activeConnection?.id ?? null);
+		tabsStore.setActiveConnection(
+			connectionState.activeConnection?.id ?? null,
+			connectionState.activeConnection
+				? getConnectionWorkspaceKey(connectionState.activeConnection)
+				: undefined
+		);
 		connectionState.isLoaded = true;
 	} catch (e) {
 		console.error('Failed to get active connections:', e);

@@ -638,14 +638,20 @@ func (p *Postgres) DeleteRow(table database.Table, primaryKey string, primaryVal
 
 type mappedRows interface {
 	Next() bool
+	Columns() ([]string, error)
 	MapScan(dest map[string]interface{}) error
 	Err() error
 }
 
 func collectQueryResults(rows mappedRows, maxRows int) (database.QueryResult, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return database.QueryResult{}, fmt.Errorf("read query result columns: %w", err)
+	}
 	result := database.QueryResult{
 		Rows:     make([]map[string]interface{}, 0),
 		RowLimit: maxRows,
+		Columns:  columns,
 	}
 
 	for rows.Next() {
@@ -681,7 +687,7 @@ func executePostgresQuery(
 	query string,
 	options database.QueryOptions,
 ) (database.QueryResult, error) {
-	rows, err := runner.QueryxContext(ctx, query)
+	rows, err := runner.QueryxContext(ctx, query, options.Args...)
 	if err != nil {
 		return database.QueryResult{}, err
 	}

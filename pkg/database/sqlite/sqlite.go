@@ -470,6 +470,7 @@ func requireOneSQLiteRow(result sql.Result, action string) error {
 
 type sqliteMappedRows interface {
 	Next() bool
+	Columns() ([]string, error)
 	MapScan(map[string]interface{}) error
 	Err() error
 }
@@ -478,9 +479,14 @@ func collectSQLiteQueryResults(
 	rows sqliteMappedRows,
 	maxRows int,
 ) (database.QueryResult, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return database.QueryResult{}, fmt.Errorf("read SQLite query columns: %w", err)
+	}
 	result := database.QueryResult{
 		Rows:     make([]map[string]interface{}, 0),
 		RowLimit: maxRows,
+		Columns:  columns,
 	}
 	for rows.Next() {
 		if maxRows > 0 && len(result.Rows) >= maxRows {
@@ -509,7 +515,7 @@ func executeSQLiteQuery(
 	query string,
 	options database.QueryOptions,
 ) (database.QueryResult, error) {
-	rows, err := runner.QueryxContext(ctx, query)
+	rows, err := runner.QueryxContext(ctx, query, options.Args...)
 	if err != nil {
 		return database.QueryResult{}, err
 	}
