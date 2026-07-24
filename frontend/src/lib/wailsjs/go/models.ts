@@ -18,6 +18,120 @@ export namespace database {
 	        this.encoding = source["encoding"];
 	    }
 	}
+	export class Dialect {
+	    name: string;
+	    identifierOpen: string;
+	    identifierClose: string;
+	    placeholderStyle: string;
+	    paginationStyle: string;
+	    supportsNullOrdering: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new Dialect(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.identifierOpen = source["identifierOpen"];
+	        this.identifierClose = source["identifierClose"];
+	        this.placeholderStyle = source["placeholderStyle"];
+	        this.paginationStyle = source["paginationStyle"];
+	        this.supportsNullOrdering = source["supportsNullOrdering"];
+	    }
+	}
+	export class Capabilities {
+	    engine: string;
+	    displayName: string;
+	    dialect: Dialect;
+	    schemas: boolean;
+	    databases: boolean;
+	    tables: boolean;
+	    views: boolean;
+	    materializedViews: boolean;
+	    functions: boolean;
+	    procedures: boolean;
+	    triggers: boolean;
+	    sequences: boolean;
+	    customTypes: boolean;
+	    domains: boolean;
+	    constraints: boolean;
+	    extensions: boolean;
+	    objectDefinitions: boolean;
+	    objectDependencies: boolean;
+	    manageViews: boolean;
+	    manageRoutines: boolean;
+	    manageTriggers: boolean;
+	    manageIndexes: boolean;
+	    alterTableStructure: boolean;
+	    explainPlans: boolean;
+	    transactions: boolean;
+	    transactionalDDL: boolean;
+	    atomicTableChanges: boolean;
+	    sqlInsertExport: boolean;
+	    fileDatabase: boolean;
+	    attachedDatabases: boolean;
+	    generatedColumns: boolean;
+	    upsert: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new Capabilities(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.engine = source["engine"];
+	        this.displayName = source["displayName"];
+	        this.dialect = this.convertValues(source["dialect"], Dialect);
+	        this.schemas = source["schemas"];
+	        this.databases = source["databases"];
+	        this.tables = source["tables"];
+	        this.views = source["views"];
+	        this.materializedViews = source["materializedViews"];
+	        this.functions = source["functions"];
+	        this.procedures = source["procedures"];
+	        this.triggers = source["triggers"];
+	        this.sequences = source["sequences"];
+	        this.customTypes = source["customTypes"];
+	        this.domains = source["domains"];
+	        this.constraints = source["constraints"];
+	        this.extensions = source["extensions"];
+	        this.objectDefinitions = source["objectDefinitions"];
+	        this.objectDependencies = source["objectDependencies"];
+	        this.manageViews = source["manageViews"];
+	        this.manageRoutines = source["manageRoutines"];
+	        this.manageTriggers = source["manageTriggers"];
+	        this.manageIndexes = source["manageIndexes"];
+	        this.alterTableStructure = source["alterTableStructure"];
+	        this.explainPlans = source["explainPlans"];
+	        this.transactions = source["transactions"];
+	        this.transactionalDDL = source["transactionalDDL"];
+	        this.atomicTableChanges = source["atomicTableChanges"];
+	        this.sqlInsertExport = source["sqlInsertExport"];
+	        this.fileDatabase = source["fileDatabase"];
+	        this.attachedDatabases = source["attachedDatabases"];
+	        this.generatedColumns = source["generatedColumns"];
+	        this.upsert = source["upsert"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ColumnDefinition {
 	    name: string;
 	    type: string;
@@ -90,6 +204,87 @@ export namespace database {
 	        this.description = source["description"];
 	    }
 	}
+	export class ObjectProperty {
+	    name: string;
+	    value: string;
+	    category?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectProperty(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.value = source["value"];
+	        this.category = source["category"];
+	    }
+	}
+	export class ObjectReference {
+	    id?: string;
+	    kind: string;
+	    schema?: string;
+	    name: string;
+	    signature?: string;
+	    parentSchema?: string;
+	    parentName?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectReference(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	        this.signature = source["signature"];
+	        this.parentSchema = source["parentSchema"];
+	        this.parentName = source["parentName"];
+	    }
+	}
+	export class DatabaseObject {
+	    reference: ObjectReference;
+	    displayName: string;
+	    description?: string;
+	    canOpenData: boolean;
+	    canManage: boolean;
+	    properties?: ObjectProperty[];
+
+	    static createFrom(source: any = {}) {
+	        return new DatabaseObject(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reference = this.convertValues(source["reference"], ObjectReference);
+	        this.displayName = source["displayName"];
+	        this.description = source["description"];
+	        this.canOpenData = source["canOpenData"];
+	        this.canManage = source["canManage"];
+	        this.properties = this.convertValues(source["properties"], ObjectProperty);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
 	export class SQLInsertOptions {
 	    batchSize: number;
 	    includeTransaction: boolean;
@@ -249,6 +444,142 @@ export namespace database {
 	    }
 	}
 	
+	export class ObjectDependency {
+	    reference: ObjectReference;
+	    description?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectDependency(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reference = this.convertValues(source["reference"], ObjectReference);
+	        this.description = source["description"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Structure {
+	    name: string;
+	    data_type: string;
+	    type_schema?: string;
+	    type_name?: string;
+	    is_enum?: boolean;
+	    length?: number;
+	    nullable: boolean;
+	    default?: string;
+	    is_primary?: boolean;
+	    is_primary_label?: string;
+	    is_unique?: boolean;
+	    is_autoinc?: boolean;
+	    foreign_key?: string;
+	    foreign_schema?: string;
+	    foreign_table?: string;
+	    foreign_column?: string;
+	    comment?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Structure(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.data_type = source["data_type"];
+	        this.type_schema = source["type_schema"];
+	        this.type_name = source["type_name"];
+	        this.is_enum = source["is_enum"];
+	        this.length = source["length"];
+	        this.nullable = source["nullable"];
+	        this.default = source["default"];
+	        this.is_primary = source["is_primary"];
+	        this.is_primary_label = source["is_primary_label"];
+	        this.is_unique = source["is_unique"];
+	        this.is_autoinc = source["is_autoinc"];
+	        this.foreign_key = source["foreign_key"];
+	        this.foreign_schema = source["foreign_schema"];
+	        this.foreign_table = source["foreign_table"];
+	        this.foreign_column = source["foreign_column"];
+	        this.comment = source["comment"];
+	    }
+	}
+	export class ObjectDetail {
+	    object: DatabaseObject;
+	    definition?: string;
+	    comment?: string;
+	    properties?: ObjectProperty[];
+	    columns?: Structure[];
+	    dependencies?: ObjectDependency[];
+	    dependents?: ObjectDependency[];
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectDetail(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.object = this.convertValues(source["object"], DatabaseObject);
+	        this.definition = source["definition"];
+	        this.comment = source["comment"];
+	        this.properties = this.convertValues(source["properties"], ObjectProperty);
+	        this.columns = this.convertValues(source["columns"], Structure);
+	        this.dependencies = this.convertValues(source["dependencies"], ObjectDependency);
+	        this.dependents = this.convertValues(source["dependents"], ObjectDependency);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ObjectFilter {
+	    schema?: string;
+	    kinds?: string[];
+	    search?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ObjectFilter(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.schema = source["schema"];
+	        this.kinds = source["kinds"];
+	        this.search = source["search"];
+	    }
+	}
+
+
 	export class QueryRequest {
 	    connectionId: string;
 	    query: string;
@@ -358,50 +689,7 @@ export namespace database {
 	        this.Nulls = source["Nulls"];
 	    }
 	}
-	export class Structure {
-	    name: string;
-	    data_type: string;
-	    type_schema?: string;
-	    type_name?: string;
-	    is_enum?: boolean;
-	    length?: number;
-	    nullable: boolean;
-	    default?: string;
-	    is_primary?: boolean;
-	    is_primary_label?: string;
-	    is_unique?: boolean;
-	    is_autoinc?: boolean;
-	    foreign_key?: string;
-	    foreign_schema?: string;
-	    foreign_table?: string;
-	    foreign_column?: string;
-	    comment?: string;
 	
-	    static createFrom(source: any = {}) {
-	        return new Structure(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
-	        this.data_type = source["data_type"];
-	        this.type_schema = source["type_schema"];
-	        this.type_name = source["type_name"];
-	        this.is_enum = source["is_enum"];
-	        this.length = source["length"];
-	        this.nullable = source["nullable"];
-	        this.default = source["default"];
-	        this.is_primary = source["is_primary"];
-	        this.is_primary_label = source["is_primary_label"];
-	        this.is_unique = source["is_unique"];
-	        this.is_autoinc = source["is_autoinc"];
-	        this.foreign_key = source["foreign_key"];
-	        this.foreign_schema = source["foreign_schema"];
-	        this.foreign_table = source["foreign_table"];
-	        this.foreign_column = source["foreign_column"];
-	        this.comment = source["comment"];
-	    }
-	}
 	export class Table {
 	    Schema: string;
 	    Name: string;
@@ -570,7 +858,6 @@ export namespace database {
 	}
 
 }
-
 export namespace db {
 	
 	export class ConnectRequest {
@@ -833,6 +1120,38 @@ export namespace response {
 		    return a;
 		}
 	}
+	export class BaseResponse___rollingthunder_pkg_database_DatabaseObject_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.DatabaseObject[];
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse___rollingthunder_pkg_database_DatabaseObject_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.DatabaseObject);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class BaseResponse___string_ {
 	    errors?: BaseErrorResponse[];
 	    data?: string[];
@@ -1025,6 +1344,38 @@ export namespace response {
 		    return a;
 		}
 	}
+	export class BaseResponse_rollingthunder_pkg_database_Capabilities_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.Capabilities;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_Capabilities_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.Capabilities);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class BaseResponse_rollingthunder_pkg_database_ExportProgress_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.ExportProgress;
@@ -1135,6 +1486,38 @@ export namespace response {
 	        this.data = this.convertValues(source["data"], database.Info);
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_ObjectDetail_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.ObjectDetail;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_ObjectDetail_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.ObjectDetail);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;

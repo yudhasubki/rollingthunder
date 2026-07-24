@@ -39,6 +39,40 @@ type routingTestDriver struct {
 	changeRequest database.TableChangeSet
 	changeResult  database.TableChangeResult
 	changeErr     error
+
+	objectFilter    database.ObjectFilter
+	objectReference database.ObjectReference
+	objects         []database.DatabaseObject
+	objectDetail    database.ObjectDetail
+	objectErr       error
+}
+
+func (d *routingTestDriver) Capabilities() database.Capabilities {
+	return database.Capabilities{
+		Engine:      "test",
+		DisplayName: "Test",
+		Dialect: database.Dialect{
+			Name:                 "test",
+			IdentifierOpen:       `"`,
+			IdentifierClose:      `"`,
+			PlaceholderStyle:     database.PlaceholderQuestion,
+			PaginationStyle:      database.PaginationLimitOffset,
+			SupportsNullOrdering: true,
+		},
+		Tables: true,
+	}
+}
+
+func (d *routingTestDriver) QuoteIdentifier(identifier string) string {
+	return `"` + identifier + `"`
+}
+
+func (d *routingTestDriver) Placeholder(int) string {
+	return "?"
+}
+
+func (d *routingTestDriver) PaginationClause(limit, offset int) (string, error) {
+	return "", nil
 }
 
 func (d *routingTestDriver) Connect(context.Context) error {
@@ -152,6 +186,26 @@ func (d *routingTestDriver) ApplyTableChanges(
 	defer d.mu.Unlock()
 	d.changeRequest = changes
 	return d.changeResult, d.changeErr
+}
+
+func (d *routingTestDriver) ListObjects(
+	_ context.Context,
+	filter database.ObjectFilter,
+) ([]database.DatabaseObject, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.objectFilter = filter
+	return d.objects, d.objectErr
+}
+
+func (d *routingTestDriver) GetObjectDetail(
+	_ context.Context,
+	reference database.ObjectReference,
+) (database.ObjectDetail, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.objectReference = reference
+	return d.objectDetail, d.objectErr
 }
 
 func (d *routingTestDriver) tableChangeRequest() database.TableChangeSet {

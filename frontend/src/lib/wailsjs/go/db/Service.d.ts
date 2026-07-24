@@ -39,6 +39,8 @@ export function ExportTableData(arg1:string,arg2:database.TableExportRequest):Pr
 
 export function GetActiveConnections():Promise<response.BaseResponse___rollingthunder_internal_db_ConnectionInfo_>;
 
+export function GetCapabilities(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_Capabilities_>;
+
 export function GetCollectionData(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;
 
 export function GetCollectionStructures(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Structures_>;
@@ -48,6 +50,10 @@ export function GetCollections(arg1:string,arg2:Array<string>):Promise<response.
 export function GetDataTypes(arg1:string):Promise<response.BaseResponse___rollingthunder_pkg_database_DataType_>;
 
 export function GetDatabaseInfo(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_Info_>;
+
+export function GetDatabaseObject(arg1:string,arg2:database.ObjectReference):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectDetail_>;
+
+export function GetDatabaseObjects(arg1:string,arg2:database.ObjectFilter):Promise<response.BaseResponse___rollingthunder_pkg_database_DatabaseObject_>;
 
 export function GetExportProgress(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_ExportProgress_>;
 

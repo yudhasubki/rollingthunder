@@ -70,6 +70,10 @@ export function GetActiveConnections() {
   return window['go']['db']['Service']['GetActiveConnections']();
 }
 
+export function GetCapabilities(arg1) {
+  return window['go']['db']['Service']['GetCapabilities'](arg1);
+}
+
 export function GetCollectionData(arg1, arg2) {
   return window['go']['db']['Service']['GetCollectionData'](arg1, arg2);
 }
@@ -88,6 +92,14 @@ export function GetDataTypes(arg1) {
 
 export function GetDatabaseInfo(arg1) {
   return window['go']['db']['Service']['GetDatabaseInfo'](arg1);
+}
+
+export function GetDatabaseObject(arg1, arg2) {
+  return window['go']['db']['Service']['GetDatabaseObject'](arg1, arg2);
+}
+
+export function GetDatabaseObjects(arg1, arg2) {
+  return window['go']['db']['Service']['GetDatabaseObjects'](arg1, arg2);
 }
 
 export function GetExportProgress(arg1) {

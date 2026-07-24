@@ -4,6 +4,7 @@
 	import AppStatusBar from '$lib/components/layout/AppStatusBar.svelte';
 	import CreateTableContent from '$lib/components/CreateTableContent.svelte';
 	import SchemaDiagramContent from '$lib/components/SchemaDiagramContent.svelte';
+	import DatabaseObjectContent from '$lib/components/DatabaseObjectContent.svelte';
 	import ConnectionManagerModal from '$lib/components/ConnectionManagerModal.svelte';
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
@@ -58,7 +59,8 @@
 		Pencil,
 		TriangleAlert,
 		ShieldCheck,
-		Loader2
+		Loader2,
+		Boxes
 	} from 'lucide-svelte';
 
 	// Import content components
@@ -504,6 +506,10 @@
 												<Workflow
 													class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0"
 												/>
+											{:else if tab.kind === 'databaseObject'}
+												<Boxes
+													class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0"
+												/>
 											{:else}
 												<Code class="group-data-[state=active]:text-primary h-3.5 w-3.5 shrink-0" />
 											{/if}
@@ -575,6 +581,8 @@
 									connectionId={tab.connectionId}
 									schema={tab.schema || 'public'}
 								/>
+							{:else if tab.kind === 'databaseObject'}
+								<DatabaseObjectContent {tab} />
 							{:else}
 								<div class="text-muted-foreground flex flex-1 items-center justify-center">
 									Select a table or create a new query

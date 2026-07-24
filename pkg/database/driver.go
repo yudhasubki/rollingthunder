@@ -6,6 +6,7 @@ import (
 )
 
 type Driver interface {
+	CapabilityDriver
 	Connect(ctx context.Context) error
 	Close() error
 	CountCollectionData(table Table) (int, error)

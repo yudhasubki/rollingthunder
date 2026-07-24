@@ -1,4 +1,5 @@
 import type { Tab } from '$lib/models/Tab';
+import type { database } from '$lib/wailsjs/go/models';
 import { clearTabState } from '$lib/stores/staged.svelte';
 import {
 	findTableTabForConnection,
@@ -176,6 +177,43 @@ export const tabsStore = {
 		});
 	},
 
+	newDatabaseObjectTab(connectionId: string, reference: database.ObjectReference) {
+		const workspace = getWorkspace(connectionId);
+		if (!workspace) throw new Error('Connection workspace is unavailable');
+
+		const existing = workspace.tabs.find(
+			(tab) =>
+				tab.kind === 'databaseObject' &&
+				((reference.id && tab.objectId === reference.id) ||
+					(!reference.id &&
+						tab.objectKind === reference.kind &&
+						tab.schema === reference.schema &&
+						tab.objectName === reference.name &&
+						tab.objectSignature === reference.signature))
+		);
+		if (existing) {
+			workspace.activeTabId = existing.id;
+			return existing.id;
+		}
+
+		const signature = reference.signature ? `(${reference.signature})` : '';
+		const id = crypto.randomUUID();
+		return appendTab(connectionId, {
+			id,
+			connectionId,
+			title: `${reference.name}${signature}`,
+			kind: 'databaseObject',
+			schema: reference.schema,
+			objectId: reference.id,
+			objectKind: reference.kind,
+			objectName: reference.name,
+			objectSignature: reference.signature,
+			parentSchema: reference.parentSchema,
+			parentName: reference.parentName,
+			level: 'info'
+		});
+	},
+
 	closeTab(id: string) {
 		const workspace = findWorkspaceForTab(state.workspaces, id);
 		if (!workspace) return;
@@ -214,6 +252,7 @@ export const {
 	newQueryTabWithContent,
 	newTableTab,
 	newSchemaDiagramTab,
+	newDatabaseObjectTab,
 	closeTab,
 	setActive,
 	updateTab,

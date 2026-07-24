@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { writable } from 'svelte/store';
-	import { GetSchemas, GetCollections, DropTable, TruncateTable } from '$lib/wailsjs/go/db/Service';
+	import {
+		GetCapabilities,
+		GetSchemas,
+		GetCollections,
+		GetDatabaseObjects,
+		DropTable,
+		TruncateTable
+	} from '$lib/wailsjs/go/db/Service';
 	import { database } from '$lib/wailsjs/go/models';
 	import {
 		ChevronDown,
@@ -18,7 +25,18 @@
 		History,
 		Clock,
 		ArrowUpRight,
-		Workflow
+		Workflow,
+		Boxes,
+		Braces,
+		Copy,
+		FileCode2,
+		KeyRound,
+		Layers3,
+		ListOrdered,
+		ListTree,
+		PanelsTopLeft,
+		Puzzle,
+		Zap
 	} from 'lucide-svelte';
 	import { createDropdownMenu, createDialog, melt } from '@melt-ui/svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
@@ -36,6 +54,14 @@
 	} from '$lib/stores/sidebar.svelte';
 	import { getContextMenuPosition } from '$lib/utils/contextMenu';
 	import { fly } from 'svelte/transition';
+	import { ClipboardSetText } from '$lib/wailsjs/runtime/runtime';
+	import {
+		countGroupedObjects,
+		databaseObjectKey,
+		databaseObjectQualifiedName,
+		groupDatabaseObjects
+	} from '$lib/database/objects';
+	import { createServiceError } from '$lib/errors/service';
 
 	interface Props {
 		connectionId: string;
@@ -47,11 +73,26 @@
 	let schemas: string[] = $state([]);
 	let selectedSchema = $state<string>('');
 	let tables = $state<string[]>([]);
+	let objects = $state<database.DatabaseObject[]>([]);
+	let capabilities = $state<database.Capabilities | null>(null);
 	let loading = $state(false);
 	let loadingTables = $state(false);
 	let selectedItem = $state<string | null>(null);
 	let searchQuery = $state('');
 	let historyExpanded = $state(true);
+	let expandedGroups = $state<Record<string, boolean>>({
+		tables: true,
+		views: true,
+		'materialized-views': true,
+		functions: false,
+		procedures: false,
+		triggers: false,
+		sequences: false,
+		types: false,
+		constraints: false,
+		extensions: false,
+		indexes: false
+	});
 
 	// Schema selector dropdown
 	const schemaOpenStore = writable(false);
@@ -71,13 +112,14 @@
 		positioning: { placement: 'bottom-end' }
 	});
 
-	// Filtered tables based on search
-	const filteredTables = $derived(
-		searchQuery ? tables.filter((t) => t.toLowerCase().includes(searchQuery.toLowerCase())) : tables
-	);
+	const objectGroups = $derived(groupDatabaseObjects(objects, searchQuery));
+	const visibleObjectCount = $derived(countGroupedObjects(objectGroups));
 
 	// Context menu state
-	let contextMenuTable = $state<string | null>(null);
+	let contextMenuObject = $state<database.DatabaseObject | null>(null);
+	const contextMenuTable = $derived(
+		contextMenuObject?.reference.kind === 'table' ? contextMenuObject.reference.name : null
+	);
 	let contextMenuPos = $state({ x: 0, y: 0 });
 	let showContextMenu = $state(false);
 
@@ -163,10 +205,27 @@
 		setSidebarAddTable((tableName: string) => {
 			if (!tables.includes(tableName)) {
 				tables = [...tables, tableName].sort((a, b) => a.localeCompare(b));
+				objects = [
+					...objects,
+					new database.DatabaseObject({
+						reference: new database.ObjectReference({
+							kind: 'table',
+							schema: selectedSchema,
+							name: tableName
+						}),
+						displayName: tableName,
+						canOpenData: true,
+						canManage: true,
+						properties: []
+					})
+				];
 			}
 		});
 		setSidebarRemoveTable((tableName: string) => {
 			tables = tables.filter((t) => t !== tableName);
+			objects = objects.filter(
+				(object) => object.reference.kind !== 'table' || object.reference.name !== tableName
+			);
 		});
 
 		// Load initial data
@@ -191,11 +250,27 @@
 	async function loadSchemas() {
 		loading = true;
 		try {
-			const response = await GetSchemas(connectionId);
-			schemas = response.data || [];
+			const [capabilityResponse, schemaResponse] = await Promise.all([
+				GetCapabilities(connectionId),
+				GetSchemas(connectionId)
+			]);
+			if (capabilityResponse.errors?.length) {
+				throw createServiceError(
+					capabilityResponse.errors[0],
+					'Could not load driver capabilities'
+				);
+			}
+			if (schemaResponse.errors?.length) {
+				throw createServiceError(schemaResponse.errors[0], 'Could not load namespaces');
+			}
+			capabilities = capabilityResponse.data || null;
+			schemas = schemaResponse.data || [];
 			// Auto-select first schema
 			if (schemas.length > 0 && !selectedSchema) {
-				selectedSchema = schemas[0];
+				selectedSchema =
+					schemas.find((schema) => schema === 'public') ||
+					schemas.find((schema) => schema === 'main') ||
+					schemas[0];
 				await loadTables();
 			}
 		} catch (e: any) {
@@ -209,10 +284,51 @@
 		if (!selectedSchema) return;
 		loadingTables = true;
 		try {
-			const response = await GetCollections(connectionId, [selectedSchema]);
-			tables = (response.data || []).sort((a, b) => a.localeCompare(b));
+			const response = await GetDatabaseObjects(
+				connectionId,
+				new database.ObjectFilter({
+					schema: selectedSchema,
+					kinds: [],
+					search: ''
+				})
+			);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not load database objects');
+			}
+			objects = response.data || [];
+			tables = objects
+				.filter((object) => object.reference.kind === 'table')
+				.map((object) => object.reference.name)
+				.sort((left, right) => left.localeCompare(right));
 		} catch (e: any) {
-			updateStatus(e?.message ?? 'Failed to load tables', 'error');
+			// A legacy or restricted driver can still expose its tables even when
+			// richer object metadata is unavailable.
+			try {
+				const fallback = await GetCollections(connectionId, [selectedSchema]);
+				if (fallback.errors?.length) {
+					throw createServiceError(fallback.errors[0], 'Could not load tables');
+				}
+				tables = (fallback.data || []).sort((left, right) => left.localeCompare(right));
+				objects = tables.map(
+					(table) =>
+						new database.DatabaseObject({
+							reference: new database.ObjectReference({
+								kind: 'table',
+								schema: selectedSchema,
+								name: table
+							}),
+							displayName: table,
+							canOpenData: true,
+							canManage: false,
+							properties: []
+						})
+				);
+				updateStatus(`${e?.message || 'Object metadata unavailable'} Showing tables only.`, 'warn');
+			} catch (fallbackError: any) {
+				objects = [];
+				tables = [];
+				updateStatus(fallbackError?.message ?? 'Failed to load database objects', 'error');
+			}
 		} finally {
 			loadingTables = false;
 		}
@@ -225,9 +341,43 @@
 	}
 
 	function handleTableClick(table: string) {
-		selectedItem = `${selectedSchema}.${table}`;
+		const object = objects.find(
+			(candidate) => candidate.reference.kind === 'table' && candidate.reference.name === table
+		);
+		selectedItem = object
+			? databaseObjectKey(object.reference)
+			: `table:${selectedSchema}:${table}`;
 		onTableClick(selectedSchema, table);
 		updateStatus('', 'info');
+	}
+
+	function handleObjectClick(object: database.DatabaseObject) {
+		selectedItem = databaseObjectKey(object.reference);
+		if (object.reference.kind === 'table') {
+			onTableClick(object.reference.schema || selectedSchema, object.reference.name);
+		} else {
+			tabsStore.newDatabaseObjectTab(connectionId, object.reference);
+		}
+		updateStatus('', 'info');
+	}
+
+	function toggleObjectGroup(groupId: string) {
+		expandedGroups[groupId] = !expandedGroups[groupId];
+	}
+
+	function isObjectGroupExpanded(groupId: string): boolean {
+		return Boolean(searchQuery.trim()) || expandedGroups[groupId] !== false;
+	}
+
+	function objectSecondaryLabel(object: database.DatabaseObject): string {
+		const reference = object.reference;
+		if (reference.parentName) {
+			return reference.parentSchema
+				? `${reference.parentSchema}.${reference.parentName}`
+				: reference.parentName;
+		}
+		if (reference.signature) return reference.signature;
+		return object.description || '';
 	}
 
 	async function refresh() {
@@ -235,6 +385,9 @@
 		loading = true;
 		try {
 			const response = await GetSchemas(connectionId);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not refresh namespaces');
+			}
 			schemas = response.data || [];
 			// Keep the current schema if it still exists, otherwise select first
 			if (selectedSchema && schemas.includes(selectedSchema)) {
@@ -244,6 +397,7 @@
 				await loadTables();
 			} else {
 				tables = [];
+				objects = [];
 			}
 		} catch (e: any) {
 			updateStatus(e?.message ?? 'Failed to refresh', 'error');
@@ -275,16 +429,16 @@
 		updateStatus(`Opening schema diagram for ${selectedSchema}…`, 'info');
 	}
 
-	function handleContextMenu(e: MouseEvent, table: string) {
+	function handleContextMenu(e: MouseEvent, object: database.DatabaseObject) {
 		e.preventDefault();
-		contextMenuTable = table;
-		contextMenuPos = getContextMenuPosition(e, 236, 230);
+		contextMenuObject = object;
+		contextMenuPos = getContextMenuPosition(e, 248, object.reference.kind === 'table' ? 318 : 224);
 		showContextMenu = true;
 	}
 
 	function closeContextMenu() {
 		showContextMenu = false;
-		contextMenuTable = null;
+		contextMenuObject = null;
 	}
 
 	function handleDropTable() {
@@ -297,11 +451,21 @@
 		openConfirmDialog('truncate', contextMenuTable);
 	}
 
-	function openContextTable() {
-		if (!contextMenuTable) return;
-		const table = contextMenuTable;
+	function openContextObject() {
+		if (!contextMenuObject) return;
+		const object = contextMenuObject;
 		closeContextMenu();
-		handleTableClick(table);
+		handleObjectClick(object);
+	}
+
+	async function copyContextName(qualified = false) {
+		if (!contextMenuObject) return;
+		const value = qualified
+			? databaseObjectQualifiedName(contextMenuObject.reference)
+			: contextMenuObject.reference.name;
+		await ClipboardSetText(value);
+		updateStatus(`Copied ${qualified ? 'qualified ' : ''}object name`, 'success');
+		closeContextMenu();
 	}
 
 	function openQueryFromHistory(item: QueryHistoryItem) {
@@ -331,7 +495,7 @@
 			<div class="min-w-0">
 				<div class="truncate text-xs font-bold">Database explorer</div>
 				<div class="text-muted-foreground truncate text-[9px]">
-					{selectedSchema || 'Select a schema'}
+					{capabilities?.displayName || 'Database'} · {selectedSchema || 'Select a namespace'}
 				</div>
 			</div>
 		</div>
@@ -414,68 +578,145 @@
 			<input
 				type="text"
 				class="rt-input placeholder:text-muted-foreground h-8 w-full pr-2 pl-8 text-xs"
-				placeholder="Filter tables"
+				placeholder="Filter database objects"
 				bind:value={searchQuery}
 			/>
 		</div>
 		<span
 			class="text-muted-foreground flex h-8 min-w-8 items-center justify-center rounded-md border bg-[var(--surface-sunken)] px-1.5 text-[10px] font-semibold"
-			title="Visible tables"
+			title="Visible database objects"
 		>
-			{filteredTables.length}
+			{visibleObjectCount}
 		</span>
 	</div>
 
-	<div class="min-h-0 flex-1 overflow-auto px-2 py-2">
-		<div class="mb-1.5 flex items-center justify-between px-1">
-			<span class="text-muted-foreground text-[9px] font-bold tracking-[0.13em] uppercase">
-				Tables
-			</span>
-			<span class="text-muted-foreground text-[9px]">Right-click for actions</span>
-		</div>
-
+	<div class="min-h-0 flex-1 overflow-auto px-2 py-1.5">
 		{#if loadingTables}
 			<div class="flex flex-col items-center justify-center py-10">
 				<div
 					class="border-primary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent"
 				></div>
-				<span class="text-muted-foreground mt-2 text-[11px]">Loading tables…</span>
+				<span class="text-muted-foreground mt-2 text-[11px]">Loading database objects…</span>
+				<span class="text-muted-foreground mt-0.5 text-[9px]">{selectedSchema}</span>
 			</div>
-		{:else if filteredTables.length === 0}
+		{:else if objectGroups.length === 0}
 			<div
 				class="text-muted-foreground mx-1 flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center"
 			>
 				<span class="bg-muted mb-2 flex h-9 w-9 items-center justify-center rounded-lg">
-					<Table2 class="h-4 w-4" />
+					<Boxes class="h-4 w-4" />
 				</span>
-				<p class="text-xs font-medium">{searchQuery ? 'No matching tables' : 'No tables yet'}</p>
+				<p class="text-xs font-medium">
+					{searchQuery ? 'No matching objects' : 'No database objects'}
+				</p>
+				<p class="mt-1 max-w-44 text-[9px]">
+					{searchQuery ? 'Try a different name or type.' : 'This namespace is empty.'}
+				</p>
 			</div>
 		{:else}
-			<div class="space-y-0.5">
-				{#each filteredTables as table (table)}
-					<button
-						type="button"
-						class="group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition-colors {selectedItem ===
-						`${selectedSchema}.${table}`
-							? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold'
-							: 'text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]'}"
-						onclick={() => handleTableClick(table)}
-						oncontextmenu={(e) => handleContextMenu(e, table)}
-					>
-						{#if selectedItem === `${selectedSchema}.${table}`}
-							<span class="bg-primary absolute left-0 h-4 w-0.5 rounded-r-full"></span>
-						{/if}
-						<span
-							class="flex h-5 w-5 shrink-0 items-center justify-center rounded border bg-[var(--surface-raised)]"
+			<div class="space-y-1">
+				{#each objectGroups as group (group.id)}
+					<section class="overflow-hidden rounded-md">
+						<button
+							type="button"
+							class="text-muted-foreground hover:text-foreground flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-left transition-colors hover:bg-[var(--surface-hover)]"
+							onclick={() => toggleObjectGroup(group.id)}
+							aria-expanded={isObjectGroupExpanded(group.id)}
 						>
-							<Table2
-								class="h-3 w-3 {selectedItem === `${selectedSchema}.${table}`
-									? 'text-primary'
-									: ''}"
-							/>
-						</span>
-						<span class="truncate">{table}</span>
-					</button>
+							{#if isObjectGroupExpanded(group.id)}
+								<ChevronDown class="h-3 w-3 shrink-0" />
+							{:else}
+								<ChevronRight class="h-3 w-3 shrink-0" />
+							{/if}
+							{#if group.id === 'tables'}
+								<Table2 class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'views'}
+								<PanelsTopLeft class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'materialized-views'}
+								<Layers3 class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'functions' || group.id === 'procedures'}
+								<FileCode2 class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'triggers'}
+								<Zap class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'sequences'}
+								<ListOrdered class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'types'}
+								<Braces class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'constraints'}
+								<KeyRound class="h-3.5 w-3.5 shrink-0" />
+							{:else if group.id === 'extensions'}
+								<Puzzle class="h-3.5 w-3.5 shrink-0" />
+							{:else}
+								<ListTree class="h-3.5 w-3.5 shrink-0" />
+							{/if}
+							<span
+								class="min-w-0 flex-1 truncate text-[9px] font-bold tracking-[0.09em] uppercase"
+							>
+								{group.label}
+							</span>
+							<span class="text-[9px] tabular-nums">{group.objects.length}</span>
+						</button>
+
+						{#if isObjectGroupExpanded(group.id)}
+							<div class="mt-0.5 space-y-px pl-3">
+								{#each group.objects as object (databaseObjectKey(object.reference))}
+									{@const objectKey = databaseObjectKey(object.reference)}
+									{@const secondary = objectSecondaryLabel(object)}
+									<button
+										type="button"
+										class="group relative flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left transition-colors {selectedItem ===
+										objectKey
+											? 'bg-sidebar-accent text-sidebar-accent-foreground'
+											: 'text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]'}"
+										onclick={() => handleObjectClick(object)}
+										oncontextmenu={(event) => handleContextMenu(event, object)}
+										title={databaseObjectQualifiedName(object.reference)}
+									>
+										{#if selectedItem === objectKey}
+											<span
+												class="bg-primary absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-r-full"
+											></span>
+										{/if}
+										<span
+											class="flex h-5 w-5 shrink-0 items-center justify-center rounded border bg-[var(--surface-raised)]"
+										>
+											{#if object.reference.kind === 'table'}
+												<Table2 class="h-3 w-3" />
+											{:else if object.reference.kind === 'view'}
+												<PanelsTopLeft class="h-3 w-3" />
+											{:else if object.reference.kind === 'materialized_view'}
+												<Layers3 class="h-3 w-3" />
+											{:else if object.reference.kind === 'function' || object.reference.kind === 'procedure'}
+												<FileCode2 class="h-3 w-3" />
+											{:else if object.reference.kind === 'trigger'}
+												<Zap class="h-3 w-3" />
+											{:else if object.reference.kind === 'sequence'}
+												<ListOrdered class="h-3 w-3" />
+											{:else if object.reference.kind === 'type' || object.reference.kind === 'enum' || object.reference.kind === 'domain'}
+												<Braces class="h-3 w-3" />
+											{:else if object.reference.kind === 'constraint'}
+												<KeyRound class="h-3 w-3" />
+											{:else if object.reference.kind === 'extension'}
+												<Puzzle class="h-3 w-3" />
+											{:else}
+												<ListTree class="h-3 w-3" />
+											{/if}
+										</span>
+										<span class="min-w-0 flex-1">
+											<span class="block truncate text-[10px] font-medium"
+												>{object.displayName}</span
+											>
+											{#if secondary}
+												<span class="text-muted-foreground block truncate text-[8px]"
+													>{secondary}</span
+												>
+											{/if}
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</section>
 				{/each}
 			</div>
 		{/if}
@@ -567,7 +808,7 @@
 			</div>
 			<ChevronDown class="text-muted-foreground h-3.5 w-3.5 shrink-0" />
 		</button>
-		<span class="text-muted-foreground shrink-0 text-[9px]">{tables.length} tables</span>
+		<span class="text-muted-foreground shrink-0 text-[9px]">{objects.length} objects</span>
 
 		{#if $schemaOpen}
 			<button
@@ -605,7 +846,7 @@
 		{/if}
 	</div>
 
-	{#if showContextMenu && contextMenuTable}
+	{#if showContextMenu && contextMenuObject}
 		<button
 			type="button"
 			class="fixed inset-0 z-40 cursor-default"
@@ -617,55 +858,103 @@
 			style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;"
 			transition:fly={{ duration: 100, y: -5 }}
 			role="menu"
-			data-context-menu="table"
+			data-context-menu="database-object"
 		>
 			<div class="rt-context-header">
 				<span class="rt-context-header-icon">
-					<Table2 class="h-3.5 w-3.5" />
+					{#if contextMenuObject.reference.kind === 'table'}
+						<Table2 class="h-3.5 w-3.5" />
+					{:else}
+						<Boxes class="h-3.5 w-3.5" />
+					{/if}
 				</span>
 				<span class="min-w-0">
-					<span class="rt-context-title">{contextMenuTable}</span>
-					<span class="rt-context-meta">{selectedSchema} · table actions</span>
+					<span class="rt-context-title">{contextMenuObject.displayName}</span>
+					<span class="rt-context-meta"
+						>{contextMenuObject.reference.schema || selectedSchema} · {contextMenuObject.reference.kind.replaceAll(
+							'_',
+							' '
+						)}</span
+					>
 				</span>
 			</div>
-			<button type="button" class="rt-context-item" onclick={openContextTable} role="menuitem">
+			<button type="button" class="rt-context-item" onclick={openContextObject} role="menuitem">
 				<span class="rt-context-item-icon">
 					<ArrowUpRight class="h-3.5 w-3.5" />
 				</span>
 				<span>
-					<span class="rt-context-label">Open table</span>
-					<span class="rt-context-meta">Browse structure and data</span>
+					<span class="rt-context-label">
+						{contextMenuObject.reference.kind === 'table' ? 'Open table' : 'Inspect object'}
+					</span>
+					<span class="rt-context-meta">
+						{contextMenuObject.reference.kind === 'table'
+							? 'Browse structure and data'
+							: 'View definition and relationships'}
+					</span>
 				</span>
 			</button>
 			<div class="rt-context-divider"></div>
 			<button
 				type="button"
-				class="rt-context-item rt-context-item--warning"
-				onclick={handleTruncateTable}
+				class="rt-context-item"
+				onclick={() => void copyContextName(false)}
 				role="menuitem"
 			>
 				<span class="rt-context-item-icon">
-					<Eraser class="h-3.5 w-3.5" />
+					<Copy class="h-3.5 w-3.5" />
 				</span>
 				<span>
-					<span class="rt-context-label">Clear all rows</span>
-					<span class="rt-context-meta">Keep the table structure</span>
+					<span class="rt-context-label">Copy name</span>
+					<span class="rt-context-meta">{contextMenuObject.reference.name}</span>
 				</span>
 			</button>
 			<button
 				type="button"
-				class="rt-context-item rt-context-item--danger"
-				onclick={handleDropTable}
+				class="rt-context-item"
+				onclick={() => void copyContextName(true)}
 				role="menuitem"
 			>
 				<span class="rt-context-item-icon">
-					<Trash2 class="h-3.5 w-3.5" />
+					<Copy class="h-3.5 w-3.5" />
 				</span>
 				<span>
-					<span class="rt-context-label">Delete table</span>
-					<span class="rt-context-meta">Remove structure and data</span>
+					<span class="rt-context-label">Copy qualified name</span>
+					<span class="rt-context-meta">
+						{databaseObjectQualifiedName(contextMenuObject.reference)}
+					</span>
 				</span>
 			</button>
+			{#if contextMenuObject.reference.kind === 'table'}
+				<div class="rt-context-divider"></div>
+				<button
+					type="button"
+					class="rt-context-item rt-context-item--warning"
+					onclick={handleTruncateTable}
+					role="menuitem"
+				>
+					<span class="rt-context-item-icon">
+						<Eraser class="h-3.5 w-3.5" />
+					</span>
+					<span>
+						<span class="rt-context-label">Clear all rows</span>
+						<span class="rt-context-meta">Keep the table structure</span>
+					</span>
+				</button>
+				<button
+					type="button"
+					class="rt-context-item rt-context-item--danger"
+					onclick={handleDropTable}
+					role="menuitem"
+				>
+					<span class="rt-context-item-icon">
+						<Trash2 class="h-3.5 w-3.5" />
+					</span>
+					<span>
+						<span class="rt-context-label">Delete table</span>
+						<span class="rt-context-meta">Remove structure and data</span>
+					</span>
+				</button>
+			{/if}
 		</div>
 	{/if}
 </aside>
