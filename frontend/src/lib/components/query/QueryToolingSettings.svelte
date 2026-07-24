@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Settings2, X } from 'lucide-svelte';
 	import { queryToolingStore } from '$lib/stores/queryTooling.svelte';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -25,6 +26,7 @@
 			aria-label="Close SQL tooling settings"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative w-full max-w-md overflow-hidden rounded-xl"
 			role="dialog"
 			aria-modal="true"

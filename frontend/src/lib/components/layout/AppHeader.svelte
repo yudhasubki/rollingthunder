@@ -10,15 +10,21 @@
 		Plug,
 		Settings2,
 		Unplug,
-		Search
+		Search,
+		HeartPulse,
+		RefreshCw,
+		ShieldCheck
 	} from 'lucide-svelte';
 	import { createDropdownMenu, melt } from '@melt-ui/svelte';
 	import { onMount } from 'svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { fly } from 'svelte/transition';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
+	import { CheckConnection, ReconnectConnection } from '$lib/wailsjs/go/db/Service';
+	import { updateStatus } from '$lib/stores/status.svelte';
 
 	let theme: 'light' | 'dark' | 'system' = $state('system');
+	let healthBusy = $state(false);
 
 	// Create melt-ui dropdown menu for theme
 	const {
@@ -46,7 +52,11 @@
 			theme = stored;
 		}
 		// Refresh connections on mount
-		connectionStore.refreshConnections();
+		void connectionStore.refreshConnections();
+		const healthRefreshTimer = globalThis.setInterval(() => {
+			void connectionStore.refreshConnections();
+		}, 15_000);
+		return () => globalThis.clearInterval(healthRefreshTimer);
 	});
 
 	function setTheme(newTheme: 'light' | 'dark' | 'system') {
@@ -100,9 +110,75 @@
 		window.dispatchEvent(new CustomEvent('open-command-palette'));
 	}
 
+	function openDiagnostics() {
+		window.dispatchEvent(new CustomEvent('open-diagnostics'));
+	}
+
 	function connectionEndpoint(connection: NonNullable<typeof connectionStore.activeConnection>) {
 		if (connection.driver === 'sqlite') return connection.database;
 		return `${connection.database} · ${connection.host}`;
+	}
+
+	function healthColor(state?: string): string {
+		switch (state) {
+			case 'healthy':
+				return 'bg-emerald-500';
+			case 'degraded':
+				return 'bg-red-500';
+			case 'reconnecting':
+				return 'bg-amber-500';
+			default:
+				return 'bg-slate-400';
+		}
+	}
+
+	function healthLabel(state?: string): string {
+		switch (state) {
+			case 'healthy':
+				return 'Healthy';
+			case 'degraded':
+				return 'Needs attention';
+			case 'reconnecting':
+				return 'Reconnecting';
+			default:
+				return 'Not checked';
+		}
+	}
+
+	async function checkActiveConnection() {
+		const connection = connectionStore.activeConnection;
+		if (!connection || healthBusy) return;
+		healthBusy = true;
+		try {
+			const response = await CheckConnection(connection.id);
+			await connectionStore.refreshConnections();
+			if (response.errors?.length) {
+				updateStatus(response.errors[0].detail, 'error');
+			} else {
+				updateStatus(`Connection healthy · ${response.data?.latencyMs || 0}ms`, 'success');
+			}
+		} finally {
+			healthBusy = false;
+		}
+	}
+
+	async function reconnectActiveConnection() {
+		const connection = connectionStore.activeConnection;
+		if (!connection || healthBusy) return;
+		healthBusy = true;
+		updateStatus(`Reconnecting ${connection.name || connection.database} safely…`, 'info');
+		try {
+			const response = await ReconnectConnection(connection.id, crypto.randomUUID());
+			await connectionStore.refreshConnections();
+			if (response.errors?.length) {
+				updateStatus(`${response.errors[0].detail} The previous connection was kept.`, 'error');
+			} else {
+				window.dispatchEvent(new CustomEvent('connection-switched'));
+				updateStatus('Replacement connection is healthy and active', 'success');
+			}
+		} finally {
+			healthBusy = false;
+		}
 	}
 </script>
 
@@ -111,7 +187,7 @@
 >
 	<div class="flex min-w-0 items-center">
 		<div class="flex shrink-0 items-center gap-2.5 pr-3">
-			<img src="/logo.png" alt="Rolling Thunder" class="rt-brand-logo h-8 w-8 rounded-[9px]" />
+			<img src="/logo.png" alt="" class="rt-brand-logo h-8 w-8 rounded-[9px]" />
 			<span class="hidden leading-none sm:block">
 				<span class="block text-[13px] font-bold tracking-[-0.02em]">Rolling Thunder</span>
 				<span
@@ -136,7 +212,9 @@
 						>
 							<Database class="text-muted-foreground h-3.5 w-3.5" />
 							<span
-								class="ring-background absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2"
+								class="ring-background absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 {healthColor(
+									connectionStore.activeConnection.health?.state
+								)}"
 							></span>
 						</span>
 						<span class="min-w-0 flex-1">
@@ -200,8 +278,9 @@
 										>
 											<Database class="text-muted-foreground h-3.5 w-3.5" />
 											<span
-												class="absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 ring-[var(--surface-raised)]"
-												style="background-color: {conn.color || '#ef5b50'}"
+												class="absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 ring-[var(--surface-raised)] {healthColor(
+													conn.health?.state
+												)}"
 											></span>
 										</span>
 										<span class="min-w-0 flex-1">
@@ -220,6 +299,7 @@
 												Active
 											</span>
 										{/if}
+										<span class="sr-only">{healthLabel(conn.health?.state)}</span>
 									</button>
 									<button
 										type="button"
@@ -235,6 +315,39 @@
 						</div>
 
 						<div class="mt-2 border-t pt-2">
+							<div class="mb-1 flex items-center gap-1 rounded-lg bg-[var(--surface-sunken)] p-1">
+								<button
+									type="button"
+									class="hover:bg-accent flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[9px] font-semibold"
+									onclick={checkActiveConnection}
+									disabled={healthBusy || !connectionStore.activeConnection}
+									title={connectionStore.activeConnection?.health?.message || 'Run health check'}
+								>
+									{#if healthBusy}
+										<RefreshCw class="h-3.5 w-3.5 animate-spin" />
+									{:else}
+										<HeartPulse class="h-3.5 w-3.5" />
+									{/if}
+									<span class="min-w-0 flex-1 truncate">
+										{healthLabel(connectionStore.activeConnection?.health?.state)}
+									</span>
+									{#if connectionStore.activeConnection?.health?.state === 'healthy'}
+										<span class="text-muted-foreground font-mono text-[8px]">
+											{connectionStore.activeConnection.health.latencyMs}ms
+										</span>
+									{/if}
+								</button>
+								{#if connectionStore.activeConnection?.health?.state === 'degraded'}
+									<button
+										type="button"
+										class="rt-primary-button h-8 cursor-pointer rounded-md px-2 text-[8px] font-bold"
+										onclick={reconnectActiveConnection}
+										disabled={healthBusy}
+									>
+										Reconnect
+									</button>
+								{/if}
+							</div>
 							<button
 								type="button"
 								class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--surface-hover)]"
@@ -285,6 +398,16 @@
 		</button>
 
 		<div class="mx-1 h-5 border-l"></div>
+
+		<button
+			type="button"
+			class="rt-toolbar-button h-8 w-8 cursor-pointer"
+			onclick={openDiagnostics}
+			title="Privacy and diagnostics"
+			aria-label="Open privacy and diagnostics"
+		>
+			<ShieldCheck class="h-4 w-4" />
+		</button>
 
 		<button use:melt={$trigger} class="rt-toolbar-button h-8 w-8 cursor-pointer" title="Appearance">
 			{#if theme === 'light'}

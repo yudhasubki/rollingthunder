@@ -24,12 +24,16 @@
 ### Connections
 
 - Save and edit reusable connection profiles.
+- Keep passwords in macOS Keychain, Windows Credential Manager, or Linux Secret Service instead of
+  profile JSON.
 - Keep multiple database sessions open and switch between them.
 - Identify environments with profile colors.
 - Configure PostgreSQL or MySQL/MariaDB TLS modes and client certificates.
 - Open or create SQLite database files through the native file picker.
 - Open connection management as a modal without leaving the workspace.
 - Select the database provider before filling in provider-specific settings.
+- Cancel connection attempts, enforce a 15-second timeout, inspect live health/latency, and replace a
+  degraded driver with a controlled reconnect that keeps the previous driver on failure.
 
 ### Database workspace
 
@@ -47,7 +51,10 @@
 - Copy individual field values or the complete row as formatted JSON.
 - Stage row inserts, updates, and deletes before applying them.
 - Create, truncate, and drop tables with confirmation.
+- Preview and apply reviewed changes for views, routines, triggers, indexes, columns, and constraints
+  according to each engine's capabilities.
 - Keep table, query, diagram, and create-table tabs open together.
+- Restore each saved profile's own query workspace without mixing tabs between active connections.
 
 ### Data export
 
@@ -75,7 +82,15 @@
 
 - Monaco-powered SQL editing and syntax highlighting.
 - Execute the selected SQL or the statement under the cursor.
-- Query history, execution status, result grids, and activity-console feedback.
+- Persist query tabs, save/tag named queries, and keep query history.
+- Execute SQL batches and inspect multiple result sets independently.
+- Supply typed query variables without string-concatenating values into SQL.
+- Format SQL and apply configurable safety/style lint rules.
+- Explain a query and inspect cost/row estimates without executing the statement.
+- Jump from identifiers and aliases to matching database objects.
+- Import CSV or JSON into an existing table or a reviewed new table through native file access.
+- Open a command palette and customize keyboard shortcuts.
+- Inspect execution status, result grids, and activity-console feedback.
 - Cancel a running query with live elapsed-time feedback.
 - Start an explicit transaction per query tab, then commit or roll back from the editor toolbar.
 - Block raw transaction-control statements from pooled auto-commit queries so transaction state
@@ -92,13 +107,25 @@
 - Lazy column metadata loading, including tables that were not part of the initial metadata warm-up.
 - Independent editor models for every query tab, without duplicate completion providers.
 
+### Release readiness
+
+- Versioned, atomic, permission-restricted saved-profile and diagnostics settings.
+- Fail-safe migration of legacy plaintext profile passwords into the OS credential store.
+- Local-only, opt-in frontend diagnostics with redaction, rotation, explicit export, and deletion.
+- Minimal local crash reports without automatic upload.
+- Keyboard focus traps, skip navigation, live status announcements, and reduced-motion support.
+- Headless end-to-end coverage for connect, edit, export, truncate, and drop workflows.
+- Live integration matrices for PostgreSQL 14–18, MySQL 8.0/8.4 LTS, and MariaDB 10.11/11.4 LTS.
+- Automated native macOS, Windows, and Linux builds with enforced signing for tagged releases,
+  checksums, and GitHub/Sigstore provenance attestations.
+
 ## Database support
 
-| Engine          | Connect and query | Object metadata                       | Completion |
-| --------------- | ----------------- | ------------------------------------- | ---------- |
-| PostgreSQL      | Available         | Full capability-based explorer        | Available  |
-| MySQL / MariaDB | Available         | Databases, tables, views, routines    | Available  |
-| SQLite          | Available         | Attached DBs, tables, views, triggers | Available  |
+| Engine          | Connect/query | Object explorer                             | Completion | CI integration      |
+| --------------- | ------------- | ------------------------------------------- | ---------- | ------------------- |
+| PostgreSQL      | Available     | Full capability-based explorer              | Available  | 14–18               |
+| MySQL / MariaDB | Available     | Databases, tables, views, routines/triggers | Available  | 8.0/8.4; 10.11/11.4 |
+| SQLite          | Available     | Attached DBs, tables, views, triggers       | Available  | Always              |
 
 ## Known gaps
 
@@ -109,10 +136,12 @@ reliable target table.
 
 Other important limitations include:
 
-- Multiple result sets and visual query plans are not implemented.
-- Saved credentials are not yet integrated with the operating-system keychain.
-- Live PostgreSQL and MySQL/MariaDB conformance tests require corresponding test servers. SQLite
-  conformance runs against a temporary database file by default.
+- Linux desktop packages currently target WebKitGTK 4.1 and require compatible GTK/WebKit runtime
+  libraries from the distribution.
+- Tagged release signing depends on repository signing certificates/keys and intentionally fails
+  closed when they are absent.
+- Automated accessibility contracts cover common regressions, but every stable release still
+  requires the manual assistive-technology matrix.
 
 ## Tech stack
 
@@ -155,16 +184,34 @@ wails build
 
 ```bash
 go test ./...
+go test -race ./internal/db ./internal/diagnostics ./pkg/database/...
+go vet ./...
 
 cd frontend
 npm test
+npm run lint
 npm run build
+
+cd ..
+wails build -m -nocolour
 ```
+
+See [docs/TESTING.md](docs/TESTING.md) for live PostgreSQL/MySQL/MariaDB integration variables and
+the full manual release matrix.
+
+## Security, privacy, and releases
+
+- [Security policy](SECURITY.md)
+- [Privacy and diagnostics](docs/PRIVACY.md)
+- [Storage and migration policy](docs/MIGRATIONS.md)
+- [Accessibility audit](docs/ACCESSIBILITY.md)
+- [Release signing and verification](docs/RELEASING.md)
 
 ## Roadmap
 
-The next milestones add power-user query tooling and production hardening. See
-[ROADMAP.md](ROADMAP.md) for priorities and acceptance criteria.
+Milestones 1–5 cover reliable data workflows, the complete object explorer, multi-engine drivers,
+power-user query tooling, and release readiness. See [ROADMAP.md](ROADMAP.md) for acceptance
+criteria and shipped scope.
 
 ## Contributing
 

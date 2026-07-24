@@ -4,6 +4,7 @@
 	import { Check, Copy, Database, FileJson2, Rows3, Search, X } from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -19,7 +20,6 @@
 	let search = $state('');
 	let copiedField = $state<string | null>(null);
 	let closeButton = $state<HTMLButtonElement>();
-	let drawerElement = $state<HTMLDivElement>();
 	let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
 	let wasOpen = false;
 
@@ -98,25 +98,6 @@
 			onClose();
 			return;
 		}
-
-		if (event.key === 'Tab' && drawerElement) {
-			const focusable = Array.from(
-				drawerElement.querySelectorAll<HTMLElement>(
-					'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-				)
-			).filter((element) => element.offsetParent !== null);
-			if (focusable.length === 0) return;
-
-			const first = focusable[0];
-			const last = focusable.at(-1) || first;
-			if (event.shiftKey && document.activeElement === first) {
-				event.preventDefault();
-				last.focus();
-			} else if (!event.shiftKey && document.activeElement === last) {
-				event.preventDefault();
-				first.focus();
-			}
-		}
 	}
 </script>
 
@@ -132,7 +113,7 @@
 	></button>
 
 	<div
-		bind:this={drawerElement}
+		use:focusTrap
 		class="border-border bg-background fixed inset-y-0 right-0 z-[70] flex w-[min(430px,calc(100vw-24px))] flex-col border-l shadow-2xl"
 		role="dialog"
 		aria-modal="true"

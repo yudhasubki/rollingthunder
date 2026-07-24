@@ -24,6 +24,7 @@
 		InspectImportFile
 	} from '$lib/wailsjs/go/db/Service';
 	import { database } from '$lib/wailsjs/go/models';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -379,6 +380,7 @@
 			aria-label="Close import data"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative flex max-h-[88vh] w-full max-w-[920px] flex-col overflow-hidden rounded-xl"
 			role="dialog"
 			aria-modal="true"

@@ -6,6 +6,7 @@ import {
 import { tabsStore } from '$lib/stores/tabs.svelte';
 import { resetSchemaInfo } from '$lib/stores/schema.svelte';
 import { getConnectionWorkspaceKey } from '$lib/tabs/persistence';
+import type { database } from '$lib/wailsjs/go/models';
 
 // Types
 export interface ConnectionInfo {
@@ -17,6 +18,7 @@ export interface ConnectionInfo {
 	profileId?: string;
 	color: string;
 	isActive: boolean;
+	health?: database.ConnectionHealth;
 }
 
 // State - exported for direct reactive access

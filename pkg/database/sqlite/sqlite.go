@@ -141,6 +141,13 @@ func (s *SQLite) Close() error {
 	return err
 }
 
+func (s *SQLite) Ping(ctx context.Context) error {
+	if s.conn == nil {
+		return fmt.Errorf("SQLite connection is not open")
+	}
+	return s.conn.PingContext(ctx)
+}
+
 func (s *SQLite) ensureConnected() error {
 	if s.conn == nil {
 		return fmt.Errorf("SQLite database is not open")

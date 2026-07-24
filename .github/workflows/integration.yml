@@ -1,0 +1,140 @@
+name: Database integration
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - ".github/workflows/integration.yml"
+  pull_request:
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - ".github/workflows/integration.yml"
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: database-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sqlite:
+    name: SQLite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run SQLite workflow
+        run: go test ./integration -run TestSQLiteDriverWorkflow -count=1 -v
+
+  postgres:
+    name: PostgreSQL ${{ matrix.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["14", "15", "16", "17", "18"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.version }}
+        env:
+          POSTGRES_USER: rolling
+          POSTGRES_PASSWORD: rolling
+          POSTGRES_DB: rolling
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rolling -d rolling"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run PostgreSQL workflow
+        env:
+          RT_INTEGRATION_POSTGRES: "1"
+          RT_DATABASE_HOST: 127.0.0.1
+          RT_DATABASE_PORT: "5432"
+          RT_DATABASE_USER: rolling
+          RT_DATABASE_PASSWORD: rolling
+          RT_DATABASE_NAME: rolling
+        run: go test ./integration -run TestPostgreSQLDriverWorkflow -count=1 -v
+
+  mysql-compatible:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: MySQL 8.0
+            image: mysql:8.0
+            driver: mysql
+          - name: MySQL 8.4 LTS
+            image: mysql:8.4
+            driver: mysql
+          - name: MariaDB 10.11 LTS
+            image: mariadb:10.11
+            driver: mariadb
+          - name: MariaDB 11.4 LTS
+            image: mariadb:11.4
+            driver: mariadb
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: rolling
+          MYSQL_DATABASE: rolling
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -prolling"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 18
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run MySQL-compatible workflow
+        env:
+          RT_INTEGRATION_MYSQL: "1"
+          RT_DATABASE_DRIVER: ${{ matrix.driver }}
+          RT_DATABASE_HOST: 127.0.0.1
+          RT_DATABASE_PORT: "3306"
+          RT_DATABASE_USER: root
+          RT_DATABASE_PASSWORD: rolling
+          RT_DATABASE_NAME: rolling
+        run: go test ./integration -run TestMySQLCompatibleDriverWorkflow -count=1 -v

@@ -519,6 +519,7 @@
 
 <aside
 	class="rt-panel relative flex h-full w-[272px] max-w-[286px] min-w-[248px] flex-col overflow-hidden border-r"
+	aria-label="Database explorer"
 >
 	<div class="flex h-11 shrink-0 items-center justify-between border-b px-3">
 		<div class="flex min-w-0 items-center gap-2">

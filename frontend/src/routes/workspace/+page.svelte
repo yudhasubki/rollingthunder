@@ -7,6 +7,7 @@
 	import DatabaseObjectContent from '$lib/components/DatabaseObjectContent.svelte';
 	import ConnectionManagerModal from '$lib/components/ConnectionManagerModal.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import DiagnosticsDialog from '$lib/components/DiagnosticsDialog.svelte';
 	import ImportDataDialog from '$lib/components/database/ImportDataDialog.svelte';
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
@@ -73,6 +74,7 @@
 	import { goto } from '$app/navigation';
 	import { commandDefinitions, matchesShortcut, type CommandID } from '$lib/commands/shortcuts';
 	import { shortcutStore } from '$lib/stores/shortcuts.svelte';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	const tabs = $derived(tabsStore.tabs);
 	const allTabs = $derived(tabsStore.allTabs);
@@ -106,6 +108,7 @@
 	let hasCheckedConnections = $state(false);
 	let connectionManagerOpen = $state(false);
 	let commandPaletteOpen = $state(false);
+	let diagnosticsOpen = $state(false);
 	let importDialogOpen = $state(false);
 	let tabStripElement = $state<HTMLDivElement | null>(null);
 	let reviewOpen = $state(false);
@@ -240,6 +243,9 @@
 			}
 			importDialogOpen = true;
 		};
+		const handleOpenDiagnostics = () => {
+			diagnosticsOpen = true;
+		};
 
 		// Keyboard shortcuts
 		function handleKeydown(e: KeyboardEvent) {
@@ -281,12 +287,14 @@
 		window.addEventListener('open-connection-manager', handleOpenConnectionManager);
 		window.addEventListener('open-command-palette', handleOpenCommandPalette);
 		window.addEventListener('open-import-data', handleOpenImportData);
+		window.addEventListener('open-diagnostics', handleOpenDiagnostics);
 
 		return () => {
 			document.removeEventListener('keydown', handleKeydown);
 			window.removeEventListener('open-connection-manager', handleOpenConnectionManager);
 			window.removeEventListener('open-command-palette', handleOpenCommandPalette);
 			window.removeEventListener('open-import-data', handleOpenImportData);
+			window.removeEventListener('open-diagnostics', handleOpenDiagnostics);
 		};
 	});
 
@@ -573,6 +581,7 @@
 		onClose={() => (commandPaletteOpen = false)}
 		onExecute={executeWorkspaceCommand}
 	/>
+	<DiagnosticsDialog open={diagnosticsOpen} onClose={() => (diagnosticsOpen = false)} />
 	{#if activeConnectionId}
 		<ImportDataDialog
 			open={importDialogOpen}
@@ -595,6 +604,8 @@
 
 		<!-- Workspace -->
 		<main
+			id="main-content"
+			tabindex="-1"
 			class="rt-workspace flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--surface-raised)]"
 		>
 			{#if allTabs.length > 0}
@@ -773,6 +784,8 @@
 				type="button"
 				class="hover:bg-muted/50 flex h-7 min-w-0 flex-1 items-center gap-2 rounded px-1.5 text-left"
 				onclick={toggleConsole}
+				aria-expanded={showConsole}
+				aria-controls="activity-console-content"
 			>
 				<span class="bg-foreground/10 flex h-5 w-5 items-center justify-center rounded">
 					<Terminal class="h-3 w-3" />
@@ -831,7 +844,12 @@
 		</div>
 
 		{#if showConsole}
-			<div class="rt-code-surface min-h-0 flex-1 overflow-auto border-t">
+			<div
+				id="activity-console-content"
+				class="rt-code-surface min-h-0 flex-1 overflow-auto border-t"
+				role="region"
+				aria-label="Activity console events"
+			>
 				{#if consoleLogs.length === 0}
 					<div
 						class="text-muted-foreground flex h-full flex-col items-center justify-center text-center"
@@ -903,6 +921,7 @@
 			aria-label="Close change review"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl"
 			role="dialog"
 			aria-modal="true"
@@ -1156,6 +1175,7 @@
 			aria-label="Keep staged changes"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative w-full max-w-sm rounded-xl p-4"
 			role="dialog"
 			aria-modal="true"

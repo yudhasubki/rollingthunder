@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Connect, GetSavedConnections } from '$lib/wailsjs/go/db/Service';
+	import { ConnectSavedConnection, GetSavedConnections } from '$lib/wailsjs/go/db/Service';
 	import { db } from '$lib/wailsjs/go/models';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import ConnectionManagerModal from '$lib/components/ConnectionManagerModal.svelte';
+	import DiagnosticsDialog from '$lib/components/DiagnosticsDialog.svelte';
 	import {
 		CONNECTION_TIMEOUT_SECONDS,
 		cancelConnectionAttempt,
@@ -38,6 +39,7 @@
 	let managerOpen = $state(false);
 	let managerInitialId = $state<string | null>(null);
 	let managerStartNew = $state(false);
+	let diagnosticsOpen = $state(false);
 	let connectionAttemptID = $state<string | null>(null);
 	let connectionElapsedSeconds = $state(0);
 	let cancellingConnection = $state(false);
@@ -83,10 +85,11 @@
 	function isConnected(profile: db.SavedConnection) {
 		return connectionStore.connections.some(
 			(connection) =>
-				connection.name === profile.config.name &&
-				connection.driver === (profile.config.driver || 'postgres') &&
-				connection.host === profile.config.host &&
-				connection.database === profile.config.db
+				connection.profileId === profile.id ||
+				(connection.name === profile.config.name &&
+					connection.driver === (profile.config.driver || 'postgres') &&
+					connection.host === profile.config.host &&
+					connection.database === profile.config.db)
 		);
 	}
 
@@ -111,7 +114,9 @@
 		if ((profile.config.driver || 'postgres') === 'sqlite') {
 			return 'Local file · WAL · foreign keys on';
 		}
-		return `${profile.config.user || 'No username'} · TLS ${profile.config.sslMode || 'disable'}`;
+		return `${profile.config.user || 'No username'} · ${
+			profile.hasPassword ? 'Password secured by OS' : 'No stored password'
+		} · TLS ${profile.config.sslMode || 'disable'}`;
 	}
 
 	async function connectProfile(profile: db.SavedConnection) {
@@ -129,13 +134,7 @@
 		messageLevel = 'info';
 
 		try {
-			const response = await Connect(
-				new db.ConnectRequest({
-					driver: profile.config.driver || 'postgres',
-					config: profile.config,
-					attemptId: attemptID
-				})
-			);
+			const response = await ConnectSavedConnection(profile.id, attemptID);
 			if (response.errors?.length || !response.data?.connected) {
 				throw createServiceError(response.errors?.[0], 'Connection failed');
 			}
@@ -264,13 +263,28 @@
 			</div>
 		</div>
 
-		<footer class="text-muted-foreground relative flex items-center gap-2 text-[8px]">
-			<ShieldCheck class="h-3.5 w-3.5" />
-			Connection profiles are stored locally on this device.
+		<footer
+			class="text-muted-foreground relative flex items-center justify-between gap-3 text-[8px]"
+		>
+			<span class="flex items-center gap-2">
+				<ShieldCheck class="h-3.5 w-3.5" />
+				Connection profiles are stored locally on this device.
+			</span>
+			<button
+				type="button"
+				class="hover:text-foreground focus-visible:ring-ring cursor-pointer rounded-sm underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+				onclick={() => (diagnosticsOpen = true)}
+			>
+				Privacy & diagnostics
+			</button>
 		</footer>
 	</section>
 
-	<main class="flex min-w-0 flex-col overflow-hidden bg-[var(--surface-raised)]">
+	<main
+		id="main-content"
+		tabindex="-1"
+		class="flex min-w-0 flex-col overflow-hidden bg-[var(--surface-raised)]"
+	>
 		<div class="mx-auto flex h-full w-full max-w-[760px] flex-col px-8 py-8">
 			<header class="flex shrink-0 items-end justify-between">
 				<div>
@@ -456,4 +470,5 @@
 		initialProfileId={managerInitialId}
 		startNew={managerStartNew}
 	/>
+	<DiagnosticsDialog open={diagnosticsOpen} onClose={() => (diagnosticsOpen = false)} />
 </div>

@@ -69,6 +69,7 @@
 	import { ensureColumnsForTables } from '$lib/stores/schema.svelte';
 	import { getStatementAtCursor, parseTableReferences } from '$lib/sql/context';
 	import type { SavedQuery } from '$lib/query/snippets';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		tab: Tab;
@@ -1457,6 +1458,7 @@
 			aria-label="Cancel unfiltered mutation"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative w-full max-w-md rounded-xl p-4"
 			role="dialog"
 			aria-modal="true"

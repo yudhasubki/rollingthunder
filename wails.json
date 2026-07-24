@@ -10,5 +10,12 @@
   "author": {
     "name": "Yudha Subki",
     "email": "yudhasubki@gmail.com"
+  },
+  "info": {
+    "companyName": "Rolling Thunder",
+    "productName": "Rolling Thunder",
+    "productVersion": "0.0.1",
+    "copyright": "Copyright © 2026 Yudha Subki",
+    "comments": "Rolling Thunder database studio"
   }
 }

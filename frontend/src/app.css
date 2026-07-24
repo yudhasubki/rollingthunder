@@ -157,9 +157,14 @@
 	}
 
 	button:focus-visible,
+	a:focus-visible,
 	input:focus-visible,
+	select:focus-visible,
 	textarea:focus-visible,
-	[role='button']:focus-visible {
+	[role='button']:focus-visible,
+	[role='tab']:focus-visible,
+	[role='option']:focus-visible,
+	[role='menuitem']:focus-visible {
 		outline: 2px solid color-mix(in oklab, var(--ring) 72%, transparent);
 		outline-offset: 1px;
 	}
@@ -167,6 +172,36 @@
 	::selection {
 		color: var(--primary-foreground);
 		background: color-mix(in oklab, var(--primary) 78%, transparent);
+	}
+}
+
+.rt-skip-link {
+	position: fixed;
+	top: -4rem;
+	left: 0.75rem;
+	z-index: 200;
+	border-radius: 0.5rem;
+	padding: 0.55rem 0.8rem;
+	color: var(--primary-foreground);
+	background: var(--primary);
+	font-size: 0.75rem;
+	font-weight: 700;
+	box-shadow: 0 8px 24px color-mix(in oklab, var(--shadow-color) 24%, transparent);
+	transition: top 120ms ease;
+}
+
+.rt-skip-link:focus {
+	top: 0.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		scroll-behavior: auto !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
 	}
 }
 

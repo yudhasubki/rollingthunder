@@ -2,7 +2,9 @@
 	import { onMount } from 'svelte';
 	import {
 		Connect,
+		ConnectWithProfile,
 		ChooseSQLiteDatabaseFile,
+		ClearConnectionPassword,
 		DeleteConnection,
 		GetSavedConnections,
 		SaveConnection,
@@ -19,6 +21,7 @@
 	import { database, db } from '$lib/wailsjs/go/models';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import { focusTrap } from '$lib/actions/focusTrap';
 	import {
 		AlertCircle,
 		ArrowLeft,
@@ -108,6 +111,8 @@
 	let messageLevel = $state<'info' | 'error' | 'success'>('info');
 	let deleteConfirm = $state(false);
 	let showPassword = $state(false);
+	let hasStoredPassword = $state(false);
+	let clearPasswordConfirm = $state(false);
 	let loadedForOpen = $state(false);
 	let connectionAttemptID = $state<string | null>(null);
 	let connectionElapsedSeconds = $state(0);
@@ -223,7 +228,9 @@
 					providers.find((item) => item.id === profileProvider)?.defaultPort ||
 					'5432';
 		username = config.user || '';
-		password = config.password || '';
+		password = '';
+		hasStoredPassword = Boolean(profile.hasPassword);
+		clearPasswordConfirm = false;
 		databaseName = config.db || '';
 		sslMode = config.sslMode || 'disable';
 		sslRootCert = config.sslRootCert || '';
@@ -242,6 +249,8 @@
 		port = '5432';
 		username = '';
 		password = '';
+		hasStoredPassword = false;
+		clearPasswordConfirm = false;
 		databaseName = '';
 		sslMode = 'disable';
 		sslRootCert = '';
@@ -256,10 +265,11 @@
 	function isConnected(profile: db.SavedConnection) {
 		return connectionStore.connections.some(
 			(connection) =>
-				connection.name === profile.config.name &&
-				connection.driver === (profile.config.driver || 'postgres') &&
-				connection.host === profile.config.host &&
-				connection.database === profile.config.db
+				connection.profileId === profile.id ||
+				(connection.name === profile.config.name &&
+					connection.driver === (profile.config.driver || 'postgres') &&
+					connection.host === profile.config.host &&
+					connection.database === profile.config.db)
 		);
 	}
 
@@ -395,12 +405,16 @@
 		);
 
 		try {
-			const request = new db.ConnectRequest({
-				driver: provider || 'postgres',
-				config: buildConfig(),
-				attemptId: attemptID
-			});
-			const response = await Connect(request);
+			const config = buildConfig();
+			const response = editingId
+				? await ConnectWithProfile(editingId, config, attemptID)
+				: await Connect(
+						new db.ConnectRequest({
+							driver: provider || 'postgres',
+							config,
+							attemptId: attemptID
+						})
+					);
 			if (response.errors?.length || !response.data?.connected) {
 				throw createServiceError(response.errors?.[0], 'Connection failed');
 			}
@@ -443,6 +457,31 @@
 		}
 	}
 
+	async function clearStoredPassword() {
+		if (!editingId || !hasStoredPassword || action !== null) return;
+		if (!clearPasswordConfirm) {
+			clearPasswordConfirm = true;
+			showMessage('Press “Remove stored password” again to confirm.', 'info');
+			return;
+		}
+		action = 'save';
+		try {
+			const response = await ClearConnectionPassword(editingId);
+			if (response.errors?.length || !response.data) {
+				throw createServiceError(response.errors?.[0], 'Could not remove stored password');
+			}
+			hasStoredPassword = false;
+			password = '';
+			clearPasswordConfirm = false;
+			await loadProfiles(editingId);
+			showMessage('Stored password removed from the operating system credential store.', 'success');
+		} catch (error: any) {
+			showMessage(error?.message || 'Could not remove stored password', 'error');
+		} finally {
+			action = null;
+		}
+	}
+
 	async function deleteProfile() {
 		if (!editingId) return;
 		if (!deleteConfirm) {
@@ -479,6 +518,7 @@
 		></button>
 
 		<div
+			use:focusTrap
 			class="rt-popover relative flex h-[min(640px,calc(100vh-48px))] w-[min(960px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl"
 			role="dialog"
 			aria-modal="true"
@@ -847,13 +887,29 @@
 										/>
 									</div>
 									<div>
-										<label for="modal-password">Password</label>
+										<div class="mb-1.5 flex items-center justify-between gap-2">
+											<label for="modal-password" class="!mb-0">Password</label>
+											{#if hasStoredPassword}
+												<button
+													type="button"
+													class="text-muted-foreground hover:text-destructive cursor-pointer text-[8px] font-semibold"
+													onclick={clearStoredPassword}
+													disabled={action !== null}
+												>
+													{clearPasswordConfirm
+														? 'Remove stored password'
+														: 'Stored securely · remove'}
+												</button>
+											{/if}
+										</div>
 										<div class="relative">
 											<input
 												id="modal-password"
 												type={showPassword ? 'text' : 'password'}
 												bind:value={password}
-												placeholder="••••••••"
+												placeholder={hasStoredPassword
+													? 'Stored by the operating system — leave blank to keep'
+													: 'Enter password'}
 												class="!pr-10"
 												disabled={action !== null}
 											/>

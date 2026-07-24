@@ -19,6 +19,7 @@
 	} from '$lib/export/options';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import { database } from '$lib/wailsjs/go/models';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -158,6 +159,7 @@
 		aria-label="Close export dialog"
 	></button>
 	<dialog
+		use:focusTrap
 		open
 		class="bg-popover text-popover-foreground fixed top-1/2 left-1/2 z-[81] m-0 flex max-h-[calc(100vh-32px)] w-[min(560px,calc(100vw-32px))] max-w-none -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border p-0 shadow-2xl"
 		aria-modal="true"

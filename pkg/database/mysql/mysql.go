@@ -205,6 +205,13 @@ func (m *MySQL) Close() error {
 	return err
 }
 
+func (m *MySQL) Ping(ctx context.Context) error {
+	if m.conn == nil {
+		return fmt.Errorf("MySQL connection is not open")
+	}
+	return m.conn.PingContext(ctx)
+}
+
 func (m *MySQL) ensureConnected() error {
 	if m.conn == nil {
 		return fmt.Errorf("MySQL connection is not open")

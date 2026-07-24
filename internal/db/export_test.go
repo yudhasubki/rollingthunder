@@ -519,3 +519,26 @@ func TestRunningExportReportsProgressAndCanBeCancelled(t *testing.T) {
 		t.Fatalf("completed export job was not cleaned up: %+v", response)
 	}
 }
+
+func TestReplaceExportFileRejectsDirectoryDestination(t *testing.T) {
+	root := t.TempDir()
+	tempPath := filepath.Join(root, "export.tmp")
+	if err := os.WriteFile(tempPath, []byte("new export"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	targetPath := filepath.Join(root, "destination.csv")
+	if err := os.Mkdir(targetPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := replaceExportFile(tempPath, targetPath); err == nil {
+		t.Fatal("replaceExportFile() unexpectedly replaced a directory")
+	}
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatal("directory destination was modified")
+	}
+}

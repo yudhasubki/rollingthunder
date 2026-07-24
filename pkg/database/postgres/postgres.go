@@ -121,6 +121,13 @@ func (p *Postgres) Close() error {
 	return closeErr
 }
 
+func (p *Postgres) Ping(ctx context.Context) error {
+	if p.conn == nil {
+		return fmt.Errorf("PostgreSQL connection is not open")
+	}
+	return p.conn.PingContext(ctx)
+}
+
 func (p *Postgres) GetCollections(schema ...string) ([]string, error) {
 	var targetSchema string
 	if len(schema) > 0 {

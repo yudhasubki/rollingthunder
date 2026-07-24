@@ -6,6 +6,7 @@
 		saveNamedQuery
 	} from '$lib/stores/savedQueries.svelte';
 	import type { SavedQuery } from '$lib/query/snippets';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -85,6 +86,7 @@
 			aria-label="Close saved queries"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative flex h-full w-[360px] max-w-[90%] flex-col border-l"
 			role="dialog"
 			aria-modal="true"

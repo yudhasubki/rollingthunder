@@ -164,8 +164,10 @@ func ensureExportExtension(path string, format database.ExportFormat) string {
 func replaceExportFile(tempPath string, targetPath string) error {
 	if err := os.Rename(tempPath, targetPath); err == nil {
 		return nil
-	} else if _, statErr := os.Stat(targetPath); statErr != nil {
+	} else if targetInfo, statErr := os.Stat(targetPath); statErr != nil {
 		return err
+	} else if !targetInfo.Mode().IsRegular() {
+		return fmt.Errorf("export destination is not a regular file")
 	}
 
 	backupFile, err := os.CreateTemp(filepath.Dir(targetPath), ".rollingthunder-backup-*")

@@ -6,6 +6,7 @@
 		type QueryVariableType
 	} from '$lib/query/variables';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -83,6 +84,7 @@
 			aria-label="Close query variables"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl"
 			role="dialog"
 			aria-modal="true"

@@ -17,6 +17,7 @@
 		type CommandID
 	} from '$lib/commands/shortcuts';
 	import { shortcutStore } from '$lib/stores/shortcuts.svelte';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -136,6 +137,7 @@
 			aria-label="Close command palette"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative flex max-h-[72vh] w-full max-w-[620px] flex-col overflow-hidden rounded-xl shadow-2xl"
 			role="dialog"
 			aria-modal="true"

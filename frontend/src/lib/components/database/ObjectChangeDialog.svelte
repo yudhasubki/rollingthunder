@@ -23,6 +23,7 @@
 	} from '$lib/database/changeTemplates';
 	import { createServiceError } from '$lib/errors/service';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import { focusTrap } from '$lib/actions/focusTrap';
 
 	interface Props {
 		open: boolean;
@@ -389,6 +390,7 @@
 			aria-label="Close structural change dialog"
 		></button>
 		<div
+			use:focusTrap
 			class="rt-popover relative flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl"
 			role="dialog"
 			aria-modal="true"

@@ -26,6 +26,10 @@ export function CancelQuery(arg1) {
   return window['go']['db']['Service']['CancelQuery'](arg1);
 }
 
+export function CheckConnection(arg1) {
+  return window['go']['db']['Service']['CheckConnection'](arg1);
+}
+
 export function ChooseImportFile() {
   return window['go']['db']['Service']['ChooseImportFile']();
 }
@@ -34,12 +38,28 @@ export function ChooseSQLiteDatabaseFile(arg1) {
   return window['go']['db']['Service']['ChooseSQLiteDatabaseFile'](arg1);
 }
 
+export function ClearConnectionPassword(arg1) {
+  return window['go']['db']['Service']['ClearConnectionPassword'](arg1);
+}
+
+export function ClearDiagnostics() {
+  return window['go']['db']['Service']['ClearDiagnostics']();
+}
+
 export function CommitTransaction(arg1) {
   return window['go']['db']['Service']['CommitTransaction'](arg1);
 }
 
 export function Connect(arg1) {
   return window['go']['db']['Service']['Connect'](arg1);
+}
+
+export function ConnectSavedConnection(arg1, arg2) {
+  return window['go']['db']['Service']['ConnectSavedConnection'](arg1, arg2);
+}
+
+export function ConnectWithProfile(arg1, arg2, arg3) {
+  return window['go']['db']['Service']['ConnectWithProfile'](arg1, arg2, arg3);
 }
 
 export function CountCollectionData(arg1, arg2) {
@@ -74,6 +94,10 @@ export function ExplainQuery(arg1) {
   return window['go']['db']['Service']['ExplainQuery'](arg1);
 }
 
+export function ExportDiagnostics() {
+  return window['go']['db']['Service']['ExportDiagnostics']();
+}
+
 export function ExportQueryResults(arg1) {
   return window['go']['db']['Service']['ExportQueryResults'](arg1);
 }
@@ -102,6 +126,14 @@ export function GetCollections(arg1, arg2) {
   return window['go']['db']['Service']['GetCollections'](arg1, arg2);
 }
 
+export function GetConnectionHealth(arg1) {
+  return window['go']['db']['Service']['GetConnectionHealth'](arg1);
+}
+
+export function GetConnectionHealths() {
+  return window['go']['db']['Service']['GetConnectionHealths']();
+}
+
 export function GetDataTypes(arg1) {
   return window['go']['db']['Service']['GetDataTypes'](arg1);
 }
@@ -116,6 +148,10 @@ export function GetDatabaseObject(arg1, arg2) {
 
 export function GetDatabaseObjects(arg1, arg2) {
   return window['go']['db']['Service']['GetDatabaseObjects'](arg1, arg2);
+}
+
+export function GetDiagnosticsSettings() {
+  return window['go']['db']['Service']['GetDiagnosticsSettings']();
 }
 
 export function GetExportProgress(arg1) {
@@ -154,12 +190,24 @@ export function PreviewDatabaseObjectChange(arg1, arg2) {
   return window['go']['db']['Service']['PreviewDatabaseObjectChange'](arg1, arg2);
 }
 
+export function ReconnectConnection(arg1, arg2) {
+  return window['go']['db']['Service']['ReconnectConnection'](arg1, arg2);
+}
+
+export function RecordFrontendError(arg1) {
+  return window['go']['db']['Service']['RecordFrontendError'](arg1);
+}
+
 export function RollbackTransaction(arg1) {
   return window['go']['db']['Service']['RollbackTransaction'](arg1);
 }
 
 export function SaveConnection(arg1) {
   return window['go']['db']['Service']['SaveConnection'](arg1);
+}
+
+export function Shutdown(arg1) {
+  return window['go']['db']['Service']['Shutdown'](arg1);
 }
 
 export function Start(arg1) {
@@ -176,6 +224,10 @@ export function TruncateTable(arg1, arg2) {
 
 export function UpdateConnection(arg1, arg2) {
   return window['go']['db']['Service']['UpdateConnection'](arg1, arg2);
+}
+
+export function UpdateDiagnosticsSettings(arg1) {
+  return window['go']['db']['Service']['UpdateDiagnosticsSettings'](arg1);
 }
 
 export function UpdateRow(arg1, arg2, arg3, arg4) {

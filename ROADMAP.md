@@ -145,15 +145,18 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 
 ## Milestone 5 — Release readiness
 
-- [ ] Store credentials in macOS Keychain, Windows Credential Manager, or Linux Secret Service.
+- [x] Store credentials in macOS Keychain, Windows Credential Manager, or Linux Secret Service.
 - [x] Add bounded connection attempts with elapsed-time feedback and cancellation.
-- [ ] Add keepalive, health checks, and controlled reconnects.
-- [ ] Integration tests against supported database versions.
-- [ ] End-to-end tests for connection, editing, export, and destructive actions.
-- [ ] Accessibility and keyboard-navigation audit.
-- [ ] Signed packages and automated releases for macOS, Windows, and Linux.
-- [ ] Migration policy for saved profiles and workspace state.
-- [ ] Crash reporting and opt-in diagnostics with documented privacy behavior.
+- [x] Add keepalive, health checks, and controlled reconnects.
+- [x] Integration tests against supported database versions.
+- [x] End-to-end tests for connection, editing, export, and destructive actions.
+- [x] Accessibility and keyboard-navigation audit.
+- [x] Signed packages and automated releases for macOS, Windows, and Linux.
+- [x] Migration policy for saved profiles and workspace state.
+- [x] Crash reporting and opt-in diagnostics with documented privacy behavior.
+
+Release verification, supported database versions, signing requirements, privacy behavior, storage
+migrations, and the manual accessibility matrix are documented under [`docs/`](docs/).
 
 ## Prioritization principles
 

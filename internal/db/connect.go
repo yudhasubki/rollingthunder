@@ -20,6 +20,7 @@ type ConnectRequest struct {
 	Driver    string          `json:"driver"`
 	Config    database.Config `json:"config"`
 	AttemptID string          `json:"attemptId,omitempty"`
+	ProfileID string          `json:"profileId,omitempty"`
 }
 
 type ConnectResponse struct {

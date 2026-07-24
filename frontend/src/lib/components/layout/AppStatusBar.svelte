@@ -23,6 +23,9 @@
 
 <footer
 	class="flex h-6 shrink-0 items-center justify-between border-t bg-[var(--surface-raised)] px-3 text-[10px]"
+	role="status"
+	aria-live="polite"
+	aria-atomic="true"
 >
 	<div class="flex items-center gap-2">
 		{#if level === 'error'}

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"rollingthunder/internal/diagnostics"
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 
@@ -16,24 +17,29 @@ import (
 // Connection represents an active database connection
 type Connection struct {
 	ID          string          `json:"id"`
+	ProfileID   string          `json:"profileId,omitempty"`
 	Name        string          `json:"name"`
 	Driver      database.Driver `json:"-"`
 	Config      database.Config `json:"config"`
 	Color       string          `json:"color"`
 	ConnectedAt time.Time       `json:"connectedAt"`
 	mu          sync.RWMutex
+	healthMu    sync.RWMutex
+	health      database.ConnectionHealth
 	closed      bool
 }
 
 // ConnectionInfo is the public info about a connection (without driver)
 type ConnectionInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Driver   string `json:"driver"`
-	Database string `json:"database"`
-	Host     string `json:"host"`
-	Color    string `json:"color"`
-	IsActive bool   `json:"isActive"`
+	ID        string                    `json:"id"`
+	ProfileID string                    `json:"profileId,omitempty"`
+	Name      string                    `json:"name"`
+	Driver    string                    `json:"driver"`
+	Database  string                    `json:"database"`
+	Host      string                    `json:"host"`
+	Color     string                    `json:"color"`
+	IsActive  bool                      `json:"isActive"`
+	Health    database.ConnectionHealth `json:"health"`
 }
 
 type Service struct {
@@ -57,9 +63,25 @@ type Service struct {
 	queryAttemptMu      sync.RWMutex
 	transactions        map[string]*transactionSession
 	transactionMu       sync.RWMutex
+	connectionStorage   *ConnectionStorage
+	credentialStore     CredentialStore
+	healthInterval      time.Duration
+	healthTimeout       time.Duration
+	healthCancel        context.CancelFunc
+	healthDone          chan struct{}
+	diagnostics         *diagnostics.Manager
 }
 
 func NewService() *Service {
+	return NewServiceWithDiagnostics(diagnostics.NewManager())
+}
+
+func NewServiceWithDiagnostics(
+	diagnosticManager *diagnostics.Manager,
+) *Service {
+	if diagnosticManager == nil {
+		diagnosticManager = diagnostics.NewManager()
+	}
 	return &Service{
 		connections:        make(map[string]*Connection),
 		saveDialog:         defaultSaveFileDialog,
@@ -73,11 +95,17 @@ func NewService() *Service {
 		connectionAttempts: make(map[string]*connectionAttempt),
 		queryAttempts:      make(map[string]*queryAttempt),
 		transactions:       make(map[string]*transactionSession),
+		connectionStorage:  NewConnectionStorage(),
+		credentialStore:    newOperatingSystemCredentialStore(),
+		healthInterval:     20 * time.Second,
+		healthTimeout:      5 * time.Second,
+		diagnostics:        diagnosticManager,
 	}
 }
 
 func (s *Service) Start(ctx context.Context) {
 	s.ctx = ctx
+	s.startHealthMonitor(ctx)
 }
 
 func serviceError[T any](detail string) response.BaseResponse[T] {
@@ -173,13 +201,23 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 
 	// Generate connection ID and store in registry
 	connID := uuid.New().String()
+	connectedAt := time.Now()
+	healthTimestamp := connectedAt.UTC().Format(time.RFC3339Nano)
 	conn := &Connection{
 		ID:          connID,
+		ProfileID:   req.ProfileID,
 		Name:        req.Config.Name,
 		Driver:      driver,
 		Config:      req.Config,
 		Color:       req.Config.Color,
-		ConnectedAt: time.Now(),
+		ConnectedAt: connectedAt,
+		health: database.ConnectionHealth{
+			ConnectionID: connID,
+			State:        database.ConnectionHealthHealthy,
+			Message:      "Connected",
+			LastChecked:  healthTimestamp,
+			LastHealthy:  healthTimestamp,
+		},
 	}
 	s.mu.Lock()
 	s.connections[connID] = conn
@@ -497,32 +535,44 @@ func (s *Service) SwitchConnection(connectionID string) response.BaseResponse[bo
 
 // GetActiveConnections returns all active connections
 func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo] {
-	// Collect connections into a slice for sorting
-	s.mu.RLock()
-	var connList []*Connection
-	for _, conn := range s.connections {
-		connList = append(connList, conn)
+	type connectionSnapshot struct {
+		info        ConnectionInfo
+		connectedAt time.Time
 	}
+
+	// Copy public fields while holding the same locks used by reconnect and
+	// disconnect, then sort the immutable snapshots outside the registry lock.
+	s.mu.RLock()
 	activeID := s.activeID
+	snapshots := make([]connectionSnapshot, 0, len(s.connections))
+	for _, conn := range s.connections {
+		conn.mu.RLock()
+		snapshot := connectionSnapshot{
+			info: ConnectionInfo{
+				ID:        conn.ID,
+				ProfileID: conn.ProfileID,
+				Name:      conn.Name,
+				Driver:    conn.Config.Driver,
+				Database:  conn.Config.Db,
+				Host:      conn.Config.Host,
+				Color:     conn.Color,
+				IsActive:  conn.ID == activeID,
+				Health:    conn.healthSnapshot(),
+			},
+			connectedAt: conn.ConnectedAt,
+		}
+		conn.mu.RUnlock()
+		snapshots = append(snapshots, snapshot)
+	}
 	s.mu.RUnlock()
 
-	// Sort by connection time (oldest first)
-	sort.Slice(connList, func(i, j int) bool {
-		return connList[i].ConnectedAt.Before(connList[j].ConnectedAt)
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].connectedAt.Before(snapshots[j].connectedAt)
 	})
 
-	// Convert to ConnectionInfo
-	var connections []ConnectionInfo
-	for _, conn := range connList {
-		connections = append(connections, ConnectionInfo{
-			ID:       conn.ID,
-			Name:     conn.Name,
-			Driver:   conn.Config.Driver,
-			Database: conn.Config.Db,
-			Host:     conn.Config.Host,
-			Color:    conn.Color,
-			IsActive: conn.ID == activeID,
-		})
+	connections := make([]ConnectionInfo, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		connections = append(connections, snapshot.info)
 	}
 
 	return response.BaseResponse[[]ConnectionInfo]{
