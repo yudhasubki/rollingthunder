@@ -13,7 +13,7 @@ type Driver interface {
 	InsertRow(table Table, data map[string]interface{}) error
 	UpdateRow(table Table, data map[string]interface{}, primaryKey string) error
 	DeleteRow(table Table, primaryKey string, primaryValue interface{}) error
-	ExecuteQuery(query string) ([]map[string]interface{}, error)
+	ExecuteQuery(query string, options QueryOptions) (QueryResult, error)
 	// Table management
 	CreateTable(table Table, columns []ColumnDefinition) error
 	DropTable(table Table) error

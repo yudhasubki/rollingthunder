@@ -337,20 +337,22 @@ func (s *Service) DeleteRow(connectionID string, table database.Table, primaryKe
 }
 
 // ExecuteQuery executes a raw SQL query
-func (s *Service) ExecuteQuery(connectionID string, query string) response.BaseResponse[[]map[string]interface{}] {
+func (s *Service) ExecuteQuery(connectionID string, query string) response.BaseResponse[database.QueryResult] {
 	driver, release, err := s.driverFor(connectionID)
 	if err != nil {
-		return serviceError[[]map[string]interface{}](err.Error())
+		return serviceError[database.QueryResult](err.Error())
 	}
 	defer release()
 
-	results, err := driver.ExecuteQuery(query)
+	result, err := driver.ExecuteQuery(query, database.QueryOptions{
+		MaxRows: database.DefaultQueryResultLimit,
+	})
 	if err != nil {
-		return serviceError[[]map[string]interface{}](err.Error())
+		return serviceError[database.QueryResult](err.Error())
 	}
 
-	return response.BaseResponse[[]map[string]interface{}]{
-		Data: results,
+	return response.BaseResponse[database.QueryResult]{
+		Data: result,
 	}
 }
 

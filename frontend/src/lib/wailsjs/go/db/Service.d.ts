@@ -19,7 +19,7 @@ export function DisconnectConnection(arg1:string):Promise<response.BaseResponse_
 
 export function DropTable(arg1:string,arg2:database.Table):Promise<response.BaseResponse_bool_>;
 
-export function ExecuteQuery(arg1:string,arg2:string):Promise<response.BaseResponse___map_string_interface____>;
+export function ExecuteQuery(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_pkg_database_QueryResult_>;
 
 export function GetActiveConnections():Promise<response.BaseResponse___rollingthunder_internal_db_ConnectionInfo_>;
 

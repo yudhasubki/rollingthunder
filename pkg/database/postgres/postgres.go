@@ -555,24 +555,46 @@ func (p *Postgres) DeleteRow(table database.Table, primaryKey string, primaryVal
 	return err
 }
 
-// ExecuteQuery executes a raw SQL query and returns results
-func (p *Postgres) ExecuteQuery(query string) ([]map[string]interface{}, error) {
+type mappedRows interface {
+	Next() bool
+	MapScan(dest map[string]interface{}) error
+	Err() error
+}
+
+func collectQueryResults(rows mappedRows, maxRows int) (database.QueryResult, error) {
+	result := database.QueryResult{
+		Rows:     make([]map[string]interface{}, 0),
+		RowLimit: maxRows,
+	}
+
+	for rows.Next() {
+		if maxRows > 0 && len(result.Rows) >= maxRows {
+			result.Truncated = true
+			break
+		}
+
+		row := make(map[string]interface{})
+		if err := rows.MapScan(row); err != nil {
+			return database.QueryResult{}, fmt.Errorf("error scanning row: %w", err)
+		}
+		result.Rows = append(result.Rows, row)
+	}
+	if err := rows.Err(); err != nil {
+		return database.QueryResult{}, fmt.Errorf("error reading query results: %w", err)
+	}
+
+	return result, nil
+}
+
+// ExecuteQuery executes a raw SQL query and returns a bounded result set.
+func (p *Postgres) ExecuteQuery(query string, options database.QueryOptions) (database.QueryResult, error) {
 	rows, err := p.conn.Queryx(query)
 	if err != nil {
-		return nil, err
+		return database.QueryResult{}, err
 	}
 	defer rows.Close()
 
-	var results []map[string]interface{}
-	for rows.Next() {
-		row := make(map[string]interface{})
-		if err := rows.MapScan(row); err != nil {
-			return nil, fmt.Errorf("error scanning row: %v", err)
-		}
-		results = append(results, row)
-	}
-
-	return results, nil
+	return collectQueryResults(rows, options.MaxRows)
 }
 
 // CreateTable creates a new table in the database

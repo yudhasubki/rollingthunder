@@ -76,7 +76,10 @@ func (d *routingTestDriver) DeleteRow(database.Table, string, interface{}) error
 	return nil
 }
 
-func (d *routingTestDriver) ExecuteQuery(query string) ([]map[string]interface{}, error) {
+func (d *routingTestDriver) ExecuteQuery(
+	query string,
+	options database.QueryOptions,
+) (database.QueryResult, error) {
 	d.mu.Lock()
 	d.queries = append(d.queries, query)
 	d.mu.Unlock()
@@ -90,7 +93,10 @@ func (d *routingTestDriver) ExecuteQuery(query string) ([]map[string]interface{}
 		<-d.queryRelease
 	}
 
-	return []map[string]interface{}{{"source": d.name}}, nil
+	return database.QueryResult{
+		Rows:     []map[string]interface{}{{"source": d.name}},
+		RowLimit: options.MaxRows,
+	}, nil
 }
 
 func (d *routingTestDriver) CreateTable(database.Table, []database.ColumnDefinition) error {
@@ -153,8 +159,15 @@ func TestExecuteQueryUsesOwningConnection(t *testing.T) {
 	if len(response.Errors) != 0 {
 		t.Fatalf("ExecuteQuery returned errors: %+v", response.Errors)
 	}
-	if len(response.Data) != 1 || response.Data[0]["source"] != "alpha" {
+	if len(response.Data.Rows) != 1 || response.Data.Rows[0]["source"] != "alpha" {
 		t.Fatalf("ExecuteQuery returned data from the wrong connection: %+v", response.Data)
+	}
+	if response.Data.RowLimit != database.DefaultQueryResultLimit {
+		t.Fatalf(
+			"ExecuteQuery row limit = %d, want %d",
+			response.Data.RowLimit,
+			database.DefaultQueryResultLimit,
+		)
 	}
 	if alpha.queryCount() != 1 {
 		t.Fatalf("alpha query count = %d, want 1", alpha.queryCount())
@@ -171,7 +184,7 @@ func TestExecuteQueryUsesOwningConnection(t *testing.T) {
 	if len(response.Errors) != 0 {
 		t.Fatalf("ExecuteQuery returned errors after switching: %+v", response.Errors)
 	}
-	if len(response.Data) != 1 || response.Data[0]["source"] != "bravo" {
+	if len(response.Data.Rows) != 1 || response.Data.Rows[0]["source"] != "bravo" {
 		t.Fatalf("ExecuteQuery followed the global active connection: %+v", response.Data)
 	}
 }

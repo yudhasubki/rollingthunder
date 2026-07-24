@@ -17,6 +17,7 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Typed data-grid previews with sticky headers, sticky edge columns, and resizable columns
 - [x] Searchable row-detail drawer for table data and query results
 - [x] Multi-tab workspace with query history
+- [x] Bounded query results with a 1,000-row safety cap and client-side pagination
 - [x] Context-aware SQL completion for schemas, tables, aliases, and columns
 - [x] PostgreSQL, MySQL, and SQLite keyword/function completion catalogs
 - [x] Regression tests for SQL context parsing and dialect catalogs

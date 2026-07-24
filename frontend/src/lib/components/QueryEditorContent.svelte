@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Play, Loader2, History, Trash2, Clock, X, RefreshCw } from 'lucide-svelte';
+	import {
+		Play,
+		Loader2,
+		History,
+		Trash2,
+		Clock,
+		X,
+		RefreshCw,
+		TriangleAlert
+	} from 'lucide-svelte';
 	import { ExecuteQuery } from '$lib/wailsjs/go/db/Service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
 	import {
@@ -12,6 +21,7 @@
 	} from '$lib/stores/queryHistory.svelte';
 	import { getSqlAutocompleteMetadata, loadSchemaInfo } from '$lib/stores/schema.svelte';
 	import { registerSqlCompletionProvider } from '$lib/sql/autocomplete';
+	import { getQueryResultPage, QUERY_RESULT_PAGE_SIZE } from '$lib/query/results';
 	import DataGrid from '$lib/components/database/DataGrid.svelte';
 	import { database } from '$lib/wailsjs/go/models';
 	import type * as Monaco from 'monaco-editor';
@@ -37,11 +47,15 @@
 
 	let isRunning = $state(false);
 	let queryResults = $state<Record<string, any>[]>([]);
+	let queryResultTruncated = $state(false);
+	let queryResultLimit = $state(0);
+	let resultPage = $state(0);
 	let resultColumns = $state<database.Structure[]>([]);
 	let errorMessage = $state<string>('');
 	let executedQuery = $state<string>('');
 	let showHistory = $state(false);
 	let autocompleteRefreshing = $state(false);
+	const visibleQueryResults = $derived(getQueryResultPage(queryResults, resultPage));
 	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata(tab.connectionId));
 
 	async function refreshAutocomplete(force = false, showSuggestions = false) {
@@ -278,6 +292,9 @@
 		isRunning = true;
 		errorMessage = '';
 		queryResults = [];
+		queryResultTruncated = false;
+		queryResultLimit = 0;
+		resultPage = 0;
 		resultColumns = [];
 		executedQuery = query;
 		updateStatus('Executing query...', 'info');
@@ -297,7 +314,9 @@
 				throw new Error(response.errors[0].detail);
 			}
 
-			queryResults = response.data || [];
+			queryResults = response.data?.rows || [];
+			queryResultTruncated = Boolean(response.data?.truncated);
+			queryResultLimit = response.data?.rowLimit || 0;
 
 			// Generate columns from first result row
 			if (queryResults.length > 0) {
@@ -310,8 +329,20 @@
 			}
 
 			const executionTime = Date.now() - startTime;
-			updateStatus(`Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
-			addConsoleLog(`✓ Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
+			if (queryResultTruncated) {
+				const limit = queryResultLimit || queryResults.length;
+				updateStatus(
+					`Showing the first ${limit.toLocaleString()} rows in ${executionTime}ms — result limit reached`,
+					'warn'
+				);
+				addConsoleLog(
+					`Query returned more than ${limit.toLocaleString()} rows; only the first ${limit.toLocaleString()} are shown`,
+					'warn'
+				);
+			} else {
+				updateStatus(`Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
+				addConsoleLog(`✓ Query returned ${queryResults.length} rows in ${executionTime}ms`, 'info');
+			}
 			addQueryToHistory(query, 'success', queryResults.length, undefined, executionTime);
 		} catch (e: any) {
 			const executionTime = Date.now() - startTime;
@@ -495,8 +526,16 @@
 				Results
 				{#if queryResults.length > 0}
 					<span class="bg-muted text-muted-foreground ml-1 rounded px-1.5 py-0.5 text-[9px]"
-						>{queryResults.length} rows</span
+						>{queryResults.length.toLocaleString()}{queryResultTruncated ? '+' : ''} rows</span
 					>
+					{#if queryResultTruncated}
+						<span
+							class="ml-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600 dark:text-amber-400"
+							title="Rolling Thunder caps interactive query results to keep the workspace responsive"
+						>
+							Limited to {queryResultLimit.toLocaleString()}
+						</span>
+					{/if}
 				{/if}
 			</h4>
 			{#if executedQuery && !errorMessage}
@@ -512,19 +551,33 @@
 				{errorMessage}
 			</div>
 		{:else if queryResults.length > 0}
-			<div class="min-h-0 flex-1 overflow-hidden">
-				<DataGrid
-					tabId={tab.id}
-					columns={resultColumns}
-					data={queryResults}
-					totalRows={queryResults.length}
-					currentPage={0}
-					pageSize={100}
-					onPageChange={() => {}}
-					gridTitle="Query results"
-					detailTitle="Query result"
-					readonly={true}
-				/>
+			<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+				{#if queryResultTruncated}
+					<div
+						class="flex shrink-0 items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[9px] text-amber-700 dark:text-amber-300"
+					>
+						<TriangleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+						<span>
+							Showing the first {queryResultLimit.toLocaleString()} rows. Add a smaller
+							<code class="font-mono font-semibold">LIMIT</code> to the query for faster, deterministic
+							exploration. Interactive results remain capped even if the SQL asks for more rows.
+						</span>
+					</div>
+				{/if}
+				<div class="min-h-0 flex-1 overflow-hidden">
+					<DataGrid
+						tabId={tab.id}
+						columns={resultColumns}
+						data={visibleQueryResults}
+						totalRows={queryResults.length}
+						currentPage={resultPage}
+						pageSize={QUERY_RESULT_PAGE_SIZE}
+						onPageChange={(page) => (resultPage = page)}
+						gridTitle="Query results"
+						detailTitle="Query result"
+						readonly={true}
+					/>
+				</div>
 			</div>
 		{:else}
 			<div
@@ -532,8 +585,15 @@
 			>
 				<div class="rt-empty-grid pointer-events-none absolute inset-0 opacity-60"></div>
 				<div class="relative flex flex-col items-center gap-2">
-					<Play class="h-4 w-4 opacity-50" />
-					<span>Run a query to see results</span>
+					{#if isRunning}
+						<Loader2 class="h-4 w-4 animate-spin opacity-50" />
+						<span>Query is running…</span>
+					{:else}
+						<Play class="h-4 w-4 opacity-50" />
+						<span
+							>{executedQuery ? 'Query completed with no rows' : 'Run a query to see results'}</span
+						>
+					{/if}
 				</div>
 			</div>
 		{/if}

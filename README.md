@@ -54,6 +54,8 @@
 - Monaco-powered SQL editing and syntax highlighting.
 - Execute the selected SQL or the statement under the cursor.
 - Query history, execution status, result grids, and activity-console feedback.
+- Paginate query results in 100-row client pages and cap interactive results at 1,000 rows with a
+  visible truncation warning.
 - Schema-aware completion for schemas, tables, columns, and aliases.
 - Context-aware suggestions after `FROM`, `JOIN`, `WHERE`, `SET`, and qualified names such as
   `customer.`.
