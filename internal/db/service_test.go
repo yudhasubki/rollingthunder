@@ -32,7 +32,7 @@ type routingTestDriver struct {
 	closeOnce    sync.Once
 }
 
-func (d *routingTestDriver) Connect() error {
+func (d *routingTestDriver) Connect(context.Context) error {
 	return nil
 }
 

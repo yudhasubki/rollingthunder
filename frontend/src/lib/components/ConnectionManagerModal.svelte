@@ -7,6 +7,12 @@
 		SaveConnection,
 		UpdateConnection
 	} from '$lib/wailsjs/go/db/Service';
+	import {
+		CONNECTION_TIMEOUT_SECONDS,
+		cancelConnectionAttempt,
+		createConnectionAttemptID,
+		startConnectionElapsedTimer
+	} from '$lib/connection/attempt';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 	import { database, db } from '$lib/wailsjs/go/models';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
@@ -99,6 +105,10 @@
 	let deleteConfirm = $state(false);
 	let showPassword = $state(false);
 	let loadedForOpen = $state(false);
+	let connectionAttemptID = $state<string | null>(null);
+	let connectionElapsedSeconds = $state(0);
+	let cancellingConnection = $state(false);
+	let stopConnectionElapsedTimer: (() => void) | null = null;
 
 	let connectionName = $state('');
 	let connectionColor = $state('#ef5b50');
@@ -143,7 +153,13 @@
 			if (open && event.key === 'Escape' && !action) onClose();
 		};
 		window.addEventListener('keydown', handleKeydown);
-		return () => window.removeEventListener('keydown', handleKeydown);
+		return () => {
+			window.removeEventListener('keydown', handleKeydown);
+			stopConnectionElapsedTimer?.();
+			if (connectionAttemptID) {
+				void cancelConnectionAttempt(connectionAttemptID).catch(() => {});
+			}
+		};
 	});
 
 	async function loadProfiles(selectId?: string | null, createNew = false) {
@@ -177,6 +193,10 @@
 	function showMessage(text: string, level: 'info' | 'error' | 'success' = 'info') {
 		message = text;
 		messageLevel = level;
+	}
+
+	function closeModal() {
+		if (!action) onClose();
 	}
 
 	function selectProfile(profile: db.SavedConnection) {
@@ -290,13 +310,24 @@
 
 	async function connectProfile() {
 		if (!validate(false)) return;
+		const attemptID = createConnectionAttemptID();
 		action = 'connect';
-		showMessage(`Connecting to ${host}:${port}/${databaseName}…`);
+		connectionAttemptID = attemptID;
+		connectionElapsedSeconds = 0;
+		cancellingConnection = false;
+		stopConnectionElapsedTimer?.();
+		stopConnectionElapsedTimer = startConnectionElapsedTimer((seconds) => {
+			connectionElapsedSeconds = seconds;
+		});
+		showMessage(
+			`Connecting to ${host}:${port}/${databaseName}. Automatic timeout after ${CONNECTION_TIMEOUT_SECONDS} seconds.`
+		);
 
 		try {
 			const request = new db.ConnectRequest({
 				driver: provider || 'postgres',
-				config: buildConfig()
+				config: buildConfig(),
+				attemptId: attemptID
 			});
 			const response = await Connect(request);
 			if (response.errors?.length || !response.data?.connected) {
@@ -309,9 +340,30 @@
 			onConnected();
 			onClose();
 		} catch (error: any) {
-			showMessage(error?.message || 'Could not connect to the database', 'error');
+			const detail = error?.message || 'Could not connect to the database';
+			showMessage(detail, detail.toLowerCase().includes('cancelled') ? 'info' : 'error');
 		} finally {
+			if (connectionAttemptID === attemptID) {
+				connectionAttemptID = null;
+				stopConnectionElapsedTimer?.();
+				stopConnectionElapsedTimer = null;
+			}
+			cancellingConnection = false;
 			action = null;
+		}
+	}
+
+	async function cancelConnection() {
+		if (!connectionAttemptID || cancellingConnection) return;
+		const attemptID = connectionAttemptID;
+		cancellingConnection = true;
+		showMessage(`Cancelling connection to ${host}:${port}/${databaseName}…`);
+
+		try {
+			await cancelConnectionAttempt(attemptID);
+		} catch (error: any) {
+			cancellingConnection = false;
+			showMessage(error?.message || 'Could not cancel connection attempt', 'error');
 		}
 	}
 
@@ -345,7 +397,7 @@
 			type="button"
 			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
 			aria-label="Close connection manager"
-			onclick={onClose}
+			onclick={closeModal}
 		></button>
 
 		<div
@@ -367,7 +419,7 @@
 				<button
 					type="button"
 					class="rt-toolbar-button h-8 w-8"
-					onclick={onClose}
+					onclick={closeModal}
 					disabled={action !== null}
 					aria-label="Close connection manager"
 				>
@@ -532,7 +584,12 @@
 								{:else}
 									<AlertCircle class="h-3.5 w-3.5 shrink-0" />
 								{/if}
-								{message}
+								<span class="min-w-0 flex-1">{message}</span>
+								{#if action === 'connect'}
+									<span class="shrink-0 font-mono text-[8px] tabular-nums">
+										{connectionElapsedSeconds}s / {CONNECTION_TIMEOUT_SECONDS}s
+									</span>
+								{/if}
 							</div>
 						{/if}
 
@@ -771,19 +828,31 @@
 									{/if}
 									Save profile
 								</button>
-								<button
-									type="submit"
-									class="rt-primary-button inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[10px] font-bold disabled:opacity-50"
-									disabled={action !== null}
-								>
-									{#if action === 'connect'}
-										<Loader2 class="h-3 w-3 animate-spin" />
-										Connecting
-									{:else}
+								{#if action === 'connect'}
+									<button
+										type="button"
+										class="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/8 px-3 text-[10px] font-bold text-red-500 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+										onclick={cancelConnection}
+										disabled={cancellingConnection}
+									>
+										{#if cancellingConnection}
+											<Loader2 class="h-3 w-3 animate-spin" />
+											Cancelling
+										{:else}
+											<X class="h-3 w-3" />
+											Cancel · {connectionElapsedSeconds}s
+										{/if}
+									</button>
+								{:else}
+									<button
+										type="submit"
+										class="rt-primary-button inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[10px] font-bold disabled:opacity-50"
+										disabled={action !== null}
+									>
 										<Play class="h-3 w-3" fill="currentColor" />
 										Connect
-									{/if}
-								</button>
+									</button>
+								{/if}
 							{:else}
 								<span class="text-muted-foreground text-[9px] font-semibold">
 									Select a provider to continue

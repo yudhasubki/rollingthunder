@@ -7,6 +7,12 @@ import (
 	"rollingthunder/pkg/database/postgres"
 )
 
+type driverFactory func(
+	context.Context,
+	string,
+	database.Config,
+) (database.Driver, error)
+
 func NewDriver(ctx context.Context, driver string, cfg database.Config) (database.Driver, error) {
 	switch driver {
 	case "postgres":

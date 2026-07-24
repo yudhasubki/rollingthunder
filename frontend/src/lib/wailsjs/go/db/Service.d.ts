@@ -5,6 +5,8 @@ import {db} from '../models';
 import {database} from '../models';
 import {context} from '../models';
 
+export function CancelConnectionAttempt(arg1:string):Promise<response.BaseResponse_bool_>;
+
 export function CancelExport(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function Connect(arg1:db.ConnectRequest):Promise<response.BaseResponse_rollingthunder_internal_db_ConnectResponse_>;

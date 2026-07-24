@@ -6,8 +6,15 @@
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import ConnectionManagerModal from '$lib/components/ConnectionManagerModal.svelte';
 	import {
+		CONNECTION_TIMEOUT_SECONDS,
+		cancelConnectionAttempt,
+		createConnectionAttemptID,
+		startConnectionElapsedTimer
+	} from '$lib/connection/attempt';
+	import {
 		ArrowLeft,
 		ArrowRight,
+		AlertCircle,
 		Check,
 		Database,
 		Loader2,
@@ -17,7 +24,8 @@
 		ShieldCheck,
 		TableProperties,
 		TerminalSquare,
-		Workflow
+		Workflow,
+		X
 	} from 'lucide-svelte';
 
 	let profiles = $state<db.SavedConnection[]>([]);
@@ -25,9 +33,14 @@
 	let loadingProfiles = $state(false);
 	let connectingId = $state<string | null>(null);
 	let message = $state('');
+	let messageLevel = $state<'info' | 'error' | 'success'>('info');
 	let managerOpen = $state(false);
 	let managerInitialId = $state<string | null>(null);
 	let managerStartNew = $state(false);
+	let connectionAttemptID = $state<string | null>(null);
+	let connectionElapsedSeconds = $state(0);
+	let cancellingConnection = $state(false);
+	let stopConnectionElapsedTimer: (() => void) | null = null;
 
 	const filteredProfiles = $derived(
 		searchQuery.trim()
@@ -40,8 +53,14 @@
 			: profiles
 	);
 
-	onMount(async () => {
-		await Promise.all([loadProfiles(), connectionStore.refreshConnections()]);
+	onMount(() => {
+		void Promise.all([loadProfiles(), connectionStore.refreshConnections()]);
+		return () => {
+			stopConnectionElapsedTimer?.();
+			if (connectionAttemptID) {
+				void cancelConnectionAttempt(connectionAttemptID).catch(() => {});
+			}
+		};
 	});
 
 	async function loadProfiles() {
@@ -52,6 +71,7 @@
 			profiles = response.data || [];
 		} catch (error: any) {
 			message = error?.message || 'Could not load saved profiles';
+			messageLevel = 'error';
 		} finally {
 			loadingProfiles = false;
 		}
@@ -67,14 +87,25 @@
 	}
 
 	async function connectProfile(profile: db.SavedConnection) {
+		if (connectingId !== null) return;
+		const attemptID = createConnectionAttemptID();
 		connectingId = profile.id;
-		message = `Connecting to ${profile.config.host}:${profile.config.port}/${profile.config.db}…`;
+		connectionAttemptID = attemptID;
+		connectionElapsedSeconds = 0;
+		cancellingConnection = false;
+		stopConnectionElapsedTimer?.();
+		stopConnectionElapsedTimer = startConnectionElapsedTimer((seconds) => {
+			connectionElapsedSeconds = seconds;
+		});
+		message = `Connecting to ${profile.config.host}:${profile.config.port}/${profile.config.db}. Automatic timeout after ${CONNECTION_TIMEOUT_SECONDS} seconds.`;
+		messageLevel = 'info';
 
 		try {
 			const response = await Connect(
 				new db.ConnectRequest({
 					driver: 'postgres',
-					config: profile.config
+					config: profile.config,
+					attemptId: attemptID
 				})
 			);
 			if (response.errors?.length || !response.data?.connected) {
@@ -83,9 +114,32 @@
 			await connectionStore.refreshConnections();
 			goto('/workspace');
 		} catch (error: any) {
-			message = error?.message || 'Could not connect to the database';
+			const detail = error?.message || 'Could not connect to the database';
+			message = detail;
+			messageLevel = detail.toLowerCase().includes('cancelled') ? 'info' : 'error';
 		} finally {
+			if (connectionAttemptID === attemptID) {
+				connectionAttemptID = null;
+				stopConnectionElapsedTimer?.();
+				stopConnectionElapsedTimer = null;
+			}
+			cancellingConnection = false;
 			connectingId = null;
+		}
+	}
+
+	async function cancelProfileConnection() {
+		if (!connectionAttemptID || cancellingConnection) return;
+		cancellingConnection = true;
+		message = 'Cancelling connection attempt…';
+		messageLevel = 'info';
+
+		try {
+			await cancelConnectionAttempt(connectionAttemptID);
+		} catch (error: any) {
+			cancellingConnection = false;
+			message = error?.message || 'Could not cancel connection attempt';
+			messageLevel = 'error';
 		}
 	}
 
@@ -226,13 +280,24 @@
 			</div>
 
 			{#if message}
-				<div class="text-muted-foreground mt-3 flex shrink-0 items-center gap-2 text-[9px]">
+				<div
+					class="mt-3 flex shrink-0 items-center gap-2 text-[9px] {messageLevel === 'error'
+						? 'text-red-500'
+						: 'text-muted-foreground'}"
+				>
 					{#if connectingId}
 						<Loader2 class="h-3 w-3 animate-spin" />
+					{:else if messageLevel === 'error'}
+						<AlertCircle class="h-3 w-3" />
 					{:else}
 						<Check class="h-3 w-3" />
 					{/if}
 					{message}
+					{#if connectingId}
+						<span class="font-mono text-[8px] tabular-nums">
+							{connectionElapsedSeconds}s / {CONNECTION_TIMEOUT_SECONDS}s
+						</span>
+					{/if}
 				</div>
 			{/if}
 
@@ -308,6 +373,7 @@
 										type="button"
 										class="rt-toolbar-button h-8 w-8 opacity-0 group-hover:opacity-100"
 										onclick={() => editProfile(profile)}
+										disabled={connectingId !== null}
 										title="Edit profile"
 										aria-label="Edit {profile.config.name || profile.config.db}"
 									>
@@ -315,13 +381,25 @@
 									</button>
 									<button
 										type="button"
-										class="rt-toolbar-button border-border h-8 gap-1.5 px-3 text-[9px] font-bold"
-										onclick={() => connectProfile(profile)}
-										disabled={connectingId !== null}
+										class="rt-toolbar-button h-8 gap-1.5 px-3 text-[9px] font-bold {connectingId ===
+										profile.id
+											? 'border-red-500/25 bg-red-500/8 text-red-500 hover:bg-red-500/15'
+											: 'border-border'}"
+										onclick={() =>
+											connectingId === profile.id
+												? cancelProfileConnection()
+												: connectProfile(profile)}
+										disabled={(connectingId !== null && connectingId !== profile.id) ||
+											cancellingConnection}
 									>
 										{#if connectingId === profile.id}
-											<Loader2 class="h-3 w-3 animate-spin" />
-											Connecting
+											{#if cancellingConnection}
+												<Loader2 class="h-3 w-3 animate-spin" />
+												Cancelling
+											{:else}
+												<X class="h-3 w-3" />
+												Cancel · {connectionElapsedSeconds}s
+											{/if}
 										{:else}
 											Connect
 											<ArrowRight class="h-3 w-3" />

@@ -30,6 +30,7 @@ type Postgres struct {
 	cfg    Config
 	ctx    context.Context
 	conn   *sqlx.DB
+	pool   *pgxpool.Pool
 	engine string
 }
 
@@ -41,9 +42,15 @@ func NewPostgres(ctx context.Context, cfg Config) *Postgres {
 	}
 }
 
-func (p *Postgres) Connect() error {
+func (p *Postgres) Connect(ctx context.Context) error {
 	if p.cfg.Db == "" {
 		return errors.New("database is not exists")
+	}
+	if ctx == nil {
+		ctx = p.ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	dsn := []string{"dbname=" + p.cfg.Db}
@@ -86,27 +93,32 @@ func (p *Postgres) Connect() error {
 	}
 	dsn = append(dsn, fmt.Sprintf("port=%s", port))
 
-	pool, err := pgxpool.New(p.ctx, strings.Join(dsn, " "))
+	pool, err := pgxpool.New(ctx, strings.Join(dsn, " "))
 	if err != nil {
 		return err
 	}
 
-	db := sqlx.NewDb(stdlib.OpenDBFromPool(pool), "pgx")
-	p.conn = db
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		p.conn = nil
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return err
 	}
 
+	p.pool = pool
+	p.conn = sqlx.NewDb(stdlib.OpenDBFromPool(pool), "pgx")
 	return nil
 }
 
 func (p *Postgres) Close() error {
-	if p.conn == nil {
-		return nil
+	var closeErr error
+	if p.conn != nil {
+		closeErr = p.conn.Close()
+		p.conn = nil
 	}
-	return p.conn.Close()
+	if p.pool != nil {
+		p.pool.Close()
+		p.pool = nil
+	}
+	return closeErr
 }
 
 func (p *Postgres) GetCollections(schema ...string) ([]string, error) {

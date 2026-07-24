@@ -36,20 +36,27 @@ type ConnectionInfo struct {
 }
 
 type Service struct {
-	ctx         context.Context
-	connections map[string]*Connection
-	activeID    string
-	mu          sync.RWMutex
-	saveDialog  saveFileDialogFunc
-	exportJobs  map[string]*exportJob
-	exportMu    sync.RWMutex
+	ctx                 context.Context
+	connections         map[string]*Connection
+	activeID            string
+	mu                  sync.RWMutex
+	saveDialog          saveFileDialogFunc
+	exportJobs          map[string]*exportJob
+	exportMu            sync.RWMutex
+	newDriver           driverFactory
+	connectionTimeout   time.Duration
+	connectionAttempts  map[string]*connectionAttempt
+	connectionAttemptMu sync.Mutex
 }
 
 func NewService() *Service {
 	return &Service{
-		connections: make(map[string]*Connection),
-		saveDialog:  defaultSaveFileDialog,
-		exportJobs:  make(map[string]*exportJob),
+		connections:        make(map[string]*Connection),
+		saveDialog:         defaultSaveFileDialog,
+		exportJobs:         make(map[string]*exportJob),
+		newDriver:          NewDriver,
+		connectionTimeout:  defaultConnectionTimeout,
+		connectionAttempts: make(map[string]*connectionAttempt),
 	}
 }
 
@@ -99,32 +106,30 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 	}
 	req.Config.Driver = driverName
 
-	driver, err := NewDriver(s.ctx, driverName, req.Config)
+	attempt, err := s.startConnectionAttempt(req.AttemptID)
 	if err != nil {
-		return response.BaseResponse[ConnectResponse]{
-			Errors: []response.BaseErrorResponse{
-				{
-					Detail: err.Error(),
-				},
-			},
-			Data: ConnectResponse{
-				Connected: false,
-			},
-		}
+		return serviceError[ConnectResponse](err.Error())
+	}
+	defer s.finishConnectionAttempt(attempt)
+
+	driver, err := s.newDriver(attempt.ctx, driverName, req.Config)
+	if err != nil {
+		return serviceError[ConnectResponse](err.Error())
 	}
 
-	err = driver.Connect()
+	err = driver.Connect(attempt.ctx)
 	if err != nil {
-		return response.BaseResponse[ConnectResponse]{
-			Errors: []response.BaseErrorResponse{
-				{
-					Detail: err.Error(),
-				},
-			},
-			Data: ConnectResponse{
-				Connected: false,
-			},
-		}
+		_ = driver.Close()
+		return serviceError[ConnectResponse](
+			connectionAttemptError(attempt, err).Error(),
+		)
+	}
+
+	if !s.claimConnectionAttempt(attempt) {
+		_ = driver.Close()
+		return serviceError[ConnectResponse](
+			connectionAttemptError(attempt, nil).Error(),
+		)
 	}
 
 	// Generate connection ID and store in registry

@@ -472,6 +472,7 @@ export namespace db {
 	export class ConnectRequest {
 	    driver: string;
 	    config: database.Config;
+	    attemptId?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectRequest(source);
@@ -481,6 +482,7 @@ export namespace db {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.driver = source["driver"];
 	        this.config = this.convertValues(source["config"], database.Config);
+	        this.attemptId = source["attemptId"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

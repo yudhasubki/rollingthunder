@@ -6,7 +6,7 @@ import (
 )
 
 type Driver interface {
-	Connect() error
+	Connect(ctx context.Context) error
 	Close() error
 	CountCollectionData(table Table) (int, error)
 	GetCollectionData(table Table) (Structures, []map[string]interface{}, error)
