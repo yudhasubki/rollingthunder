@@ -23,8 +23,8 @@ secrets are missing.
 ### macOS
 
 No Apple Developer account or Apple secrets are required. The workflow publishes archives named
-`rollingthunder_<version>_darwin_<arch>_unsigned.zip`. They are not code-signed or notarized, so
-macOS Gatekeeper can require explicit user approval on first launch.
+`rollingthunder_<version>_darwin_<arch>.zip`. They are not code-signed or notarized, so macOS
+Gatekeeper can require explicit user approval on first launch.
 
 ### Windows
 
@@ -86,5 +86,5 @@ Get-AuthenticodeSignature .\rollingthunder_<version>_windows_amd64_installer.exe
 ```
 
 Windows/Linux signature status must be valid, checksums must match, and the GitHub attestation must
-identify this repository and the expected release workflow. Test each unsigned macOS archive on a
-clean Mac and confirm its filename clearly includes `_unsigned`.
+identify this repository and the expected release workflow. Test each macOS archive on a clean Mac
+and document the expected first-launch Gatekeeper flow in the release notes.

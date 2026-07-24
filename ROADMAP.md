@@ -151,8 +151,7 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 - [x] Integration tests against supported database versions.
 - [x] End-to-end tests for connection, editing, export, and destructive actions.
 - [x] Accessibility and keyboard-navigation audit.
-- [x] Automated release artifacts for macOS, Windows, and Linux with checksums and provenance;
-      macOS artifacts are explicitly labelled unsigned.
+- [x] Automated release artifacts for macOS, Windows, and Linux with checksums and provenance.
 - [x] Migration policy for saved profiles and workspace state.
 - [x] Crash reporting and opt-in diagnostics with documented privacy behavior.
 

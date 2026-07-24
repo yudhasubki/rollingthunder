@@ -126,13 +126,13 @@ jobs:
           test "${#APPS[@]}" -eq 1
           APP_PATH="${APPS[0]}"
           mkdir -p dist
-          ARCHIVE="dist/rollingthunder_${VERSION}_darwin_${{ matrix.arch }}_unsigned.zip"
+          ARCHIVE="dist/rollingthunder_${VERSION}_darwin_${{ matrix.arch }}.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE"
 
       - name: Upload macOS package
         uses: actions/upload-artifact@v6
         with:
-          name: rollingthunder-darwin-${{ matrix.arch }}-unsigned
+          name: rollingthunder-darwin-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
 
