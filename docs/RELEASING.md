@@ -1,38 +1,30 @@
 # Release process
 
 GitHub Actions builds Rolling Thunder on each target operating system. Tagged releases are gated on
-tests and platform-signing credentials; manual workflow runs can produce unsigned preview artifacts
-without publishing a GitHub release.
+tests and the configured Windows/Linux signing credentials. macOS artifacts are intentionally
+unsigned, and manual workflow runs produce preview artifacts without publishing a GitHub release.
 
 ## Automated workflows
 
 - `ci.yml`: Go tests, race detector, vet, frontend tests/lint/build, and a Linux Wails build.
 - `integration.yml`: SQLite plus PostgreSQL 14–18, MySQL 8.0/8.4 LTS, and MariaDB 10.11/11.4 LTS.
 - `release.yml`: validates the source, builds native macOS arm64/amd64, Windows amd64, and Linux
-  amd64 packages, signs tag builds, creates SHA-256 checksums, emits a GitHub/Sigstore provenance
-  attestation, and publishes the tag release.
+  amd64 packages, signs Windows/Linux tag builds, creates SHA-256 checksums, emits a GitHub/Sigstore
+  provenance attestation, and publishes the tag release.
 
 The numeric part of the release tag is injected into Wails package metadata before each native
 build. The Linux build uses WebKitGTK 4.1 and the `webkit2_41` build tag.
 
 ## Required release secrets
 
-Tagged releases stop rather than publish unsigned platform packages when the required secrets are
-missing.
+Tagged releases stop rather than publish unsigned Windows or Linux packages when their required
+secrets are missing.
 
 ### macOS
 
-- `APPLE_CERTIFICATE_BASE64`: base64-encoded Developer ID Application `.p12`
-- `APPLE_CERTIFICATE_PASSWORD`: password for that `.p12`
-- `APPLE_SIGNING_IDENTITY`: exact `codesign` identity
-
-Optional notarization credentials:
-
-- `APPLE_ID`
-- `APPLE_TEAM_ID`
-- `APPLE_APP_PASSWORD`
-
-All three notarization values must be present for notarization and stapling to run.
+No Apple Developer account or Apple secrets are required. The workflow publishes archives named
+`rollingthunder_<version>_darwin_<arch>_unsigned.zip`. They are not code-signed or notarized, so
+macOS Gatekeeper can require explicit user approval on first launch.
 
 ### Windows
 
@@ -63,7 +55,8 @@ certificates, private keys, passwords, or decoded temporary files.
    git push origin v0.4.0
    ```
 
-5. Monitor the Release workflow. It will refuse malformed tags or missing signing credentials.
+5. Monitor the Release workflow. It will refuse malformed tags or missing Windows/Linux signing
+   credentials.
 6. Download the published files and verify them on clean target machines before announcing the
    release.
 
@@ -79,13 +72,9 @@ sha256sum --check SHA256SUMS
 gh attestation verify --owner yudhasubki <artifact>
 ```
 
-Platform verification:
+Linux signature verification:
 
 ```bash
-# macOS
-codesign --verify --deep --strict --verbose=2 RollingThunder.app
-
-# Linux
 gpg --verify rollingthunder_<version>_linux_amd64.tar.gz.asc \
   rollingthunder_<version>_linux_amd64.tar.gz
 ```
@@ -96,5 +85,6 @@ On Windows:
 Get-AuthenticodeSignature .\rollingthunder_<version>_windows_amd64_installer.exe
 ```
 
-The signature status must be valid, checksums must match, and the GitHub attestation must identify
-this repository and the expected release workflow.
+Windows/Linux signature status must be valid, checksums must match, and the GitHub attestation must
+identify this repository and the expected release workflow. Test each unsigned macOS archive on a
+clean Mac and confirm its filename clearly includes `_unsigned`.

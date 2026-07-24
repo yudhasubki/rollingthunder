@@ -82,13 +82,6 @@ jobs:
             arch: amd64
           - runner: macos-15
             arch: arm64
-    env:
-      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -106,28 +99,6 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Require signing credentials for tag releases
-        if: github.event_name == 'push'
-        run: |
-          test -n "$APPLE_CERTIFICATE_BASE64"
-          test -n "$APPLE_CERTIFICATE_PASSWORD"
-          test -n "$APPLE_SIGNING_IDENTITY"
-
-      - name: Import Apple signing certificate
-        if: env.APPLE_CERTIFICATE_BASE64 != ''
-        env:
-          KEYCHAIN_PASSWORD: rollingthunder-ci-keychain
-        run: |
-          CERTIFICATE_PATH="$RUNNER_TEMP/rollingthunder.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/rollingthunder-signing.keychain-db"
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 -D > "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
@@ -143,17 +114,7 @@ jobs:
       - name: Build application
         run: wails build -clean -m -nocolour -trimpath -platform darwin/${{ matrix.arch }} -o rollingthunder
 
-      - name: Sign application
-        if: env.APPLE_CERTIFICATE_BASE64 != ''
-        run: |
-          shopt -s nullglob
-          APPS=(build/bin/*.app)
-          test "${#APPS[@]}" -eq 1
-          APP_PATH="${APPS[0]}"
-          codesign --force --deep --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$APP_PATH"
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-
-      - name: Package and optionally notarize
+      - name: Package unsigned application
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
@@ -165,22 +126,13 @@ jobs:
           test "${#APPS[@]}" -eq 1
           APP_PATH="${APPS[0]}"
           mkdir -p dist
-          ARCHIVE="dist/rollingthunder_${VERSION}_darwin_${{ matrix.arch }}.zip"
+          ARCHIVE="dist/rollingthunder_${VERSION}_darwin_${{ matrix.arch }}_unsigned.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE"
-          if [[ -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]]; then
-            xcrun notarytool submit "$ARCHIVE" \
-              --apple-id "$APPLE_ID" \
-              --team-id "$APPLE_TEAM_ID" \
-              --password "$APPLE_APP_PASSWORD" \
-              --wait
-            xcrun stapler staple "$APP_PATH"
-            ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE"
-          fi
 
       - name: Upload macOS package
         uses: actions/upload-artifact@v6
         with:
-          name: rollingthunder-darwin-${{ matrix.arch }}
+          name: rollingthunder-darwin-${{ matrix.arch }}-unsigned
           path: dist/*
           if-no-files-found: error
 

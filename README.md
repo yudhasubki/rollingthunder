@@ -116,8 +116,8 @@
 - Keyboard focus traps, skip navigation, live status announcements, and reduced-motion support.
 - Headless end-to-end coverage for connect, edit, export, truncate, and drop workflows.
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.0/8.4 LTS, and MariaDB 10.11/11.4 LTS.
-- Automated native macOS, Windows, and Linux builds with enforced signing for tagged releases,
-  checksums, and GitHub/Sigstore provenance attestations.
+- Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
+  attestations. macOS archives are explicitly distributed unsigned.
 
 ## Database support
 
@@ -138,8 +138,10 @@ Other important limitations include:
 
 - Linux desktop packages currently target WebKitGTK 4.1 and require compatible GTK/WebKit runtime
   libraries from the distribution.
-- Tagged release signing depends on repository signing certificates/keys and intentionally fails
-  closed when they are absent.
+- macOS release archives are unsigned and not notarized, so Gatekeeper can require users to approve
+  the first launch manually.
+- Windows and Linux tagged-release signing depends on repository signing certificates/keys and
+  intentionally fails closed when they are absent.
 - Automated accessibility contracts cover common regressions, but every stable release still
   requires the manual assistive-technology matrix.
 
@@ -205,7 +207,7 @@ the full manual release matrix.
 - [Privacy and diagnostics](docs/PRIVACY.md)
 - [Storage and migration policy](docs/MIGRATIONS.md)
 - [Accessibility audit](docs/ACCESSIBILITY.md)
-- [Release signing and verification](docs/RELEASING.md)
+- [Release packaging and verification](docs/RELEASING.md)
 
 ## Roadmap
 

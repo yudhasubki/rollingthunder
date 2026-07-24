@@ -119,4 +119,5 @@ A release is blocked by:
 - an unsafe reconnect that drops the existing driver before its replacement is connected;
 - a destructive workflow without explicit review/confirmation;
 - a keyboard trap, missing blocking error announcement, or inaccessible required action;
-- an unsigned tagged package or failed checksum/provenance verification.
+- an unexpectedly unsigned Windows/Linux tagged package, a macOS archive not clearly labelled
+  unsigned, or failed checksum/provenance verification.

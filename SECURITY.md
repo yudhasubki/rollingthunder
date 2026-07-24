@@ -30,8 +30,8 @@ Please allow maintainers time to reproduce and prepare a coordinated fix before 
   replacement only after it connects successfully.
 - Export uses temporary files so cancellation/failure does not replace an existing destination.
 - Optional diagnostics default off, remain local, and are redacted. Review archives before sharing.
-- Tagged release packages require platform signatures and receive checksums plus build-provenance
-  attestations.
+- Release packages receive checksums and build-provenance attestations. macOS archives are
+  intentionally unsigned; Windows and Linux tag packages retain their platform signatures.
 
 Use least-privilege database accounts, TLS where supported, independent backups, and a non-production
 environment for testing structural or destructive workflows.
