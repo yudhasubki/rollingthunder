@@ -4,6 +4,7 @@
 		stageDataUpdate,
 		stageDataDelete,
 		stageDataInsert,
+		updateStagedInsert,
 		getStagedChanges
 	} from '$lib/stores/staged.svelte';
 	import {
@@ -29,6 +30,8 @@
 	import { getColumnTypeLabel, getDefaultColumnWidth } from '$lib/table/cells';
 	import { getForeignRelation } from '$lib/table/relations';
 	import { getNextSortingState } from '$lib/table/sorting';
+	import { getRowIdentity, STAGED_CHANGED_COLUMNS } from '$lib/table/changes';
+	import { updateStatus } from '$lib/stores/status.svelte';
 	import { fly } from 'svelte/transition';
 
 	interface Props {
@@ -76,6 +79,14 @@
 	}: Props = $props();
 
 	const stagedChanges = $derived(getStagedChanges(tabId));
+	const primaryKeyColumns = $derived(
+		columns.filter((column) => column.is_primary).map((column) => column.name)
+	);
+	const stagedChangeCount = $derived(
+		stagedChanges.data.added.length +
+			stagedChanges.data.updated.length +
+			stagedChanges.data.deleted.length
+	);
 
 	// Track menu position for manual positioning
 	let menuPosition = $state({ x: 0, y: 0 });
@@ -89,8 +100,20 @@
 	let detailRowIndex = $state<number | null>(null);
 	let detailTrigger: HTMLElement | null = null;
 
-	// Merge staged added rows with existing data for display
-	const displayData = $derived([...stagedChanges.data.added.filter((r: any) => r._isNew), ...data]);
+	// Merge staged values into the current page so the grid previews what will
+	// actually be reviewed and applied.
+	const displayData = $derived([
+		...stagedChanges.data.added.filter((row: any) => row._isNew),
+		...data.map((row) => {
+			const identity = getRowIdentity(row, primaryKeyColumns);
+			return (
+				stagedChanges.data.updated.find(
+					(candidate) =>
+						identity !== null && getRowIdentity(candidate, primaryKeyColumns) === identity
+				) ?? row
+			);
+		})
+	]);
 
 	// Editing state
 	let editingCell = $state<{ rowIndex: number; colName: string } | null>(null);
@@ -112,6 +135,12 @@
 	);
 	const someDisplayRowsSelected = $derived(
 		exportSelectedRowIndexes.length > 0 && !allDisplayRowsSelected
+	);
+	const selectedRow = $derived(
+		selectedRowIndex === null ? null : (displayData[selectedRowIndex] ?? null)
+	);
+	const canDeleteSelectedRow = $derived(
+		Boolean(selectedRow && (selectedRow._isNew || primaryKeyColumns.length > 0))
 	);
 	const tablePixelWidth = $derived(
 		rowNumberWidth +
@@ -212,27 +241,43 @@
 	});
 
 	function getRowClass(row: Record<string, any>, rowIndex: number): string {
-		const rowId = row.id ?? row._id ?? rowIndex;
-		if (
-			row._isNew ||
-			stagedChanges.data.added.some(
-				(candidate: any) =>
-					candidate === row || (!candidate._isNew && (candidate.id ?? candidate._id) === rowId)
-			)
-		)
+		const identity = getRowIdentity(row, primaryKeyColumns);
+		if (row._isNew || stagedChanges.data.added.some((candidate: any) => candidate === row))
 			return 'row-added';
-		if (stagedChanges.data.updated.some((r: any) => r.id === rowId)) {
+		if (
+			Array.isArray(row[STAGED_CHANGED_COLUMNS]) ||
+			stagedChanges.data.updated.some(
+				(candidate) =>
+					identity !== null && getRowIdentity(candidate, primaryKeyColumns) === identity
+			)
+		) {
 			return 'row-updated';
 		}
-		if (stagedChanges.data.deleted.some((r: any) => r.id === rowId)) {
+		if (
+			stagedChanges.data.deleted.some(
+				(candidate) =>
+					identity !== null && getRowIdentity(candidate, primaryKeyColumns) === identity
+			)
+		) {
 			return 'row-deleted';
 		}
 		return '';
 	}
 
-	function startEdit(rowIndex: number, colName: string, currentValue: any) {
+	function startEdit(row: Record<string, any>, rowIndex: number, colName: string) {
+		if (!row._isNew && primaryKeyColumns.length === 0) {
+			updateStatus(
+				'This table has no primary key, so existing rows cannot be edited safely.',
+				'warn'
+			);
+			return;
+		}
+		if (getRowClass(row, rowIndex) === 'row-deleted') {
+			updateStatus('Discard staged changes before editing a deleted row.', 'warn');
+			return;
+		}
 		editingCell = { rowIndex, colName };
-		editValue = currentValue?.toString() ?? '';
+		editValue = row[colName]?.toString() ?? '';
 	}
 
 	function saveEdit(row: Record<string, any>, rowIndex: number) {
@@ -246,16 +291,12 @@
 
 		// For new rows (_isNew), update the staged insert directly
 		if (row._isNew) {
-			// Find and update the row in stagedChanges.data.added
-			const addedIndex = stagedChanges.data.added.findIndex((r: any) => r === row);
-			if (addedIndex >= 0) {
-				stagedChanges.data.added[addedIndex] = updatedRow;
-			}
+			updateStagedInsert(tabId, row, updatedRow);
 		} else {
 			// For existing rows, stage as update if value changed
 			const oldValue = row[colName];
 			if (newValue !== oldValue?.toString()) {
-				stageDataUpdate(tabId, updatedRow);
+				stageDataUpdate(tabId, row, updatedRow, primaryKeyColumns);
 			}
 		}
 
@@ -278,11 +319,7 @@
 	function addNewRow() {
 		const newRow: Record<string, any> = { _isNew: true };
 		columns.forEach((col) => {
-			if (col.defaultValue) {
-				newRow[col.name] = col.defaultValue;
-			} else {
-				newRow[col.name] = null;
-			}
+			newRow[col.name] = col.is_autoinc || col.default ? undefined : null;
 		});
 		updateExportSelection([]);
 		stageDataInsert(tabId, newRow);
@@ -290,7 +327,15 @@
 
 	function deleteSelectedRow() {
 		if (selectedRowIndex !== null && displayData[selectedRowIndex]) {
-			stageDataDelete(tabId, displayData[selectedRowIndex]);
+			const row = displayData[selectedRowIndex];
+			if (!row._isNew && primaryKeyColumns.length === 0) {
+				updateStatus(
+					'This table has no primary key, so existing rows cannot be deleted safely.',
+					'warn'
+				);
+				return;
+			}
+			stageDataDelete(tabId, row, primaryKeyColumns);
 			selectedRowIndex = null;
 		}
 	}
@@ -391,6 +436,15 @@
 						>{totalRows.toLocaleString()} rows</span
 					>
 				</span>
+				{#if stagedChangeCount > 0}
+					<span
+						class="inline-flex h-6 items-center gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 text-[8px] font-semibold text-amber-700 dark:text-amber-300"
+						title={`${stagedChanges.data.added.length} inserts · ${stagedChanges.data.updated.length} updates · ${stagedChanges.data.deleted.length} deletes`}
+					>
+						<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+						{stagedChangeCount} staged
+					</span>
+				{/if}
 				{#if onSortingChange && sorting.length > 0}
 					<span
 						class="bg-muted/70 text-muted-foreground inline-flex h-6 max-w-52 items-center gap-1.5 rounded-md px-2 text-[8px] font-medium"
@@ -466,8 +520,11 @@
 					</button>
 					<button
 						class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium disabled:pointer-events-none disabled:opacity-40"
-						disabled={selectedRowIndex === null}
+						disabled={!canDeleteSelectedRow}
 						onclick={deleteSelectedRow}
+						title={selectedRow && !selectedRow._isNew && primaryKeyColumns.length === 0
+							? 'A primary key is required to delete an existing row'
+							: 'Stage selected row for deletion'}
 					>
 						<Trash2 class="h-3 w-3" />
 						Delete
@@ -674,10 +731,25 @@
 											<button
 												type="button"
 												class="hover:bg-accent/45 flex h-10 w-full min-w-0 items-center overflow-hidden px-3 text-left transition-colors"
-												ondblclick={() => !readonly && startEdit(rowIndex, col.name, row[col.name])}
-												title={readonly ? 'Read-only result' : 'Double-click to edit'}
+												ondblclick={() => !readonly && startEdit(row, rowIndex, col.name)}
+												title={readonly
+													? 'Read-only result'
+													: !row._isNew && primaryKeyColumns.length === 0
+														? 'A primary key is required to edit this row safely'
+														: getRowClass(row, rowIndex) === 'row-deleted'
+															? 'This row is staged for deletion'
+															: 'Double-click to edit'}
 											>
-												<DataCellValue value={row[col.name]} dataType={getColumnTypeLabel(col)} />
+												{#if row._isNew && row[col.name] === undefined}
+													<span
+														class="text-muted-foreground inline-flex rounded border border-dashed px-1.5 py-0.5 font-mono text-[8px] italic"
+														title="The database will generate this value"
+													>
+														DEFAULT
+													</span>
+												{:else}
+													<DataCellValue value={row[col.name]} dataType={getColumnTypeLabel(col)} />
+												{/if}
 											</button>
 										{/if}
 									</td>
@@ -812,9 +884,13 @@
 					type="button"
 					class="rt-context-item rt-context-item--danger"
 					onclick={() => {
-						stageDataDelete(tabId, contextRow);
+						stageDataDelete(tabId, contextRow, primaryKeyColumns);
 						closeContextMenu();
 					}}
+					disabled={!contextRow._isNew && primaryKeyColumns.length === 0}
+					title={!contextRow._isNew && primaryKeyColumns.length === 0
+						? 'A primary key is required to delete this row safely'
+						: 'Stage row for deletion'}
 					role="menuitem"
 				>
 					<span class="rt-context-item-icon">

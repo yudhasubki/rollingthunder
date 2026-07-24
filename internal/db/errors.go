@@ -33,6 +33,8 @@ const (
 	errorCodeTransactionFailed       = "TRANSACTION_FAILED"
 	errorCodeTransactionControl      = "TRANSACTION_CONTROL_REQUIRES_MODE"
 	errorCodeUnsafeMutation          = "UNFILTERED_MUTATION_REQUIRES_CONFIRMATION"
+	errorCodeTableChangesFailed      = "TABLE_CHANGES_FAILED"
+	errorCodeTableChangesUnsupported = "TABLE_CHANGES_UNSUPPORTED"
 	errorCodeInvalidRequest          = "INVALID_REQUEST"
 )
 

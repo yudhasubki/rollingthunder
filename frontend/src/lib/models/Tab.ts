@@ -11,4 +11,5 @@ export interface Tab {
 	status?: string;
 	level?: 'info' | 'warn' | 'error';
 	activeSubTab?: 'structure' | 'data';
+	revision?: number;
 }

@@ -15,14 +15,28 @@
 	} from '$lib/stores/staged.svelte';
 	import {
 		updateStatus,
+		addConsoleLog,
 		updateDatabaseInfo,
 		getConsoleLogs,
 		getShowConsole,
 		toggleConsole,
 		clearConsoleLogs
 	} from '$lib/stores/status.svelte';
-	import { GetDatabaseInfo, InsertRow, UpdateRow, DeleteRow } from '$lib/wailsjs/go/db/Service';
+	import {
+		ApplyTableChanges,
+		GetCollectionStructures,
+		GetDatabaseInfo
+	} from '$lib/wailsjs/go/db/Service';
 	import { database } from '$lib/wailsjs/go/models';
+	import { createServiceError } from '$lib/errors/service';
+	import {
+		describeRow,
+		formatChangeValue,
+		getChangedColumns,
+		getOriginalRow,
+		stripInternalRowFields
+	} from '$lib/table/changes';
+	import type { Tab } from '$lib/models/Tab';
 	import { onMount, tick } from 'svelte';
 	import { writable } from 'svelte/store';
 	import {
@@ -39,7 +53,12 @@
 		CircleAlert,
 		CircleX,
 		Info,
-		Trash2
+		Trash2,
+		Plus,
+		Pencil,
+		TriangleAlert,
+		ShieldCheck,
+		Loader2
 	} from 'lucide-svelte';
 
 	// Import content components
@@ -63,6 +82,14 @@
 		activeTab?.kind === 'table' || activeTab?.kind === 'createTable'
 	);
 	const canApplyChanges = $derived(showChangeActions && hasUnsavedChanges);
+	const activeStagedChanges = $derived(activeTabId ? getStagedChanges(activeTabId) : null);
+	const activeStagedCount = $derived(
+		activeStagedChanges
+			? activeStagedChanges.data.added.length +
+					activeStagedChanges.data.updated.length +
+					activeStagedChanges.data.deleted.length
+			: 0
+	);
 	const consoleLogs = $derived(getConsoleLogs());
 	const showConsole = $derived(getShowConsole());
 	const latestConsoleLog = $derived(consoleLogs[0] ?? null);
@@ -73,6 +100,34 @@
 	let hasCheckedConnections = $state(false);
 	let connectionManagerOpen = $state(false);
 	let tabStripElement = $state<HTMLDivElement | null>(null);
+	let reviewOpen = $state(false);
+	let reviewTab = $state<Tab | null>(null);
+	let reviewPrimaryKeys = $state<string[]>([]);
+	let reviewLoading = $state(false);
+	let applyingChanges = $state(false);
+	let reviewError = $state('');
+	let reviewErrorHint = $state('');
+	let reviewRequestVersion = 0;
+	let discardTarget = $state<Tab | null>(null);
+	let discardClosesTab = $state(false);
+	const reviewChanges = $derived(reviewTab ? getStagedChanges(reviewTab.id) : null);
+	const reviewChangeCount = $derived(
+		reviewChanges
+			? reviewChanges.data.added.length +
+					reviewChanges.data.updated.length +
+					reviewChanges.data.deleted.length
+			: 0
+	);
+	const discardChangesSnapshot = $derived(
+		discardTarget ? getStagedChanges(discardTarget.id) : null
+	);
+	const discardChangeCount = $derived(
+		discardChangesSnapshot
+			? discardChangesSnapshot.data.added.length +
+					discardChangesSnapshot.data.updated.length +
+					discardChangesSnapshot.data.deleted.length
+			: 0
+	);
 
 	$effect(() => {
 		const checkConnections = async () => {
@@ -176,14 +231,22 @@
 			if (modifier && e.key === 's') {
 				e.preventDefault();
 				if (canApplyChanges) {
-					applyChanges();
+					void requestApplyChanges();
 				}
 			}
 
 			if (modifier && e.key === 'w') {
 				e.preventDefault();
 				if (activeTabId) {
-					tabsStore.closeTab(activeTabId);
+					requestCloseTab(activeTabId);
+				}
+			}
+
+			if (e.key === 'Escape') {
+				if (reviewOpen && !applyingChanges) {
+					closeReview();
+				} else if (discardTarget) {
+					discardTarget = null;
 				}
 			}
 		}
@@ -213,7 +276,7 @@
 		updateStatus('', 'info');
 	}
 
-	async function applyChanges() {
+	async function requestApplyChanges() {
 		const targetTab = tabsStore.activeTab;
 		if (!targetTab) {
 			updateStatus('No active tab', 'error');
@@ -236,59 +299,164 @@
 			return;
 		}
 
-		updateStatus('Applying changes...', 'info');
-
-		const table = new database.Table();
-		table.Schema = targetTab.schema;
-		table.Name = targetTab.table;
 		const stagedChanges = getStagedChanges(targetTab.id);
+		const stagedCount =
+			stagedChanges.data.added.length +
+			stagedChanges.data.updated.length +
+			stagedChanges.data.deleted.length;
+		if (stagedCount === 0) {
+			updateStatus('There are no staged row changes to review', 'info');
+			return;
+		}
 
-		const primaryKey = 'id';
+		reviewTab = { ...targetTab };
+		reviewPrimaryKeys = [];
+		reviewError = '';
+		reviewErrorHint = '';
+		reviewLoading = true;
+		reviewOpen = true;
+		const requestVersion = ++reviewRequestVersion;
 
 		try {
-			for (const row of stagedChanges.data.added) {
-				const cleanData: Record<string, any> = {};
-				for (const [key, value] of Object.entries(row)) {
-					if (key !== '_isNew' && !key.startsWith('temp_')) {
-						cleanData[key] = value;
-					}
-				}
-				const result = await InsertRow(targetTab.connectionId, table, cleanData);
-				if (result.errors?.length) {
-					throw new Error(result.errors[0].detail);
-				}
+			const table = new database.Table({
+				Schema: targetTab.schema,
+				Name: targetTab.table
+			});
+			const response = await GetCollectionStructures(targetTab.connectionId, table);
+			if (
+				requestVersion !== reviewRequestVersion ||
+				!reviewOpen ||
+				reviewTab?.id !== targetTab.id
+			) {
+				return;
 			}
-
-			for (const row of stagedChanges.data.updated) {
-				const result = await UpdateRow(targetTab.connectionId, table, row, primaryKey);
-				if (result.errors?.length) {
-					throw new Error(result.errors[0].detail);
-				}
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not prepare the change review');
 			}
+			reviewPrimaryKeys = (response.data || [])
+				.filter((column) => column.is_primary)
+				.map((column) => column.name);
 
-			for (const row of stagedChanges.data.deleted) {
-				const primaryValue = row[primaryKey];
-				if (primaryValue !== undefined) {
-					const result = await DeleteRow(targetTab.connectionId, table, primaryKey, primaryValue);
-					if (result.errors?.length) {
-						throw new Error(result.errors[0].detail);
-					}
-				}
+			if (
+				reviewPrimaryKeys.length === 0 &&
+				(stagedChanges.data.updated.length > 0 || stagedChanges.data.deleted.length > 0)
+			) {
+				reviewError =
+					'Existing rows cannot be changed safely because this table has no primary key.';
+				reviewErrorHint =
+					'Discard the staged updates/deletes or add a primary key. New rows can still be inserted separately.';
 			}
-
-			discardStagedChanges(targetTab.id);
-			updateStatus('Changes applied successfully', 'info');
-
-			tabsStore.updateTab(targetTab.id, { ...targetTab });
-		} catch (e: any) {
-			updateStatus(e?.message ?? 'Failed to apply changes', 'error');
+		} catch (error: any) {
+			reviewError = error?.message ?? 'Could not prepare the change review';
+			reviewErrorHint = error?.hint ?? '';
+		} finally {
+			if (requestVersion === reviewRequestVersion) {
+				reviewLoading = false;
+			}
 		}
 	}
 
+	function closeReview(force = false) {
+		if (applyingChanges && !force) return;
+		reviewRequestVersion += 1;
+		reviewOpen = false;
+		reviewTab = null;
+		reviewPrimaryKeys = [];
+		reviewLoading = false;
+		reviewError = '';
+		reviewErrorHint = '';
+	}
+
+	async function confirmApplyChanges() {
+		const targetTab = reviewTab;
+		const stagedChanges = reviewChanges;
+		if (
+			!targetTab ||
+			targetTab.kind !== 'table' ||
+			!stagedChanges ||
+			reviewLoading ||
+			reviewError ||
+			applyingChanges
+		) {
+			return;
+		}
+
+		applyingChanges = true;
+		reviewError = '';
+		reviewErrorHint = '';
+		updateStatus(`Applying ${reviewChangeCount} reviewed row changes atomically…`, 'info');
+
+		const changes = new database.TableChangeSet({
+			table: new database.Table({
+				Schema: targetTab.schema,
+				Name: targetTab.table
+			}),
+			added: stagedChanges.data.added.map(stripInternalRowFields),
+			updated: stagedChanges.data.updated.map(
+				(row) =>
+					new database.RowUpdate({
+						original: stripInternalRowFields(getOriginalRow(row)),
+						values: stripInternalRowFields(row),
+						changedColumns: getChangedColumns(row)
+					})
+			),
+			deleted: stagedChanges.data.deleted.map(stripInternalRowFields)
+		});
+
+		try {
+			const response = await ApplyTableChanges(targetTab.connectionId, changes);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Failed to apply reviewed changes');
+			}
+
+			const result = response.data;
+			const summary = `${result?.inserted ?? 0} inserted · ${result?.updated ?? 0} updated · ${result?.deleted ?? 0} deleted`;
+			discardStagedChanges(targetTab.id);
+			tabsStore.updateTab(targetTab.id, { revision: Date.now() });
+			updateStatus(`Changes committed: ${summary}`, 'success');
+			addConsoleLog(`Committed ${targetTab.schema}.${targetTab.table}: ${summary}`, 'success');
+			applyingChanges = false;
+			closeReview(true);
+		} catch (error: any) {
+			reviewError = error?.message ?? 'Failed to apply reviewed changes';
+			reviewErrorHint =
+				error?.hint ?? 'Nothing was committed. Review the staged rows and try again.';
+			updateStatus(reviewError, 'error');
+			addConsoleLog(reviewError, 'error');
+		} finally {
+			applyingChanges = false;
+		}
+	}
+
+	function requestDiscardChanges(tabId: string, closeAfter = false) {
+		const target = tabsStore.allTabs.find((tab) => tab.id === tabId);
+		if (!target) return;
+		if (!hasChanges(tabId)) {
+			if (closeAfter) tabsStore.closeTab(tabId);
+			return;
+		}
+		discardTarget = target;
+		discardClosesTab = closeAfter;
+	}
+
+	function confirmDiscardChanges() {
+		const target = discardTarget;
+		if (!target) return;
+		discardStagedChanges(target.id);
+		updateStatus(`Discarded ${discardChangeCount} staged changes from ${target.title}`, 'info');
+		discardTarget = null;
+		if (discardClosesTab) {
+			tabsStore.closeTab(target.id);
+		}
+		discardClosesTab = false;
+	}
+
 	function discardChanges() {
-		if (!activeTabId) return;
-		updateStatus('Discarding changes...', 'info');
-		discardStagedChanges(activeTabId);
+		if (activeTabId) requestDiscardChanges(activeTabId);
+	}
+
+	function requestCloseTab(tabId: string) {
+		requestDiscardChanges(tabId, true);
 	}
 </script>
 
@@ -345,7 +513,7 @@
 												class="text-muted-foreground hover:bg-muted hover:text-foreground ml-auto shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-data-[state=active]:opacity-60"
 												onclick={(e) => {
 													e.stopPropagation();
-													tabsStore.closeTab(tab.id);
+													requestCloseTab(tab.id);
 												}}
 												aria-label="Close {tab.title}"
 												title="Close tab"
@@ -358,15 +526,23 @@
 							</div>
 
 							<div
-								class="flex h-8 min-w-[154px] flex-shrink-0 items-center justify-end gap-1 border-l pl-2"
+								class="flex h-8 min-w-[188px] flex-shrink-0 items-center justify-end gap-1 border-l pl-2"
 							>
+								{#if activeTab?.kind === 'table' && activeStagedCount > 0}
+									<span
+										class="mr-1 inline-flex h-6 items-center rounded-md bg-amber-500/10 px-2 text-[8px] font-semibold text-amber-700 dark:text-amber-300"
+										title={`${activeStagedChanges?.data.added.length ?? 0} inserts · ${activeStagedChanges?.data.updated.length ?? 0} updates · ${activeStagedChanges?.data.deleted.length ?? 0} deletes`}
+									>
+										{activeStagedCount} pending
+									</span>
+								{/if}
 								<button
 									class="rt-primary-button inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold disabled:pointer-events-none disabled:opacity-35 disabled:shadow-none"
 									disabled={!canApplyChanges}
-									onclick={applyChanges}
+									onclick={() => void requestApplyChanges()}
 								>
 									<Save class="h-3 w-3" />
-									Apply
+									{activeTab?.kind === 'table' ? 'Review' : 'Apply'}
 								</button>
 								<button
 									class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[11px] disabled:pointer-events-none disabled:opacity-35"
@@ -597,3 +773,322 @@
 	<!-- Status Bar -->
 	<AppStatusBar />
 </div>
+
+{#if reviewOpen && reviewTab && reviewChanges}
+	<div class="fixed inset-0 z-[100] flex items-center justify-center p-6">
+		<button
+			type="button"
+			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			onclick={() => closeReview()}
+			aria-label="Close change review"
+		></button>
+		<div
+			class="rt-popover relative flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="change-review-title"
+		>
+			<header class="flex shrink-0 items-start gap-3 border-b p-4">
+				<span
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-300"
+				>
+					<ShieldCheck class="h-4 w-4" />
+				</span>
+				<div class="min-w-0 flex-1">
+					<h2 id="change-review-title" class="text-sm font-bold">Review database changes</h2>
+					<p class="text-muted-foreground mt-1 text-[10px]">
+						Nothing is written until you confirm this reviewed change set.
+					</p>
+					<div class="mt-2 flex flex-wrap items-center gap-1.5">
+						<span class="bg-muted rounded px-2 py-1 font-mono text-[9px] font-semibold"
+							>{reviewTab.schema}.{reviewTab.table}</span
+						>
+						<span class="text-muted-foreground text-[9px]">
+							{reviewPrimaryKeys.length > 0
+								? `Primary key: ${reviewPrimaryKeys.join(', ')}`
+								: 'No primary key detected'}
+						</span>
+					</div>
+				</div>
+				<button
+					type="button"
+					class="rt-toolbar-button h-8 w-8 cursor-pointer"
+					onclick={() => closeReview()}
+					disabled={applyingChanges}
+					aria-label="Close change review"
+				>
+					<X class="h-3.5 w-3.5" />
+				</button>
+			</header>
+
+			<div class="grid shrink-0 grid-cols-3 divide-x border-b bg-[var(--surface-sunken)]">
+				<div class="flex h-14 items-center gap-2.5 px-4">
+					<span
+						class="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-500"
+					>
+						<Plus class="h-3.5 w-3.5" />
+					</span>
+					<div>
+						<div class="text-[12px] font-bold tabular-nums">
+							{reviewChanges.data.added.length}
+						</div>
+						<div class="text-muted-foreground text-[8px]">Insert</div>
+					</div>
+				</div>
+				<div class="flex h-14 items-center gap-2.5 px-4">
+					<span
+						class="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/10 text-amber-500"
+					>
+						<Pencil class="h-3.5 w-3.5" />
+					</span>
+					<div>
+						<div class="text-[12px] font-bold tabular-nums">
+							{reviewChanges.data.updated.length}
+						</div>
+						<div class="text-muted-foreground text-[8px]">Update</div>
+					</div>
+				</div>
+				<div class="flex h-14 items-center gap-2.5 px-4">
+					<span
+						class="flex h-7 w-7 items-center justify-center rounded-md bg-red-500/10 text-red-500"
+					>
+						<Trash2 class="h-3.5 w-3.5" />
+					</span>
+					<div>
+						<div class="text-[12px] font-bold tabular-nums">
+							{reviewChanges.data.deleted.length}
+						</div>
+						<div class="text-muted-foreground text-[8px]">Delete</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="min-h-0 flex-1 overflow-auto p-4">
+				{#if reviewLoading}
+					<div class="text-muted-foreground flex h-40 flex-col items-center justify-center">
+						<Loader2 class="h-5 w-5 animate-spin" />
+						<p class="mt-2 text-[10px] font-semibold">Validating row identity and metadata…</p>
+					</div>
+				{:else}
+					{#if reviewError}
+						<div
+							class="mb-3 flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-600 dark:text-red-400"
+						>
+							<TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
+							<div class="min-w-0">
+								<p class="text-[10px] font-semibold">{reviewError}</p>
+								{#if reviewErrorHint}
+									<p class="mt-1 text-[9px] leading-relaxed opacity-85">{reviewErrorHint}</p>
+								{/if}
+							</div>
+						</div>
+					{/if}
+
+					<div class="space-y-4">
+						{#if reviewChanges.data.added.length > 0}
+							<section>
+								<div class="mb-1.5 flex items-center gap-2">
+									<Plus class="h-3 w-3 text-emerald-500" />
+									<h3 class="text-[10px] font-bold">Rows to insert</h3>
+								</div>
+								<div class="space-y-1.5">
+									{#each reviewChanges.data.added.slice(0, 5) as row, index}
+										<div class="rounded-lg border bg-[var(--surface-raised)] px-3 py-2">
+											<div class="text-[9px] font-semibold">
+												{describeRow(row, reviewPrimaryKeys, index)}
+											</div>
+											<div class="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
+												{#each Object.entries(stripInternalRowFields(row)).slice(0, 5) as [column, value]}
+													<span class="text-[8px]">
+														<code>{column}</code> = {formatChangeValue(value)}
+													</span>
+												{/each}
+											</div>
+										</div>
+									{/each}
+									{#if reviewChanges.data.added.length > 5}
+										<p class="text-muted-foreground px-1 text-[8px]">
+											+{reviewChanges.data.added.length - 5} more inserts
+										</p>
+									{/if}
+								</div>
+							</section>
+						{/if}
+
+						{#if reviewChanges.data.updated.length > 0}
+							<section>
+								<div class="mb-1.5 flex items-center gap-2">
+									<Pencil class="h-3 w-3 text-amber-500" />
+									<h3 class="text-[10px] font-bold">Rows to update</h3>
+								</div>
+								<div class="space-y-1.5">
+									{#each reviewChanges.data.updated.slice(0, 5) as row, index}
+										<div class="rounded-lg border bg-[var(--surface-raised)] px-3 py-2">
+											<div class="text-[9px] font-semibold">
+												{describeRow(row, reviewPrimaryKeys, index)}
+											</div>
+											<div class="mt-1.5 space-y-1">
+												{#each getChangedColumns(row).slice(0, 5) as column}
+													<div
+														class="grid grid-cols-[minmax(80px,0.7fr)_minmax(0,1fr)_12px_minmax(0,1fr)] items-center gap-2 text-[8px]"
+													>
+														<code class="truncate font-semibold">{column}</code>
+														<span class="text-muted-foreground truncate line-through"
+															>{formatChangeValue(getOriginalRow(row)[column])}</span
+														>
+														<span class="text-muted-foreground">→</span>
+														<span class="truncate font-medium"
+															>{formatChangeValue(row[column])}</span
+														>
+													</div>
+												{/each}
+											</div>
+										</div>
+									{/each}
+									{#if reviewChanges.data.updated.length > 5}
+										<p class="text-muted-foreground px-1 text-[8px]">
+											+{reviewChanges.data.updated.length - 5} more updates
+										</p>
+									{/if}
+								</div>
+							</section>
+						{/if}
+
+						{#if reviewChanges.data.deleted.length > 0}
+							<section>
+								<div class="mb-1.5 flex items-center gap-2">
+									<Trash2 class="h-3 w-3 text-red-500" />
+									<h3 class="text-[10px] font-bold">Rows to delete permanently</h3>
+								</div>
+								<div class="space-y-1.5">
+									{#each reviewChanges.data.deleted.slice(0, 5) as row, index}
+										<div
+											class="flex items-center justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2"
+										>
+											<span class="truncate text-[9px] font-semibold">
+												{describeRow(row, reviewPrimaryKeys, index)}
+											</span>
+											<span class="shrink-0 text-[8px] font-semibold text-red-500"
+												>Permanent delete</span
+											>
+										</div>
+									{/each}
+									{#if reviewChanges.data.deleted.length > 5}
+										<p class="text-muted-foreground px-1 text-[8px]">
+											+{reviewChanges.data.deleted.length - 5} more deletes
+										</p>
+									{/if}
+								</div>
+							</section>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<footer class="flex shrink-0 items-center justify-between gap-4 border-t p-4">
+				<div class="flex min-w-0 items-start gap-2">
+					<ShieldCheck class="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+					<p class="text-muted-foreground text-[8px] leading-relaxed">
+						All {reviewChangeCount} changes run in one database transaction. If any row fails, the complete
+						set is rolled back.
+					</p>
+				</div>
+				<div class="flex shrink-0 gap-2">
+					<button
+						type="button"
+						class="rt-toolbar-button h-8 cursor-pointer px-3 text-[10px] font-semibold"
+						onclick={() => closeReview()}
+						disabled={applyingChanges}
+					>
+						Keep editing
+					</button>
+					<button
+						type="button"
+						class="{reviewChanges.data.deleted.length > 0
+							? 'bg-red-600 text-white hover:bg-red-700'
+							: 'rt-primary-button'} inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[10px] font-bold disabled:pointer-events-none disabled:opacity-50"
+						onclick={confirmApplyChanges}
+						disabled={reviewLoading ||
+							Boolean(reviewError) ||
+							applyingChanges ||
+							reviewChangeCount === 0}
+					>
+						{#if applyingChanges}
+							<Loader2 class="h-3 w-3 animate-spin" />
+							Applying…
+						{:else}
+							<ShieldCheck class="h-3 w-3" />
+							Apply {reviewChangeCount} changes
+						{/if}
+					</button>
+				</div>
+			</footer>
+		</div>
+	</div>
+{/if}
+
+{#if discardTarget && discardChangesSnapshot}
+	<div class="fixed inset-0 z-[110] flex items-center justify-center p-6">
+		<button
+			type="button"
+			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			onclick={() => (discardTarget = null)}
+			aria-label="Keep staged changes"
+		></button>
+		<div
+			class="rt-popover relative w-full max-w-sm rounded-xl p-4"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="discard-changes-title"
+		>
+			<div class="flex items-start gap-3">
+				<span
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-300"
+				>
+					<TriangleAlert class="h-4 w-4" />
+				</span>
+				<div class="min-w-0">
+					<h2 id="discard-changes-title" class="text-sm font-bold">
+						Discard {discardChangeCount} staged changes?
+					</h2>
+					<p class="text-muted-foreground mt-1 text-[10px] leading-relaxed">
+						Your database has not been changed, but the local edits in
+						<span class="text-foreground font-mono font-semibold">{discardTarget.title}</span>
+						will be lost.
+					</p>
+				</div>
+			</div>
+			<div class="mt-3 grid grid-cols-3 gap-2">
+				<div class="rounded-lg border px-2.5 py-2 text-center">
+					<div class="text-[11px] font-bold">{discardChangesSnapshot.data.added.length}</div>
+					<div class="text-muted-foreground text-[8px]">Insert</div>
+				</div>
+				<div class="rounded-lg border px-2.5 py-2 text-center">
+					<div class="text-[11px] font-bold">{discardChangesSnapshot.data.updated.length}</div>
+					<div class="text-muted-foreground text-[8px]">Update</div>
+				</div>
+				<div class="rounded-lg border px-2.5 py-2 text-center">
+					<div class="text-[11px] font-bold">{discardChangesSnapshot.data.deleted.length}</div>
+					<div class="text-muted-foreground text-[8px]">Delete</div>
+				</div>
+			</div>
+			<div class="mt-4 flex justify-end gap-2">
+				<button
+					type="button"
+					class="rt-toolbar-button h-8 cursor-pointer px-3 text-[10px] font-semibold"
+					onclick={() => (discardTarget = null)}
+				>
+					Keep changes
+				</button>
+				<button
+					type="button"
+					class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md bg-red-600 px-3 text-[10px] font-bold text-white transition-colors hover:bg-red-700"
+					onclick={confirmDiscardChanges}
+				>
+					<Trash2 class="h-3 w-3" />
+					{discardClosesTab ? 'Discard and close' : 'Discard changes'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

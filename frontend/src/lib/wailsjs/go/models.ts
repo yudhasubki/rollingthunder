@@ -285,6 +285,22 @@ export namespace database {
 	        this.rowLimit = source["rowLimit"];
 	    }
 	}
+	export class RowUpdate {
+	    original: Record<string, any>;
+	    values: Record<string, any>;
+	    changedColumns: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new RowUpdate(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.original = source["original"];
+	        this.values = source["values"];
+	        this.changedColumns = source["changedColumns"];
+	    }
+	}
 	export class RowsExportRequest {
 	    columns: string[];
 	    rows: any[];
@@ -408,6 +424,58 @@ export namespace database {
 	        this.Sorts = this.convertValues(source["Sorts"], Sort);
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TableChangeResult {
+	    inserted: number;
+	    updated: number;
+	    deleted: number;
+
+	    static createFrom(source: any = {}) {
+	        return new TableChangeResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.inserted = source["inserted"];
+	        this.updated = source["updated"];
+	        this.deleted = source["deleted"];
+	    }
+	}
+	export class TableChangeSet {
+	    table: Table;
+	    added: any[];
+	    updated: RowUpdate[];
+	    deleted: any[];
+
+	    static createFrom(source: any = {}) {
+	        return new TableChangeSet(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.table = this.convertValues(source["table"], Table);
+	        this.added = source["added"];
+	        this.updated = this.convertValues(source["updated"], RowUpdate);
+	        this.deleted = source["deleted"];
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -1131,6 +1199,38 @@ export namespace response {
 	        this.data = this.convertValues(source["data"], database.Structure);
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_TableChangeResult_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.TableChangeResult;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_TableChangeResult_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.TableChangeResult);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;

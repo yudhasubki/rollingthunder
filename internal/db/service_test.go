@@ -35,6 +35,10 @@ type routingTestDriver struct {
 	transaction  database.Transaction
 	beginErr     error
 	beginContext context.Context
+
+	changeRequest database.TableChangeSet
+	changeResult  database.TableChangeResult
+	changeErr     error
 }
 
 func (d *routingTestDriver) Connect(context.Context) error {
@@ -138,6 +142,22 @@ func (d *routingTestDriver) transactionContext() context.Context {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.beginContext
+}
+
+func (d *routingTestDriver) ApplyTableChanges(
+	_ context.Context,
+	changes database.TableChangeSet,
+) (database.TableChangeResult, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.changeRequest = changes
+	return d.changeResult, d.changeErr
+}
+
+func (d *routingTestDriver) tableChangeRequest() database.TableChangeSet {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.changeRequest
 }
 
 func (d *routingTestDriver) ExportTable(

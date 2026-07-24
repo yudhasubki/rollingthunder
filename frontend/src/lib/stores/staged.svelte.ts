@@ -1,4 +1,15 @@
-type StagedRow = Record<string, any>;
+import {
+	findChangedColumns,
+	getOriginalRow,
+	getRowIdentity,
+	STAGED_CHANGED_COLUMNS,
+	STAGED_ORIGINAL,
+	STAGED_ROW_ID,
+	stripInternalRowFields,
+	type DataRow
+} from '$lib/table/changes';
+
+export type StagedRow = DataRow;
 
 export interface TabStagedChanges {
 	data: {
@@ -52,22 +63,75 @@ function ensureStagedChanges(tabId: string): TabStagedChanges {
 }
 
 export function stageDataInsert(tabId: string, row: Partial<StagedRow>) {
-	ensureStagedChanges(tabId).data.added.push({ ...row, _isNew: true });
+	ensureStagedChanges(tabId).data.added.push({
+		...row,
+		_isNew: true,
+		[STAGED_ROW_ID]: crypto.randomUUID()
+	});
 }
 
-export function stageDataUpdate(tabId: string, row: StagedRow) {
-	const staged = ensureStagedChanges(tabId).data.updated;
-	const rowId = row.id ?? row._id;
-	const existingIndex = staged.findIndex((candidate) => (candidate.id ?? candidate._id) === rowId);
-	if (rowId !== undefined && existingIndex >= 0) {
-		staged[existingIndex] = row;
-	} else {
-		staged.push(row);
+export function updateStagedInsert(tabId: string, row: StagedRow, nextRow: StagedRow) {
+	const staged = ensureStagedChanges(tabId).data.added;
+	const stageID = row[STAGED_ROW_ID];
+	const existingIndex = staged.findIndex((candidate) => candidate[STAGED_ROW_ID] === stageID);
+	if (existingIndex >= 0) {
+		staged[existingIndex] = {
+			...nextRow,
+			_isNew: true,
+			[STAGED_ROW_ID]: stageID
+		};
 	}
 }
 
-export function stageDataDelete(tabId: string, row: StagedRow) {
-	ensureStagedChanges(tabId).data.deleted.push(row);
+export function stageDataUpdate(
+	tabId: string,
+	row: StagedRow,
+	nextRow: StagedRow,
+	primaryKeys: string[]
+) {
+	const staged = ensureStagedChanges(tabId).data.updated;
+	const original = stripInternalRowFields(getOriginalRow(row));
+	const current = stripInternalRowFields(nextRow);
+	const changedColumns = findChangedColumns(original, current);
+	const identity = getRowIdentity(original, primaryKeys);
+	const existingIndex = staged.findIndex(
+		(candidate) => getRowIdentity(candidate, primaryKeys) === identity
+	);
+
+	if (changedColumns.length === 0) {
+		if (existingIndex >= 0) staged.splice(existingIndex, 1);
+		return;
+	}
+
+	const stagedRow = {
+		...current,
+		[STAGED_ORIGINAL]: original,
+		[STAGED_CHANGED_COLUMNS]: changedColumns
+	};
+	if (identity !== null && existingIndex >= 0) {
+		staged[existingIndex] = stagedRow;
+	} else {
+		staged.push(stagedRow);
+	}
+}
+
+export function stageDataDelete(tabId: string, row: StagedRow, primaryKeys: string[]) {
+	const changes = ensureStagedChanges(tabId).data;
+	if (row._isNew) {
+		const stageID = row[STAGED_ROW_ID];
+		const addedIndex = changes.added.findIndex((candidate) => candidate[STAGED_ROW_ID] === stageID);
+		if (addedIndex >= 0) changes.added.splice(addedIndex, 1);
+		return;
+	}
+
+	const original = stripInternalRowFields(getOriginalRow(row));
+	const identity = getRowIdentity(original, primaryKeys);
+	changes.updated = changes.updated.filter(
+		(candidate) => getRowIdentity(candidate, primaryKeys) !== identity
+	);
+	if (!changes.deleted.some((candidate) => getRowIdentity(candidate, primaryKeys) === identity)) {
+		changes.deleted.push(original);
+	}
 }
 
 export function stageStructureAdd(tabId: string, column: StagedRow) {

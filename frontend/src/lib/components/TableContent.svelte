@@ -207,6 +207,7 @@
 		const page = currentPage;
 		const currentFilters = appliedFilters;
 		const currentSorting = sorting;
+		const revision = tab.revision ?? 0;
 
 		if (subTab !== 'data' || !tab.schema || !tab.table) {
 			dataRequestVersion += 1;
@@ -221,7 +222,7 @@
 		// Create a key from current load parameters
 		const filterKey = JSON.stringify(currentFilters.filter((f) => f.enabled));
 		const sortKey = JSON.stringify(currentSorting);
-		const loadKey = `${connectionId}:${schemaName}.${tableName}:${page}:${filterKey}:${sortKey}`;
+		const loadKey = `${connectionId}:${schemaName}.${tableName}:${page}:${filterKey}:${sortKey}:${revision}`;
 
 		// Skip if we already loaded this exact state
 		if (loadKey === lastLoadKey) {
