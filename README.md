@@ -15,6 +15,18 @@
   Built with Go, Wails, Svelte 5, and Monaco Editor.
 </p>
 
+<p align="center">
+  <img
+    src="docs/assets/screenshots/workspace-structure.png"
+    width="100%"
+    alt="Rolling Thunder workspace showing a PostgreSQL table structure, columns, keys, relations, and indexes"
+  />
+</p>
+
+<p align="center">
+  <sub>Inspect tables, keys, native types, relations, and indexes without losing database context.</sub>
+</p>
+
 > [!WARNING]
 > Rolling Thunder is under active development. Keep independent backups before using structural or
 > destructive workflows against production-critical databases.
@@ -55,6 +67,18 @@
   according to each engine's capabilities.
 - Keep table, query, diagram, and create-table tabs open together.
 - Restore each saved profile's own query workspace without mixing tabs between active connections.
+
+<p align="center">
+  <img
+    src="docs/assets/screenshots/schema-diagram.png"
+    width="100%"
+    alt="Rolling Thunder interactive schema diagram showing tables and foreign-key relationships"
+  />
+</p>
+
+<p align="center">
+  <sub>Map tables and follow foreign-key relationships in the interactive schema diagram.</sub>
+</p>
 
 ### Data export
 
