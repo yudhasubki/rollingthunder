@@ -52,6 +52,16 @@ func exportFileConfiguration(format database.ExportFormat) (exportFileConfig, er
 				Pattern:     "*.json",
 			},
 		}, nil
+	case database.ExportFormatSQL:
+		return exportFileConfig{
+			title:           "Export SQL",
+			defaultFilename: "rollingthunder-export.sql",
+			extension:       ".sql",
+			filter: wailsruntime.FileFilter{
+				DisplayName: "SQL files (*.sql)",
+				Pattern:     "*.sql",
+			},
+		}, nil
 	default:
 		return exportFileConfig{}, fmt.Errorf("unsupported export format %q", format)
 	}
@@ -235,6 +245,12 @@ func (s *Service) ExportTableData(
 func (s *Service) ExportQueryResults(
 	request database.RowsExportRequest,
 ) response.BaseResponse[database.ExportResult] {
+	if request.Options.Format == database.ExportFormatSQL {
+		return serviceError[database.ExportResult](
+			"SQL INSERT export requires a table source",
+		)
+	}
+
 	result, err := s.writeExport(request.SuggestedName, request.Options, func(writer io.Writer) (database.ExportStats, error) {
 		return database.WriteExportRows(writer, request.Columns, request.Rows, request.Options)
 	})

@@ -295,3 +295,51 @@ func TestValidateExportOptionsRejectsUnknownFormats(t *testing.T) {
 		t.Fatal("expected unsupported-format error")
 	}
 }
+
+func TestValidateSQLExportOptions(t *testing.T) {
+	options := ExportOptions{
+		Format: ExportFormatSQL,
+		SQL: SQLInsertOptions{
+			BatchSize:          0,
+			IncludeTransaction: true,
+		},
+	}
+	if err := ValidateExportOptions(options); err != nil {
+		t.Fatalf("validate default SQL export options: %v", err)
+	}
+	if options.SQL.EffectiveBatchSize() != DefaultSQLInsertBatchSize {
+		t.Fatalf(
+			"default batch size = %d, want %d",
+			options.SQL.EffectiveBatchSize(),
+			DefaultSQLInsertBatchSize,
+		)
+	}
+
+	options.SQL.BatchSize = MaxSQLInsertBatchSize + 1
+	if err := ValidateExportOptions(options); err == nil {
+		t.Fatal("expected oversized SQL batch error")
+	}
+	options.SQL.BatchSize = -1
+	if err := ValidateExportOptions(options); err == nil {
+		t.Fatal("expected negative SQL batch error")
+	}
+}
+
+func TestGenericExportWritersRejectSQLWithoutTableMetadata(t *testing.T) {
+	options := ExportOptions{Format: ExportFormatSQL}
+	if _, err := WriteExportRows(
+		&bytes.Buffer{},
+		[]string{"id"},
+		[]map[string]interface{}{{"id": 1}},
+		options,
+	); err == nil || !strings.Contains(err.Error(), "table source") {
+		t.Fatalf("expected table-source error, got %v", err)
+	}
+	if _, err := WriteExportStream(
+		&bytes.Buffer{},
+		&sliceRowStream{columns: []string{"id"}},
+		options,
+	); err == nil || !strings.Contains(err.Error(), "driver-specific") {
+		t.Fatalf("expected driver-specific serializer error, got %v", err)
+	}
+}

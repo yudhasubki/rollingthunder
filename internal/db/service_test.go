@@ -18,6 +18,7 @@ type routingTestDriver struct {
 	closed        bool
 	exportContent string
 	exportCalls   int
+	exportRequest database.TableExportRequest
 	exportRows    int64
 	exportErr     error
 
@@ -107,11 +108,12 @@ func (d *routingTestDriver) ExecuteQuery(
 
 func (d *routingTestDriver) ExportTable(
 	_ context.Context,
-	_ database.TableExportRequest,
+	request database.TableExportRequest,
 	writer io.Writer,
 ) (database.ExportStats, error) {
 	d.mu.Lock()
 	d.exportCalls++
+	d.exportRequest = request
 	content := d.exportContent
 	rows := d.exportRows
 	exportErr := d.exportErr

@@ -58,9 +58,9 @@ func (options SQLInsertOptions) EffectiveBatchSize() int {
 }
 
 type ExportOptions struct {
-	Format ExportFormat `json:"format"`
-	CSV    CSVOptions   `json:"csv"`
-	JSON   JSONOptions  `json:"json"`
+	Format ExportFormat     `json:"format"`
+	CSV    CSVOptions       `json:"csv"`
+	JSON   JSONOptions      `json:"json"`
 	SQL    SQLInsertOptions `json:"sql"`
 }
 
@@ -107,7 +107,7 @@ func ValidateExportOptions(options ExportOptions) error {
 	case ExportFormatSQL:
 		if options.SQL.BatchSize < 0 || options.SQL.BatchSize > MaxSQLInsertBatchSize {
 			return fmt.Errorf(
-				"SQL INSERT batch size must be between 1 and %d",
+				"SQL INSERT batch size must be 0 (default) or between 1 and %d",
 				MaxSQLInsertBatchSize,
 			)
 		}

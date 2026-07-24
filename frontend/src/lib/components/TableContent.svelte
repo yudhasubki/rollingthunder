@@ -866,6 +866,7 @@
 <ExportDialog
 	open={exportDialogOpen}
 	source="table"
+	sourceName={tab.schema && tab.table ? `${tab.schema}.${tab.table}` : ''}
 	pageRows={tableData.length}
 	totalRows={tableTotalData}
 	{exporting}

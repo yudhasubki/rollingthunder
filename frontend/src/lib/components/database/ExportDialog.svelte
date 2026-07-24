@@ -5,15 +5,18 @@
 		Rows3,
 		Database,
 		Braces,
+		FileCode2,
 		X,
 		Loader2,
 		TriangleAlert
 	} from 'lucide-svelte';
 	import type { ExportFormat, ExportScope, ExportSettings } from '$lib/export/options';
+	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 
 	interface Props {
 		open: boolean;
 		source: 'table' | 'query';
+		sourceName?: string;
 		pageRows: number;
 		totalRows: number;
 		truncated?: boolean;
@@ -25,6 +28,7 @@
 	let {
 		open,
 		source,
+		sourceName = '',
 		pageRows,
 		totalRows,
 		truncated = false,
@@ -39,7 +43,14 @@
 	let includeHeader = $state(true);
 	let nullValue = $state('');
 	let prettyJSON = $state(true);
+	let sqlBatchSize = $state(100);
+	let includeTransaction = $state(true);
 	let wasOpen = false;
+	const sqlBatchOptions = [
+		{ value: '100', label: '100 rows' },
+		{ value: '500', label: '500 rows' },
+		{ value: '1000', label: '1,000 rows' }
+	];
 
 	$effect(() => {
 		if (open && !wasOpen) {
@@ -49,6 +60,8 @@
 			includeHeader = true;
 			nullValue = '';
 			prettyJSON = true;
+			sqlBatchSize = 100;
+			includeTransaction = true;
 		}
 		wasOpen = open;
 	});
@@ -68,7 +81,9 @@
 			delimiter,
 			includeHeader,
 			nullValue,
-			prettyJSON
+			prettyJSON,
+			sqlBatchSize,
+			includeTransaction
 		});
 	}
 </script>
@@ -95,6 +110,8 @@
 				>
 					{#if format === 'json'}
 						<Braces class="h-4 w-4" />
+					{:else if format === 'sql'}
+						<FileCode2 class="h-4 w-4" />
 					{:else}
 						<FileSpreadsheet class="h-4 w-4" />
 					{/if}
@@ -123,7 +140,7 @@
 					<span class="text-[10px] font-bold">Format</span>
 					<span class="text-muted-foreground text-[9px]">UTF-8</span>
 				</div>
-				<div class="grid grid-cols-2 gap-2">
+				<div class="grid gap-2 {source === 'table' ? 'grid-cols-3' : 'grid-cols-2'}">
 					<button
 						type="button"
 						class="flex min-h-14 cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left transition-colors {format ===
@@ -136,9 +153,7 @@
 						<FileSpreadsheet class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
 						<span>
 							<span class="block text-[10px] font-semibold">CSV</span>
-							<span class="text-muted-foreground mt-1 block text-[9px]">
-								Spreadsheet-friendly rows
-							</span>
+							<span class="text-muted-foreground mt-1 block text-[9px]"> Tabular rows </span>
 						</span>
 					</button>
 					<button
@@ -153,11 +168,26 @@
 						<Braces class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
 						<span>
 							<span class="block text-[10px] font-semibold">JSON</span>
-							<span class="text-muted-foreground mt-1 block text-[9px]">
-								Typed array of objects
-							</span>
+							<span class="text-muted-foreground mt-1 block text-[9px]"> Typed objects </span>
 						</span>
 					</button>
+					{#if source === 'table'}
+						<button
+							type="button"
+							class="flex min-h-14 cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left transition-colors {format ===
+							'sql'
+								? 'border-primary/50 bg-primary/5'
+								: 'hover:bg-[var(--surface-hover)]'}"
+							onclick={() => (format = 'sql')}
+							disabled={exporting}
+						>
+							<FileCode2 class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
+							<span>
+								<span class="block text-[10px] font-semibold">SQL</span>
+								<span class="text-muted-foreground mt-1 block text-[9px]"> INSERT statements </span>
+							</span>
+						</button>
+					{/if}
 				</div>
 			</div>
 
@@ -272,7 +302,7 @@
 						</label>
 					</div>
 				</div>
-			{:else}
+			{:else if format === 'json'}
 				<div>
 					<span class="mb-2 block text-[10px] font-bold">JSON options</span>
 					<div class="rounded-lg border p-3">
@@ -294,6 +324,59 @@
 						<div class="text-muted-foreground mt-3 border-t pt-3 text-[9px] leading-relaxed">
 							Exports one valid JSON array. Dates use ISO 8601 and binary values use a
 							<code class="font-mono">base64:</code> prefix.
+						</div>
+					</div>
+				</div>
+			{:else}
+				<div>
+					<span class="mb-2 block text-[10px] font-bold">SQL options</span>
+					<div class="rounded-lg border p-3">
+						<div class="grid grid-cols-2 gap-3">
+							<label class="space-y-1.5">
+								<span class="text-muted-foreground block text-[9px] font-semibold">
+									Rows per INSERT
+								</span>
+								<FilterCombobox
+									id="export-sql-batch-size"
+									options={sqlBatchOptions}
+									value={String(sqlBatchSize)}
+									onChange={(value) => (sqlBatchSize = Number(value))}
+									placeholder="Rows per INSERT"
+									searchable={false}
+									disabled={exporting}
+									triggerClass="h-8 px-2.5 text-[9px]"
+								/>
+							</label>
+
+							<label
+								class="flex cursor-pointer items-start gap-2 rounded-md bg-[var(--surface-sunken)] px-2.5 py-2"
+							>
+								<input
+									type="checkbox"
+									class="accent-primary mt-0.5 h-3.5 w-3.5"
+									checked={includeTransaction}
+									onchange={(event) => (includeTransaction = event.currentTarget.checked)}
+									disabled={exporting}
+								/>
+								<span>
+									<span class="block text-[9px] font-semibold">Wrap in transaction</span>
+									<span class="text-muted-foreground mt-1 block text-[8px] leading-relaxed">
+										Add BEGIN and COMMIT.
+									</span>
+								</span>
+							</label>
+						</div>
+
+						<div class="text-muted-foreground mt-3 border-t pt-3 text-[9px] leading-relaxed">
+							{#if sourceName}
+								<span class="text-foreground block truncate font-mono font-semibold">
+									Target: {sourceName}
+								</span>
+							{/if}
+							<span class:mt-1={sourceName !== ''} class="block">
+								PostgreSQL quotes native values. Generated columns are skipped; sequence state is
+								not changed.
+							</span>
 						</div>
 					</div>
 				</div>

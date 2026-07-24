@@ -22,6 +22,7 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] PostgreSQL, MySQL, and SQLite keyword/function completion catalogs
 - [x] Regression tests for SQL context parsing and dialect catalogs
 - [x] Streaming CSV and JSON export for table pages, all filtered rows, and loaded query results
+- [x] Streaming PostgreSQL `INSERT` export for table pages and all filtered rows
 - [x] Dark and light appearance modes
 - [x] Activity console and informative loading states
 
@@ -45,7 +46,7 @@ explicit, tested ordering behavior.
 
 - [x] Export table rows and loaded query results as CSV.
 - [x] Export table rows and loaded query results as JSON.
-- [ ] Export rows as SQL `INSERT` statements.
+- [x] Export PostgreSQL table rows as SQL `INSERT` statements.
 - [x] Choose between the current table page or all filtered rows.
 - [ ] Export selected rows.
 - [x] Stream all-filtered table exports instead of holding the complete dataset in memory.

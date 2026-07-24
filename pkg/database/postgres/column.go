@@ -9,6 +9,9 @@ type Column struct {
 	IsNullable    string  `db:"is_nullable"`
 	MaxLength     *int    `db:"character_maximum_length"`
 	ColumnDefault *string `db:"column_default"`
+	IsIdentity    string  `db:"is_identity"`
+	IdentityMode  *string `db:"identity_generation"`
+	IsGenerated   string  `db:"is_generated"`
 	IsPrimary     bool    `db:"is_primary"`
 }
 

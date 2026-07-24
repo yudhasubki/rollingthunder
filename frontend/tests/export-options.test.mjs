@@ -15,7 +15,9 @@ test('builds explicit CSV options for the backend contract', () => {
 			delimiter: '\t',
 			includeHeader: false,
 			nullValue: 'NULL',
-			prettyJSON: true
+			prettyJSON: true,
+			sqlBatchSize: 100,
+			includeTransaction: true
 		}),
 		{
 			format: 'csv',
@@ -36,7 +38,9 @@ test('builds JSON options without leaking CSV settings', () => {
 			delimiter: ';',
 			includeHeader: false,
 			nullValue: 'NULL',
-			prettyJSON: false
+			prettyJSON: false,
+			sqlBatchSize: 100,
+			includeTransaction: true
 		}),
 		{
 			format: 'json',
@@ -47,6 +51,29 @@ test('builds JSON options without leaking CSV settings', () => {
 	);
 	assert.equal(getExportExtension('csv'), 'csv');
 	assert.equal(getExportExtension('json'), 'json');
+});
+
+test('builds PostgreSQL INSERT options without leaking other format settings', () => {
+	assert.deepEqual(
+		buildExportOptions({
+			scope: 'all',
+			format: 'sql',
+			delimiter: ',',
+			includeHeader: true,
+			nullValue: '',
+			prettyJSON: true,
+			sqlBatchSize: 500,
+			includeTransaction: false
+		}),
+		{
+			format: 'sql',
+			sql: {
+				batchSize: 500,
+				includeTransaction: false
+			}
+		}
+	);
+	assert.equal(getExportExtension('sql'), 'sql');
 });
 
 test('formats exported file sizes for completion feedback', () => {

@@ -1,5 +1,5 @@
 export type ExportScope = 'page' | 'all' | 'loaded';
-export type ExportFormat = 'csv' | 'json';
+export type ExportFormat = 'csv' | 'json' | 'sql';
 
 export interface ExportSettings {
 	scope: ExportScope;
@@ -8,9 +8,21 @@ export interface ExportSettings {
 	includeHeader: boolean;
 	nullValue: string;
 	prettyJSON: boolean;
+	sqlBatchSize: number;
+	includeTransaction: boolean;
 }
 
 export function buildExportOptions(settings: ExportSettings) {
+	if (settings.format === 'sql') {
+		return {
+			format: 'sql',
+			sql: {
+				batchSize: settings.sqlBatchSize,
+				includeTransaction: settings.includeTransaction
+			}
+		};
+	}
+
 	if (settings.format === 'json') {
 		return {
 			format: 'json',
@@ -30,7 +42,7 @@ export function buildExportOptions(settings: ExportSettings) {
 	};
 }
 
-export function getExportExtension(format: ExportFormat): 'csv' | 'json' {
+export function getExportExtension(format: ExportFormat): 'csv' | 'json' | 'sql' {
 	return format;
 }
 

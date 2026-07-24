@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"rollingthunder/pkg/database"
 	"strings"
+
+	"rollingthunder/pkg/database"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -251,6 +252,9 @@ func (p *Postgres) getCollectionStructures(table database.Table) (Columns, error
 			c.is_nullable,
 			c.character_maximum_length,
 			c.column_default,
+			c.is_identity,
+			c.identity_generation,
+			c.is_generated,
 			EXISTS (
 				SELECT 1
 				FROM information_schema.table_constraints tc
@@ -295,7 +299,7 @@ func (p *Postgres) GetCollectionStructures(table database.Table) (database.Struc
 			Length:    r.MaxLength,
 			Nullable:  r.IsNullable == "YES",
 			Default:   r.ColumnDefault,
-			IsAutoInc: r.ColumnDefault != nil && strings.HasPrefix(*r.ColumnDefault, "nextval("),
+			IsAutoInc: isAutoIncrementColumn(r),
 		}
 
 		applyColumnType(&info, r)
@@ -411,12 +415,18 @@ func structuresFromColumns(columns Columns) database.Structures {
 			Default:        column.ColumnDefault,
 			IsPrimary:      column.IsPrimary,
 			IsPrimaryLabel: primaryLabel,
-			IsAutoInc:      column.ColumnDefault != nil && strings.HasPrefix(*column.ColumnDefault, "nextval("),
+			IsAutoInc:      isAutoIncrementColumn(column),
 		}
 		applyColumnType(&structure, column)
 		structures = append(structures, structure)
 	}
 	return structures
+}
+
+func isAutoIncrementColumn(column Column) bool {
+	return strings.EqualFold(column.IsIdentity, "YES") ||
+		(column.ColumnDefault != nil &&
+			strings.HasPrefix(*column.ColumnDefault, "nextval("))
 }
 
 func (p *Postgres) GetCollectionData(table database.Table) (database.Structures, []map[string]interface{}, error) {
@@ -627,8 +637,20 @@ func buildPostgresExportQuery(
 	scope database.ExportScope,
 	structures database.Structures,
 ) (string, error) {
+	return buildPostgresExportQueryWithProjection(table, scope, structures, "*")
+}
+
+func buildPostgresExportQueryWithProjection(
+	table database.Table,
+	scope database.ExportScope,
+	structures database.Structures,
+	projection string,
+) (string, error) {
 	if strings.TrimSpace(table.Schema) == "" || strings.TrimSpace(table.Name) == "" {
 		return "", fmt.Errorf("schema and table are required")
+	}
+	if strings.TrimSpace(projection) == "" {
+		return "", fmt.Errorf("export projection is required")
 	}
 	if table.Offset < 0 {
 		return "", fmt.Errorf("table offset cannot be negative")
@@ -640,7 +662,8 @@ func buildPostgresExportQuery(
 	}
 
 	query := fmt.Sprintf(
-		"SELECT * FROM %s",
+		"SELECT %s FROM %s",
+		projection,
 		quotePostgresQualifiedIdentifier(table.Schema, table.Name),
 	)
 	if table.Filter != "" {
@@ -675,10 +698,21 @@ func (p *Postgres) ExportTable(
 	if err != nil {
 		return database.ExportStats{}, err
 	}
-	query, err := buildPostgresExportQuery(
+	projection := "*"
+	insertColumns := columns
+	if request.Options.Format == database.ExportFormatSQL {
+		insertColumns = postgresInsertableColumns(columns)
+		projection, err = postgresSQLLiteralProjection(insertColumns)
+		if err != nil {
+			return database.ExportStats{}, err
+		}
+	}
+
+	query, err := buildPostgresExportQueryWithProjection(
 		request.Table,
 		request.Scope,
 		structuresFromColumns(columns),
+		projection,
 	)
 	if err != nil {
 		return database.ExportStats{}, err
@@ -689,6 +723,16 @@ func (p *Postgres) ExportTable(
 		return database.ExportStats{}, err
 	}
 	defer rows.Close()
+
+	if request.Options.Format == database.ExportFormatSQL {
+		return writePostgresInsertStream(
+			writer,
+			&sqlxExportRows{rows: rows},
+			request.Table,
+			insertColumns,
+			request.Options.SQL,
+		)
+	}
 
 	return database.WriteExportStream(writer, &sqlxExportRows{rows: rows}, request.Options)
 }
