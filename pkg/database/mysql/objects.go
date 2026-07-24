@@ -137,47 +137,47 @@ func mysqlObjectMatches(
 }
 
 type mysqlRelationObjectRow struct {
-	Schema    string         `db:"table_schema"`
-	Name      string         `db:"table_name"`
-	TableType string         `db:"table_type"`
-	Engine    sql.NullString `db:"engine"`
-	Rows      sql.NullInt64  `db:"table_rows"`
-	Comment   string         `db:"table_comment"`
+	Schema    string         `db:"rt_table_schema"`
+	Name      string         `db:"rt_table_name"`
+	TableType string         `db:"rt_table_type"`
+	Engine    sql.NullString `db:"rt_engine"`
+	Rows      sql.NullInt64  `db:"rt_table_rows"`
+	Comment   string         `db:"rt_table_comment"`
 }
 
 type mysqlRoutineObjectRow struct {
-	Schema       string         `db:"routine_schema"`
-	Name         string         `db:"routine_name"`
-	Type         string         `db:"routine_type"`
-	ReturnType   sql.NullString `db:"data_type"`
-	SecurityType string         `db:"security_type"`
-	SQLData      string         `db:"sql_data_access"`
-	Comment      string         `db:"routine_comment"`
+	Schema       string         `db:"rt_routine_schema"`
+	Name         string         `db:"rt_routine_name"`
+	Type         string         `db:"rt_routine_type"`
+	ReturnType   sql.NullString `db:"rt_data_type"`
+	SecurityType string         `db:"rt_security_type"`
+	SQLData      string         `db:"rt_sql_data_access"`
+	Comment      string         `db:"rt_routine_comment"`
 }
 
 type mysqlTriggerObjectRow struct {
-	Schema       string `db:"trigger_schema"`
-	Name         string `db:"trigger_name"`
-	ParentSchema string `db:"event_object_schema"`
-	ParentName   string `db:"event_object_table"`
-	Event        string `db:"event_manipulation"`
-	Timing       string `db:"action_timing"`
+	Schema       string `db:"rt_trigger_schema"`
+	Name         string `db:"rt_trigger_name"`
+	ParentSchema string `db:"rt_event_object_schema"`
+	ParentName   string `db:"rt_event_object_table"`
+	Event        string `db:"rt_event_manipulation"`
+	Timing       string `db:"rt_action_timing"`
 }
 
 type mysqlConstraintObjectRow struct {
-	Schema       string `db:"constraint_schema"`
-	Name         string `db:"constraint_name"`
-	ParentSchema string `db:"table_schema"`
-	ParentName   string `db:"table_name"`
-	Type         string `db:"constraint_type"`
+	Schema       string `db:"rt_constraint_schema"`
+	Name         string `db:"rt_constraint_name"`
+	ParentSchema string `db:"rt_table_schema"`
+	ParentName   string `db:"rt_table_name"`
+	Type         string `db:"rt_constraint_type"`
 }
 
 type mysqlIndexObjectRow struct {
-	Schema     string `db:"table_schema"`
-	Name       string `db:"index_name"`
-	ParentName string `db:"table_name"`
-	NonUnique  int    `db:"non_unique"`
-	IndexType  string `db:"index_type"`
+	Schema     string `db:"rt_table_schema"`
+	Name       string `db:"rt_index_name"`
+	ParentName string `db:"rt_table_name"`
+	NonUnique  int    `db:"rt_non_unique"`
+	IndexType  string `db:"rt_index_type"`
 }
 
 func (m *MySQL) ListObjects(
@@ -198,12 +198,12 @@ func (m *MySQL) ListObjects(
 	var relations []mysqlRelationObjectRow
 	if err := m.conn.SelectContext(ctx, &relations, `
 		SELECT
-			table_schema,
-			table_name,
-			table_type,
-			engine,
-			table_rows,
-			table_comment
+			table_schema AS rt_table_schema,
+			table_name AS rt_table_name,
+			table_type AS rt_table_type,
+			engine AS rt_engine,
+			table_rows AS rt_table_rows,
+			table_comment AS rt_table_comment
 		FROM information_schema.tables
 		WHERE table_schema = ?
 		ORDER BY table_name`, databaseName); err != nil {
@@ -243,13 +243,13 @@ func (m *MySQL) ListObjects(
 	var routines []mysqlRoutineObjectRow
 	if err := m.conn.SelectContext(ctx, &routines, `
 		SELECT
-			routine_schema,
-			routine_name,
-			routine_type,
-			data_type,
-			security_type,
-			sql_data_access,
-			routine_comment
+			routine_schema AS rt_routine_schema,
+			routine_name AS rt_routine_name,
+			routine_type AS rt_routine_type,
+			data_type AS rt_data_type,
+			security_type AS rt_security_type,
+			sql_data_access AS rt_sql_data_access,
+			routine_comment AS rt_routine_comment
 		FROM information_schema.routines
 		WHERE routine_schema = ?
 		ORDER BY routine_type, routine_name`, databaseName); err != nil {
@@ -282,12 +282,12 @@ func (m *MySQL) ListObjects(
 	var triggers []mysqlTriggerObjectRow
 	if err := m.conn.SelectContext(ctx, &triggers, `
 		SELECT
-			trigger_schema,
-			trigger_name,
-			event_object_schema,
-			event_object_table,
-			event_manipulation,
-			action_timing
+			trigger_schema AS rt_trigger_schema,
+			trigger_name AS rt_trigger_name,
+			event_object_schema AS rt_event_object_schema,
+			event_object_table AS rt_event_object_table,
+			event_manipulation AS rt_event_manipulation,
+			action_timing AS rt_action_timing
 		FROM information_schema.triggers
 		WHERE trigger_schema = ?
 		ORDER BY event_object_table, trigger_name`, databaseName); err != nil {
@@ -318,11 +318,11 @@ func (m *MySQL) ListObjects(
 	var constraints []mysqlConstraintObjectRow
 	if err := m.conn.SelectContext(ctx, &constraints, `
 		SELECT
-			constraint_schema,
-			constraint_name,
-			table_schema,
-			table_name,
-			constraint_type
+			constraint_schema AS rt_constraint_schema,
+			constraint_name AS rt_constraint_name,
+			table_schema AS rt_table_schema,
+			table_name AS rt_table_name,
+			constraint_type AS rt_constraint_type
 		FROM information_schema.table_constraints
 		WHERE table_schema = ?
 		ORDER BY table_name, constraint_name`, databaseName); err != nil {
@@ -351,11 +351,11 @@ func (m *MySQL) ListObjects(
 	var indexes []mysqlIndexObjectRow
 	if err := m.conn.SelectContext(ctx, &indexes, `
 		SELECT
-			table_schema,
-			table_name,
-			index_name,
-			MIN(non_unique) AS non_unique,
-			MAX(index_type) AS index_type
+			table_schema AS rt_table_schema,
+			table_name AS rt_table_name,
+			index_name AS rt_index_name,
+			MIN(non_unique) AS rt_non_unique,
+			MAX(index_type) AS rt_index_type
 		FROM information_schema.statistics
 		WHERE table_schema = ?
 		GROUP BY table_schema, table_name, index_name
@@ -523,18 +523,18 @@ func (m *MySQL) constraintDefinition(
 
 	case "FOREIGN KEY":
 		type foreignRow struct {
-			Column        string `db:"column_name"`
-			ForeignSchema string `db:"referenced_table_schema"`
-			ForeignTable  string `db:"referenced_table_name"`
-			ForeignColumn string `db:"referenced_column_name"`
+			Column        string `db:"rt_column_name"`
+			ForeignSchema string `db:"rt_referenced_table_schema"`
+			ForeignTable  string `db:"rt_referenced_table_name"`
+			ForeignColumn string `db:"rt_referenced_column_name"`
 		}
 		var rows []foreignRow
 		if err := m.conn.SelectContext(ctx, &rows, `
 			SELECT
-				column_name,
-				referenced_table_schema,
-				referenced_table_name,
-				referenced_column_name
+				column_name AS rt_column_name,
+				referenced_table_schema AS rt_referenced_table_schema,
+				referenced_table_name AS rt_referenced_table_name,
+				referenced_column_name AS rt_referenced_column_name
 			FROM information_schema.key_column_usage
 			WHERE constraint_schema = ?
 			  AND constraint_name = ?
@@ -567,12 +567,14 @@ func (m *MySQL) constraintDefinition(
 			strings.Join(foreign, ", "),
 		)
 		type rules struct {
-			UpdateRule string `db:"update_rule"`
-			DeleteRule string `db:"delete_rule"`
+			UpdateRule string `db:"rt_update_rule"`
+			DeleteRule string `db:"rt_delete_rule"`
 		}
 		var referentialRules rules
 		if err := m.conn.GetContext(ctx, &referentialRules, `
-			SELECT update_rule, delete_rule
+			SELECT
+				update_rule AS rt_update_rule,
+				delete_rule AS rt_delete_rule
 			FROM information_schema.referential_constraints
 			WHERE constraint_schema = ?
 			  AND constraint_name = ?`,
@@ -765,13 +767,15 @@ func (m *MySQL) objectDependencies(
 	}
 
 	type usageRow struct {
-		Schema string `db:"table_schema"`
-		Name   string `db:"table_name"`
+		Schema string `db:"rt_table_schema"`
+		Name   string `db:"rt_table_name"`
 	}
 	if reference.Kind == database.ObjectKindView {
 		var rows []usageRow
 		if err := m.conn.SelectContext(ctx, &rows, `
-			SELECT table_schema, table_name
+			SELECT
+				table_schema AS rt_table_schema,
+				table_name AS rt_table_name
 			FROM information_schema.view_table_usage
 			WHERE view_schema = ? AND view_name = ?`,
 			reference.Schema,
@@ -795,7 +799,9 @@ func (m *MySQL) objectDependencies(
 		reference.Kind == database.ObjectKindProcedure {
 		var rows []usageRow
 		if err := m.conn.SelectContext(ctx, &rows, `
-			SELECT table_schema, table_name
+			SELECT
+				table_schema AS rt_table_schema,
+				table_name AS rt_table_name
 			FROM information_schema.routine_table_usage
 			WHERE specific_schema = ? AND specific_name = ?`,
 			reference.Schema,
@@ -820,8 +826,8 @@ func (m *MySQL) objectDependencies(
 		var outbound []usageRow
 		if err := m.conn.SelectContext(ctx, &outbound, `
 			SELECT DISTINCT
-				referenced_table_schema AS table_schema,
-				referenced_table_name AS table_name
+				referenced_table_schema AS rt_table_schema,
+				referenced_table_name AS rt_table_name
 			FROM information_schema.key_column_usage
 			WHERE table_schema = ?
 			  AND table_name = ?
@@ -847,8 +853,8 @@ func (m *MySQL) objectDependencies(
 		var inbound []usageRow
 		if err := m.conn.SelectContext(ctx, &inbound, `
 			SELECT DISTINCT
-				table_schema,
-				table_name
+				table_schema AS rt_table_schema,
+				table_name AS rt_table_name
 			FROM information_schema.key_column_usage
 			WHERE referenced_table_schema = ?
 			  AND referenced_table_name = ?`,
@@ -871,12 +877,14 @@ func (m *MySQL) objectDependencies(
 		}
 
 		type viewUsageRow struct {
-			Schema string `db:"view_schema"`
-			Name   string `db:"view_name"`
+			Schema string `db:"rt_view_schema"`
+			Name   string `db:"rt_view_name"`
 		}
 		var views []viewUsageRow
 		if err := m.conn.SelectContext(ctx, &views, `
-			SELECT view_schema, view_name
+			SELECT
+				view_schema AS rt_view_schema,
+				view_name AS rt_view_name
 			FROM information_schema.view_table_usage
 			WHERE table_schema = ? AND table_name = ?`,
 			reference.Schema,

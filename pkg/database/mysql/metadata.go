@@ -9,24 +9,24 @@ import (
 )
 
 type mysqlColumnRow struct {
-	Name                 string         `db:"column_name"`
-	DataType             string         `db:"data_type"`
-	ColumnType           string         `db:"column_type"`
-	Nullable             string         `db:"is_nullable"`
-	MaxLength            sql.NullInt64  `db:"character_maximum_length"`
-	Default              sql.NullString `db:"column_default"`
-	Extra                string         `db:"extra"`
-	ColumnKey            string         `db:"column_key"`
-	GenerationExpression sql.NullString `db:"generation_expression"`
-	Comment              string         `db:"column_comment"`
+	Name                 string         `db:"rt_column_name"`
+	DataType             string         `db:"rt_data_type"`
+	ColumnType           string         `db:"rt_column_type"`
+	Nullable             string         `db:"rt_is_nullable"`
+	MaxLength            sql.NullInt64  `db:"rt_character_maximum_length"`
+	Default              sql.NullString `db:"rt_column_default"`
+	Extra                string         `db:"rt_extra"`
+	ColumnKey            string         `db:"rt_column_key"`
+	GenerationExpression sql.NullString `db:"rt_generation_expression"`
+	Comment              string         `db:"rt_column_comment"`
 }
 
 type mysqlForeignKeyRow struct {
-	Column        string `db:"column_name"`
-	Constraint    string `db:"constraint_name"`
-	ForeignSchema string `db:"referenced_table_schema"`
-	ForeignTable  string `db:"referenced_table_name"`
-	ForeignColumn string `db:"referenced_column_name"`
+	Column        string `db:"rt_column_name"`
+	Constraint    string `db:"rt_constraint_name"`
+	ForeignSchema string `db:"rt_referenced_table_schema"`
+	ForeignTable  string `db:"rt_referenced_table_name"`
+	ForeignColumn string `db:"rt_referenced_column_name"`
 }
 
 func (m *MySQL) GetCollectionStructures(
@@ -43,16 +43,16 @@ func (m *MySQL) GetCollectionStructures(
 	var rows []mysqlColumnRow
 	const columnQuery = `
 		SELECT
-			column_name,
-			data_type,
-			column_type,
-			is_nullable,
-			character_maximum_length,
-			column_default,
-			extra,
-			column_key,
-			generation_expression,
-			column_comment
+			column_name AS rt_column_name,
+			data_type AS rt_data_type,
+			column_type AS rt_column_type,
+			is_nullable AS rt_is_nullable,
+			character_maximum_length AS rt_character_maximum_length,
+			column_default AS rt_column_default,
+			extra AS rt_extra,
+			column_key AS rt_column_key,
+			generation_expression AS rt_generation_expression,
+			column_comment AS rt_column_comment
 		FROM information_schema.columns
 		WHERE table_schema = ? AND table_name = ?
 		ORDER BY ordinal_position`
@@ -63,11 +63,11 @@ func (m *MySQL) GetCollectionStructures(
 	var foreignKeys []mysqlForeignKeyRow
 	const foreignQuery = `
 		SELECT
-			column_name,
-			constraint_name,
-			referenced_table_schema,
-			referenced_table_name,
-			referenced_column_name
+			column_name AS rt_column_name,
+			constraint_name AS rt_constraint_name,
+			referenced_table_schema AS rt_referenced_table_schema,
+			referenced_table_name AS rt_referenced_table_name,
+			referenced_column_name AS rt_referenced_column_name
 		FROM information_schema.key_column_usage
 		WHERE table_schema = ?
 		  AND table_name = ?
@@ -150,11 +150,11 @@ func (m *MySQL) GetCollectionStructures(
 }
 
 type mysqlIndexRow struct {
-	Name      string `db:"index_name"`
-	Column    string `db:"column_name"`
-	Sequence  int    `db:"seq_in_index"`
-	NonUnique int    `db:"non_unique"`
-	IndexType string `db:"index_type"`
+	Name      string `db:"rt_index_name"`
+	Column    string `db:"rt_column_name"`
+	Sequence  int    `db:"rt_seq_in_index"`
+	NonUnique int    `db:"rt_non_unique"`
+	IndexType string `db:"rt_index_type"`
 }
 
 func (m *MySQL) GetIndices(table database.Table) (database.Indices, error) {
@@ -165,11 +165,11 @@ func (m *MySQL) GetIndices(table database.Table) (database.Indices, error) {
 	var rows []mysqlIndexRow
 	const query = `
 		SELECT
-			index_name,
-			COALESCE(column_name, expression, '') AS column_name,
-			seq_in_index,
-			non_unique,
-			index_type
+			index_name AS rt_index_name,
+			COALESCE(column_name, expression, '') AS rt_column_name,
+			seq_in_index AS rt_seq_in_index,
+			non_unique AS rt_non_unique,
+			index_type AS rt_index_type
 		FROM information_schema.statistics
 		WHERE table_schema = ? AND table_name = ?
 		ORDER BY index_name, seq_in_index`
@@ -178,11 +178,11 @@ func (m *MySQL) GetIndices(table database.Table) (database.Indices, error) {
 		// column-only catalog shape.
 		const fallback = `
 			SELECT
-				index_name,
-				COALESCE(column_name, '') AS column_name,
-				seq_in_index,
-				non_unique,
-				index_type
+				index_name AS rt_index_name,
+				COALESCE(column_name, '') AS rt_column_name,
+				seq_in_index AS rt_seq_in_index,
+				non_unique AS rt_non_unique,
+				index_type AS rt_index_type
 			FROM information_schema.statistics
 			WHERE table_schema = ? AND table_name = ?
 			ORDER BY index_name, seq_in_index`

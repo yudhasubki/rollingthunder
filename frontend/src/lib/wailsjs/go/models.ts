@@ -2201,17 +2201,17 @@ export namespace response {
 	export class BaseResponse_rollingthunder_internal_updater_CheckResult_ {
 	    errors?: BaseErrorResponse[];
 	    data?: updater.CheckResult;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new BaseResponse_rollingthunder_internal_updater_CheckResult_(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], updater.CheckResult);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -2810,7 +2810,7 @@ export namespace response {
 }
 
 export namespace updater {
-
+	
 	export class CheckResult {
 	    available: boolean;
 	    currentVersion: string;
@@ -2819,11 +2819,11 @@ export namespace updater {
 	    releaseNotes?: string;
 	    releaseUrl?: string;
 	    publishedAt?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new CheckResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.available = source["available"];

@@ -96,15 +96,19 @@ jobs:
           - name: MySQL 8.0
             image: mysql:8.0
             driver: mysql
+            health_command: mysqladmin ping -h 127.0.0.1 -uroot -prolling --silent
           - name: MySQL 8.4 LTS
             image: mysql:8.4
             driver: mysql
+            health_command: mysqladmin ping -h 127.0.0.1 -uroot -prolling --silent
           - name: MariaDB 10.11 LTS
             image: mariadb:10.11
             driver: mariadb
+            health_command: healthcheck.sh --connect --innodb_initialized
           - name: MariaDB 11.4 LTS
             image: mariadb:11.4
             driver: mariadb
+            health_command: healthcheck.sh --connect --innodb_initialized
     services:
       database:
         image: ${{ matrix.image }}
@@ -114,10 +118,11 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -prolling"
+          --health-cmd "${{ matrix.health_command }}"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 18
+          --health-start-period 15s
     steps:
       - name: Check out source
         uses: actions/checkout@v6
