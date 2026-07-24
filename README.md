@@ -51,13 +51,14 @@
 
 ### Data export
 
-- Export the current table page or every filtered row as UTF-8 CSV, JSON, or PostgreSQL
+- Export the current table page, checked rows, or every filtered row as CSV, JSON, or PostgreSQL
   `INSERT` statements.
 - Preserve the active table filters and server-side sort order in exported data.
 - Stream all-filtered table exports from PostgreSQL instead of loading the complete dataset in
   memory.
-- Export the rows already loaded in a query result without rerunning arbitrary SQL.
-- Configure the CSV delimiter, column header, and `NULL` representation.
+- Export all loaded query results or only checked rows without rerunning arbitrary SQL.
+- Configure the CSV delimiter, column header, `NULL` representation, and UTF-8, UTF-8 BOM, or
+  UTF-16 LE encoding.
 - Choose pretty-printed or compact JSON; dates use ISO 8601 and binary values carry a `base64:`
   prefix.
 - Batch SQL rows into configurable multi-value `INSERT` statements and optionally wrap the file in
@@ -65,7 +66,10 @@
 - Let PostgreSQL quote native SQL values, omit generated columns, and preserve identity values with
   `OVERRIDING SYSTEM VALUE` where required.
 - Select the destination through a format-aware native file picker.
-- Keep an existing destination file unchanged if an export fails before completion.
+- Follow live row, byte, elapsed-time, and percentage progress for running exports.
+- Cancel a running export without replacing an existing destination file.
+- Keep an existing destination file unchanged if an export is cancelled or fails before
+  completion.
 
 ### SQL editor
 
@@ -98,9 +102,8 @@ Rolling Thunder currently has a table-first object explorer. It does not yet exp
 materialized views, functions, procedures, triggers, sequences, or custom types.
 
 CSV and JSON export are available for table data and loaded query results. PostgreSQL `INSERT`
-export is available for table data, but it intentionally does not reset sequence state. Query-result
-SQL export, selected-row export, configurable encodings, and granular progress/cancellation remain
-on the [project roadmap](ROADMAP.md).
+export is available for table data, but it intentionally does not reset sequence state. Arbitrary
+query results do not offer SQL `INSERT` export because they do not provide a reliable target table.
 
 Other important limitations include:
 
@@ -159,8 +162,8 @@ npm run build
 
 ## Roadmap
 
-The next milestones extend export formats and controls, add a complete database-object explorer,
-ship real MySQL and SQLite drivers, and harden the app for production. See
+The next milestones add a complete database-object explorer, safer query workflows, real MySQL and
+SQLite drivers, and production hardening. See
 [ROADMAP.md](ROADMAP.md) for priorities and acceptance criteria.
 
 ## Contributing

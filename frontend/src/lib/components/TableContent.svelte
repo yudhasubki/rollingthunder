@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import type { Tab } from '$lib/models/Tab';
 	import { createTabs, melt } from '@melt-ui/svelte';
@@ -10,8 +11,14 @@
 		buildExportOptions,
 		formatExportBytes,
 		getExportExtension,
+		type ExportScope,
 		type ExportSettings
 	} from '$lib/export/options';
+	import {
+		cancelExportJob,
+		createInitialExportProgress,
+		startExportProgressPolling
+	} from '$lib/export/progress';
 	import { database } from '$lib/wailsjs/go/models';
 	import { getColumnTypeLabel } from '$lib/table/cells';
 	import { getForeignRelation } from '$lib/table/relations';
@@ -22,6 +29,7 @@
 		GetCollectionStructures,
 		GetIndices,
 		GetTableDDL,
+		ExportQueryResults,
 		ExportTableData
 	} from '$lib/wailsjs/go/db/Service';
 	import {
@@ -70,6 +78,13 @@
 	let isLoadingData = $state(false);
 	let exportDialogOpen = $state(false);
 	let exporting = $state(false);
+	let exportCancelling = $state(false);
+	let exportProgress = $state<database.ExportProgress | null>(null);
+	let exportJobID = $state('');
+	let stopExportProgressPolling: (() => void) | null = null;
+	let exportInitialScope = $state<ExportScope>('page');
+	let selectedRows = $state<Record<string, any>[]>([]);
+	let selectedRowIndexes = $state<number[]>([]);
 	let dataLoadingTitle = $state('Preparing table data');
 	let dataLoadingDescription = $state('Waiting for the database');
 	let isLoadingStructure = $state(false);
@@ -319,11 +334,90 @@
 		currentPage = 0;
 	}
 
+	function openExportDialog(preferredScope?: 'selected') {
+		exportInitialScope =
+			preferredScope === 'selected' && selectedRows.length > 0 ? 'selected' : 'page';
+		exportDialogOpen = true;
+	}
+
+	function handleExportSelection(rows: Record<string, any>[], indexes: number[]) {
+		selectedRows = rows;
+		selectedRowIndexes = indexes;
+	}
+
+	function beginExportProgress(jobID: string, expectedRows: number) {
+		stopExportProgressPolling?.();
+		exportJobID = jobID;
+		exportProgress = createInitialExportProgress(jobID, expectedRows);
+		stopExportProgressPolling = startExportProgressPolling(jobID, (progress) => {
+			exportProgress = progress;
+		});
+	}
+
+	function finishExportProgress() {
+		stopExportProgressPolling?.();
+		stopExportProgressPolling = null;
+		exportJobID = '';
+		exportProgress = null;
+		exportCancelling = false;
+	}
+
+	async function cancelRunningExport() {
+		if (!exportJobID || !exporting || exportCancelling) return;
+
+		exportCancelling = true;
+		if (exportProgress) {
+			exportProgress = new database.ExportProgress({
+				...exportProgress,
+				status: 'cancelling',
+				cancellable: false
+			});
+		}
+
+		try {
+			await cancelExportJob(exportJobID);
+			updateStatus('Stopping export safely…', 'info');
+		} catch (error: any) {
+			exportCancelling = false;
+			updateStatus(error?.message ?? 'Failed to cancel export', 'error');
+		}
+	}
+
 	async function handleExport(settings: ExportSettings) {
 		if (!tab.schema || !tab.table || exporting) return;
 
+		const expectedRows =
+			settings.scope === 'selected'
+				? selectedRowIndexes.length
+				: settings.scope === 'all'
+					? tableTotalData
+					: tableData.length;
+		if (expectedRows === 0) {
+			updateStatus('There are no rows to export', 'warn');
+			return;
+		}
+
+		const persistedSelectedIndexes =
+			settings.scope === 'selected'
+				? selectedRows.map((row) => tableData.indexOf(row)).filter((index) => index >= 0)
+				: [];
+		if (
+			settings.scope === 'selected' &&
+			settings.format === 'sql' &&
+			persistedSelectedIndexes.length !== selectedRows.length
+		) {
+			updateStatus(
+				'Apply or discard newly added rows before exporting the selection as SQL',
+				'warn'
+			);
+			return;
+		}
+
 		exporting = true;
+		exportCancelling = false;
 		const extension = getExportExtension(settings.format);
+		const jobID = crypto.randomUUID();
+		beginExportProgress(jobID, expectedRows);
 		const table = new database.Table({
 			Schema: tab.schema,
 			Name: tab.table,
@@ -332,21 +426,46 @@
 			Filter: buildFilterClause(appliedFilters),
 			Sorts: buildDatabaseSorts(sorting)
 		});
-		const request = new database.TableExportRequest({
-			table,
-			scope: settings.scope === 'all' ? 'all' : 'page',
-			suggestedName: `${tab.schema}-${tab.table}.${extension}`,
-			options: new database.ExportOptions(buildExportOptions(settings))
-		});
 
 		try {
 			updateStatus(
-				settings.scope === 'all'
-					? `Exporting ${tableTotalData.toLocaleString()} filtered rows as ${settings.format.toUpperCase()}…`
-					: `Exporting page ${currentPage + 1} as ${settings.format.toUpperCase()}…`,
+				settings.scope === 'selected'
+					? `Exporting ${selectedRows.length.toLocaleString()} selected rows as ${settings.format.toUpperCase()}…`
+					: settings.scope === 'all'
+						? `Exporting ${tableTotalData.toLocaleString()} filtered rows as ${settings.format.toUpperCase()}…`
+						: `Exporting page ${currentPage + 1} as ${settings.format.toUpperCase()}…`,
 				'info'
 			);
-			const response = await ExportTableData(tab.connectionId, request);
+			const options = new database.ExportOptions(buildExportOptions(settings));
+			const response =
+				settings.scope === 'selected' && settings.format !== 'sql'
+					? await ExportQueryResults(
+							new database.RowsExportRequest({
+								columns: columns.map((column) => column.name),
+								rows: selectedRows,
+								jobId: jobID,
+								expectedRows,
+								suggestedName: `${tab.schema}-${tab.table}-selected.${extension}`,
+								options
+							})
+						)
+					: await ExportTableData(
+							tab.connectionId,
+							new database.TableExportRequest({
+								table,
+								scope:
+									settings.scope === 'selected'
+										? 'selected'
+										: settings.scope === 'all'
+											? 'all'
+											: 'page',
+								selectedRowIndexes: persistedSelectedIndexes,
+								jobId: jobID,
+								expectedRows,
+								suggestedName: `${tab.schema}-${tab.table}.${extension}`,
+								options
+							})
+						);
 			if (response.errors?.length) throw new Error(response.errors[0].detail);
 
 			if (response.data?.cancelled) {
@@ -362,8 +481,13 @@
 			updateStatus(error?.message ?? 'Failed to export table data', 'error');
 		} finally {
 			exporting = false;
+			finishExportProgress();
 		}
 	}
+
+	onDestroy(() => {
+		stopExportProgressPolling?.();
+	});
 
 	function getColumnRelation(column: database.Structure) {
 		return getForeignRelation(column, tab.schema || '');
@@ -829,7 +953,8 @@
 					onPageChange={handlePageChange}
 					onSortingChange={handleSortingChange}
 					onAddFilter={addFilter}
-					onExport={() => (exportDialogOpen = true)}
+					onExport={openExportDialog}
+					onSelectionChange={handleExportSelection}
 					{exporting}
 					detailTitle={tab.schema && tab.table ? `${tab.schema}.${tab.table}` : 'Table row'}
 					loading={isLoadingData}
@@ -869,7 +994,12 @@
 	sourceName={tab.schema && tab.table ? `${tab.schema}.${tab.table}` : ''}
 	pageRows={tableData.length}
 	totalRows={tableTotalData}
+	selectedRows={selectedRows.length}
+	initialScope={exportInitialScope}
 	{exporting}
+	cancelling={exportCancelling}
+	progress={exportProgress}
 	onClose={() => (exportDialogOpen = false)}
+	onCancelExport={cancelRunningExport}
 	onExport={handleExport}
 />

@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"rollingthunder/pkg/database"
+	"rollingthunder/pkg/response"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -109,6 +111,54 @@ func TestExportQueryResultsHandlesDialogCancellation(t *testing.T) {
 	}
 	if !response.Data.Cancelled {
 		t.Fatal("expected cancelled export result")
+	}
+}
+
+func TestExportCanBeCancelledWhileChoosingDestination(t *testing.T) {
+	service := NewService()
+	service.Start(context.Background())
+	dialogStarted := make(chan struct{})
+	service.saveDialog = func(
+		ctx context.Context,
+		_ wailsruntime.SaveDialogOptions,
+	) (string, error) {
+		close(dialogStarted)
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+
+	outcome := make(chan response.BaseResponse[database.ExportResult], 1)
+	go func() {
+		outcome <- service.ExportQueryResults(database.RowsExportRequest{
+			Columns:      []string{"id"},
+			Rows:         []map[string]interface{}{{"id": 1}},
+			JobID:        "cancel-preparing-export",
+			ExpectedRows: 1,
+			Options:      csvExportOptions(),
+		})
+	}()
+
+	select {
+	case <-dialogStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("save dialog did not open")
+	}
+
+	progress := service.GetExportProgress("cancel-preparing-export")
+	if len(progress.Errors) != 0 || progress.Data.Status != exportStatusPreparing {
+		t.Fatalf("unexpected preparing progress: %+v", progress)
+	}
+	if cancelled := service.CancelExport("cancel-preparing-export"); len(cancelled.Errors) != 0 {
+		t.Fatalf("cancel preparing export: %+v", cancelled.Errors)
+	}
+
+	select {
+	case result := <-outcome:
+		if len(result.Errors) != 0 || !result.Data.Cancelled {
+			t.Fatalf("cancelled preparing export result: %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("preparing export did not stop")
 	}
 }
 
@@ -378,5 +428,94 @@ func TestFailedExportPreservesExistingDestination(t *testing.T) {
 	}
 	if string(content) != "previous export" {
 		t.Fatalf("existing export was overwritten after failure: %q", content)
+	}
+}
+
+func TestRunningExportReportsProgressAndCanBeCancelled(t *testing.T) {
+	driver := &routingTestDriver{
+		name:          "alpha",
+		exportContent: strings.Repeat("partial export\n", 32),
+		exportRows:    25,
+		exportStarted: make(chan struct{}),
+		exportRelease: make(chan struct{}),
+	}
+	service := newRoutingTestService(
+		map[string]*routingTestDriver{"alpha": driver},
+		"alpha",
+	)
+	service.Start(context.Background())
+
+	target := filepath.Join(t.TempDir(), "orders.csv")
+	if err := os.WriteFile(target, []byte("previous export"), 0o600); err != nil {
+		t.Fatalf("write existing export: %v", err)
+	}
+	service.saveDialog = func(
+		context.Context,
+		wailsruntime.SaveDialogOptions,
+	) (string, error) {
+		return target, nil
+	}
+
+	type exportOutcome struct {
+		cancelled bool
+		errors    int
+	}
+	outcome := make(chan exportOutcome, 1)
+	go func() {
+		response := service.ExportTableData("alpha", database.TableExportRequest{
+			Table:         database.Table{Schema: "public", Name: "orders", Limit: 100},
+			Scope:         database.ExportScopeAll,
+			JobID:         "cancel-export-test",
+			ExpectedRows:  100,
+			SuggestedName: "orders.csv",
+			Options:       csvExportOptions(),
+		})
+		outcome <- exportOutcome{
+			cancelled: response.Data.Cancelled,
+			errors:    len(response.Errors),
+		}
+	}()
+
+	select {
+	case <-driver.exportStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("export did not start")
+	}
+
+	progress := service.GetExportProgress("cancel-export-test")
+	if len(progress.Errors) != 0 {
+		t.Fatalf("get export progress returned errors: %+v", progress.Errors)
+	}
+	if progress.Data.Status != exportStatusRunning ||
+		progress.Data.Rows != 25 ||
+		progress.Data.Bytes <= 0 ||
+		progress.Data.TotalRows != 100 ||
+		!progress.Data.Cancellable {
+		t.Fatalf("unexpected export progress: %+v", progress.Data)
+	}
+
+	cancelled := service.CancelExport("cancel-export-test")
+	if len(cancelled.Errors) != 0 || !cancelled.Data {
+		t.Fatalf("cancel export response: %+v", cancelled)
+	}
+
+	select {
+	case result := <-outcome:
+		if result.errors != 0 || !result.cancelled {
+			t.Fatalf("cancelled export outcome: %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled export did not finish")
+	}
+
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read destination after cancellation: %v", err)
+	}
+	if string(content) != "previous export" {
+		t.Fatalf("cancelled export replaced destination: %q", content)
+	}
+	if response := service.GetExportProgress("cancel-export-test"); len(response.Errors) != 1 {
+		t.Fatalf("completed export job was not cleaned up: %+v", response)
 	}
 }

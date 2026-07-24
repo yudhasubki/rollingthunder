@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -181,6 +182,27 @@ func writePostgresInsertStream(
 	columns Columns,
 	options database.SQLInsertOptions,
 ) (database.ExportStats, error) {
+	return writePostgresInsertStreamContext(
+		context.Background(),
+		writer,
+		rows,
+		table,
+		columns,
+		options,
+	)
+}
+
+func writePostgresInsertStreamContext(
+	ctx context.Context,
+	writer io.Writer,
+	rows database.RowStream,
+	table database.Table,
+	columns Columns,
+	options database.SQLInsertOptions,
+) (database.ExportStats, error) {
+	if err := database.CheckExportContext(ctx); err != nil {
+		return database.ExportStats{}, err
+	}
 	streamColumns, err := rows.Columns()
 	if err != nil {
 		return database.ExportStats{}, fmt.Errorf("read SQL export columns: %w", err)
@@ -220,6 +242,9 @@ func writePostgresInsertStream(
 	}
 
 	for rows.Next() {
+		if err := database.CheckExportContext(ctx); err != nil {
+			return database.ExportStats{}, err
+		}
 		values, err := rows.Values()
 		if err != nil {
 			return database.ExportStats{}, fmt.Errorf("read SQL export row: %w", err)
@@ -234,9 +259,13 @@ func writePostgresInsertStream(
 		if err := sink.writeValues(values); err != nil {
 			return database.ExportStats{}, fmt.Errorf("write SQL export row: %w", err)
 		}
+		database.ReportExportProgress(ctx, sink.rows)
 	}
 	if err := rows.Err(); err != nil {
 		return database.ExportStats{}, fmt.Errorf("read SQL export rows: %w", err)
+	}
+	if err := database.CheckExportContext(ctx); err != nil {
+		return database.ExportStats{}, err
 	}
 	if err := sink.close(options.IncludeTransaction); err != nil {
 		return database.ExportStats{}, fmt.Errorf("finish SQL export: %w", err)

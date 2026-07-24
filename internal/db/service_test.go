@@ -21,6 +21,9 @@ type routingTestDriver struct {
 	exportRequest database.TableExportRequest
 	exportRows    int64
 	exportErr     error
+	exportStarted chan struct{}
+	exportRelease chan struct{}
+	exportOnce    sync.Once
 
 	queryStarted chan struct{}
 	queryRelease chan struct{}
@@ -107,7 +110,7 @@ func (d *routingTestDriver) ExecuteQuery(
 }
 
 func (d *routingTestDriver) ExportTable(
-	_ context.Context,
+	ctx context.Context,
 	request database.TableExportRequest,
 	writer io.Writer,
 ) (database.ExportStats, error) {
@@ -122,6 +125,19 @@ func (d *routingTestDriver) ExportTable(
 	if content != "" {
 		if _, err := io.WriteString(writer, content); err != nil {
 			return database.ExportStats{}, err
+		}
+	}
+	database.ReportExportProgress(ctx, rows)
+	if d.exportStarted != nil {
+		d.exportOnce.Do(func() {
+			close(d.exportStarted)
+		})
+	}
+	if d.exportRelease != nil {
+		select {
+		case <-d.exportRelease:
+		case <-ctx.Done():
+			return database.ExportStats{}, ctx.Err()
 		}
 	}
 	if exportErr != nil {

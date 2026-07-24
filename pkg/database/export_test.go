@@ -2,13 +2,18 @@ package database
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"strings"
 	"testing"
 	"time"
+
+	textunicode "golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 )
 
 func TestWriteCSVRowsPreservesColumnOrderAndFormatsValues(t *testing.T) {
@@ -89,6 +94,61 @@ func TestWriteCSVRowsValidatesInput(t *testing.T) {
 		CSVOptions{Delimiter: "||"},
 	); err == nil {
 		t.Fatal("expected invalid-delimiter validation error")
+	}
+
+	if _, err := WriteCSVRows(
+		&bytes.Buffer{},
+		[]string{"id"},
+		nil,
+		CSVOptions{Encoding: CSVEncoding("shift-jis")},
+	); err == nil {
+		t.Fatal("expected invalid-encoding validation error")
+	}
+}
+
+func TestWriteCSVRowsSupportsBOMAndUTF16LE(t *testing.T) {
+	rows := []map[string]interface{}{{"name": "Rolling 雷"}}
+
+	var utf8BOM bytes.Buffer
+	if _, err := WriteCSVRows(
+		&utf8BOM,
+		[]string{"name"},
+		rows,
+		CSVOptions{
+			IncludeHeader: true,
+			Encoding:      CSVEncodingUTF8BOM,
+		},
+	); err != nil {
+		t.Fatalf("write UTF-8 BOM CSV: %v", err)
+	}
+	if !bytes.HasPrefix(utf8BOM.Bytes(), []byte{0xef, 0xbb, 0xbf}) {
+		t.Fatalf("UTF-8 BOM is missing: %x", utf8BOM.Bytes())
+	}
+	if string(utf8BOM.Bytes()[3:]) != "name\nRolling 雷\n" {
+		t.Fatalf("unexpected UTF-8 BOM CSV: %q", utf8BOM.Bytes()[3:])
+	}
+
+	var utf16 bytes.Buffer
+	if _, err := WriteCSVRows(
+		&utf16,
+		[]string{"name"},
+		rows,
+		CSVOptions{
+			IncludeHeader: true,
+			Encoding:      CSVEncodingUTF16LE,
+		},
+	); err != nil {
+		t.Fatalf("write UTF-16LE CSV: %v", err)
+	}
+	decoded, err := io.ReadAll(transform.NewReader(
+		bytes.NewReader(utf16.Bytes()),
+		textunicode.UTF16(textunicode.LittleEndian, textunicode.ExpectBOM).NewDecoder(),
+	))
+	if err != nil {
+		t.Fatalf("decode UTF-16LE CSV: %v", err)
+	}
+	if string(decoded) != "name\nRolling 雷\n" {
+		t.Fatalf("unexpected UTF-16LE CSV: %q", decoded)
 	}
 }
 
@@ -341,5 +401,38 @@ func TestGenericExportWritersRejectSQLWithoutTableMetadata(t *testing.T) {
 		options,
 	); err == nil || !strings.Contains(err.Error(), "driver-specific") {
 		t.Fatalf("expected driver-specific serializer error, got %v", err)
+	}
+}
+
+func TestExportContextReportsRowsAndSupportsCancellation(t *testing.T) {
+	var reported []int64
+	ctx := WithExportProgressReporter(context.Background(), func(rows int64) {
+		reported = append(reported, rows)
+	})
+	var output bytes.Buffer
+	stats, err := WriteJSONRowsContext(
+		ctx,
+		&output,
+		[]string{"id"},
+		[]map[string]interface{}{{"id": 1}, {"id": 2}},
+		JSONOptions{},
+	)
+	if err != nil {
+		t.Fatalf("write JSON with progress: %v", err)
+	}
+	if stats.Rows != 2 || len(reported) != 2 || reported[1] != 2 {
+		t.Fatalf("progress = %v, stats = %+v", reported, stats)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := WriteCSVRowsContext(
+		cancelled,
+		&bytes.Buffer{},
+		[]string{"id"},
+		[]map[string]interface{}{{"id": 1}},
+		CSVOptions{},
+	); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }

@@ -28,8 +28,14 @@
 		buildExportOptions,
 		formatExportBytes,
 		getExportExtension,
+		type ExportScope,
 		type ExportSettings
 	} from '$lib/export/options';
+	import {
+		cancelExportJob,
+		createInitialExportProgress,
+		startExportProgressPolling
+	} from '$lib/export/progress';
 	import { database } from '$lib/wailsjs/go/models';
 	import type * as Monaco from 'monaco-editor';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
@@ -64,6 +70,13 @@
 	let autocompleteRefreshing = $state(false);
 	let exportDialogOpen = $state(false);
 	let exporting = $state(false);
+	let exportCancelling = $state(false);
+	let exportProgress = $state<database.ExportProgress | null>(null);
+	let exportJobID = $state('');
+	let stopExportProgressPolling: (() => void) | null = null;
+	let exportInitialScope = $state<ExportScope>('loaded');
+	let selectedRows = $state<Record<string, any>[]>([]);
+	let selectedRowIndexes = $state<number[]>([]);
 	const visibleQueryResults = $derived(getQueryResultPage(queryResults, resultPage));
 	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata(tab.connectionId));
 
@@ -177,6 +190,7 @@
 		completionRegistration?.dispose();
 		editor?.dispose();
 		editorModel?.dispose();
+		stopExportProgressPolling?.();
 	});
 
 	// Get the query to execute - either selected text or current statement
@@ -305,6 +319,8 @@
 		queryResultLimit = 0;
 		resultPage = 0;
 		resultColumns = [];
+		selectedRows = [];
+		selectedRowIndexes = [];
 		executedQuery = query;
 		updateStatus('Executing query...', 'info');
 
@@ -364,21 +380,88 @@
 		}
 	}
 
+	function openExportDialog(preferredScope?: 'selected') {
+		exportInitialScope =
+			preferredScope === 'selected' && selectedRows.length > 0 ? 'selected' : 'loaded';
+		exportDialogOpen = true;
+	}
+
+	function handleExportSelection(rows: Record<string, any>[], indexes: number[]) {
+		selectedRows = rows;
+		selectedRowIndexes = indexes;
+	}
+
+	function beginExportProgress(jobID: string, expectedRows: number) {
+		stopExportProgressPolling?.();
+		exportJobID = jobID;
+		exportProgress = createInitialExportProgress(jobID, expectedRows);
+		stopExportProgressPolling = startExportProgressPolling(jobID, (progress) => {
+			exportProgress = progress;
+		});
+	}
+
+	function finishExportProgress() {
+		stopExportProgressPolling?.();
+		stopExportProgressPolling = null;
+		exportJobID = '';
+		exportProgress = null;
+		exportCancelling = false;
+	}
+
+	async function cancelRunningExport() {
+		if (!exportJobID || !exporting || exportCancelling) return;
+
+		exportCancelling = true;
+		if (exportProgress) {
+			exportProgress = new database.ExportProgress({
+				...exportProgress,
+				status: 'cancelling',
+				cancellable: false
+			});
+		}
+
+		try {
+			await cancelExportJob(exportJobID);
+			updateStatus('Stopping export safely…', 'info');
+		} catch (error: any) {
+			exportCancelling = false;
+			updateStatus(error?.message ?? 'Failed to cancel export', 'error');
+		}
+	}
+
 	async function handleExport(settings: ExportSettings) {
 		if (queryResults.length === 0 || exporting) return;
 
+		const rows = settings.scope === 'selected' ? selectedRows : queryResults;
+		const expectedRows =
+			settings.scope === 'selected' ? selectedRowIndexes.length : queryResults.length;
+		if (expectedRows === 0) {
+			updateStatus('Select at least one query row to export', 'warn');
+			return;
+		}
+
 		exporting = true;
+		exportCancelling = false;
 		const extension = getExportExtension(settings.format);
+		const jobID = crypto.randomUUID();
+		beginExportProgress(jobID, expectedRows);
 		const request = new database.RowsExportRequest({
 			columns: resultColumns.map((column) => column.name),
-			rows: queryResults,
-			suggestedName: `query-results.${extension}`,
+			rows,
+			jobId: jobID,
+			expectedRows,
+			suggestedName:
+				settings.scope === 'selected'
+					? `query-results-selected.${extension}`
+					: `query-results.${extension}`,
 			options: new database.ExportOptions(buildExportOptions(settings))
 		});
 
 		try {
 			updateStatus(
-				`Exporting ${queryResults.length.toLocaleString()} loaded query rows as ${settings.format.toUpperCase()}…`,
+				`Exporting ${expectedRows.toLocaleString()} ${
+					settings.scope === 'selected' ? 'selected' : 'loaded'
+				} query rows as ${settings.format.toUpperCase()}…`,
 				'info'
 			);
 			const response = await ExportQueryResults(request);
@@ -397,6 +480,7 @@
 			updateStatus(error?.message ?? 'Failed to export query results', 'error');
 		} finally {
 			exporting = false;
+			finishExportProgress();
 		}
 	}
 
@@ -618,7 +702,8 @@
 						currentPage={resultPage}
 						pageSize={QUERY_RESULT_PAGE_SIZE}
 						onPageChange={(page) => (resultPage = page)}
-						onExport={() => (exportDialogOpen = true)}
+						onExport={openExportDialog}
+						onSelectionChange={handleExportSelection}
 						{exporting}
 						gridTitle="Query results"
 						detailTitle="Query result"
@@ -652,8 +737,13 @@
 	source="query"
 	pageRows={visibleQueryResults.length}
 	totalRows={queryResults.length}
+	selectedRows={selectedRows.length}
+	initialScope={exportInitialScope}
 	truncated={queryResultTruncated}
 	{exporting}
+	cancelling={exportCancelling}
+	progress={exportProgress}
 	onClose={() => (exportDialogOpen = false)}
+	onCancelExport={cancelRunningExport}
 	onExport={handleExport}
 />

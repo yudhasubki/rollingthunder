@@ -3,6 +3,7 @@ package database
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
@@ -13,6 +14,9 @@ import (
 	"strconv"
 	"time"
 	"unicode/utf8"
+
+	textunicode "golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 )
 
 type ExportFormat string
@@ -26,14 +30,24 @@ const (
 type ExportScope string
 
 const (
-	ExportScopePage ExportScope = "page"
-	ExportScopeAll  ExportScope = "all"
+	ExportScopePage     ExportScope = "page"
+	ExportScopeAll      ExportScope = "all"
+	ExportScopeSelected ExportScope = "selected"
+)
+
+type CSVEncoding string
+
+const (
+	CSVEncodingUTF8    CSVEncoding = "utf-8"
+	CSVEncodingUTF8BOM CSVEncoding = "utf-8-bom"
+	CSVEncodingUTF16LE CSVEncoding = "utf-16le"
 )
 
 type CSVOptions struct {
-	Delimiter     string `json:"delimiter"`
-	IncludeHeader bool   `json:"includeHeader"`
-	NullValue     string `json:"nullValue"`
+	Delimiter     string      `json:"delimiter"`
+	IncludeHeader bool        `json:"includeHeader"`
+	NullValue     string      `json:"nullValue"`
+	Encoding      CSVEncoding `json:"encoding"`
 }
 
 type JSONOptions struct {
@@ -65,15 +79,20 @@ type ExportOptions struct {
 }
 
 type TableExportRequest struct {
-	Table         Table         `json:"table"`
-	Scope         ExportScope   `json:"scope"`
-	SuggestedName string        `json:"suggestedName"`
-	Options       ExportOptions `json:"options"`
+	Table              Table         `json:"table"`
+	Scope              ExportScope   `json:"scope"`
+	SelectedRowIndexes []int         `json:"selectedRowIndexes"`
+	JobID              string        `json:"jobId"`
+	ExpectedRows       int64         `json:"expectedRows"`
+	SuggestedName      string        `json:"suggestedName"`
+	Options            ExportOptions `json:"options"`
 }
 
 type RowsExportRequest struct {
 	Columns       []string                 `json:"columns"`
 	Rows          []map[string]interface{} `json:"rows"`
+	JobID         string                   `json:"jobId"`
+	ExpectedRows  int64                    `json:"expectedRows"`
 	SuggestedName string                   `json:"suggestedName"`
 	Options       ExportOptions            `json:"options"`
 }
@@ -90,6 +109,16 @@ type ExportResult struct {
 	Format    ExportFormat `json:"format"`
 }
 
+type ExportProgress struct {
+	JobID       string `json:"jobId"`
+	Status      string `json:"status"`
+	Rows        int64  `json:"rows"`
+	Bytes       int64  `json:"bytes"`
+	TotalRows   int64  `json:"totalRows"`
+	ElapsedMS   int64  `json:"elapsedMs"`
+	Cancellable bool   `json:"cancellable"`
+}
+
 type RowStream interface {
 	Columns() ([]string, error)
 	Next() bool
@@ -97,10 +126,47 @@ type RowStream interface {
 	Err() error
 }
 
+type exportProgressReporterKey struct{}
+
+func WithExportProgressReporter(
+	ctx context.Context,
+	reporter func(rows int64),
+) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, exportProgressReporterKey{}, reporter)
+}
+
+func ReportExportProgress(ctx context.Context, rows int64) {
+	if ctx == nil {
+		return
+	}
+	reporter, _ := ctx.Value(exportProgressReporterKey{}).(func(int64))
+	if reporter != nil {
+		reporter(rows)
+	}
+}
+
+func CheckExportContext(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
 func ValidateExportOptions(options ExportOptions) error {
 	switch options.Format {
 	case ExportFormatCSV:
-		_, err := parseCSVDelimiter(options.CSV.Delimiter)
+		if _, err := parseCSVDelimiter(options.CSV.Delimiter); err != nil {
+			return err
+		}
+		_, err := normalizeCSVEncoding(options.CSV.Encoding)
 		return err
 	case ExportFormatJSON:
 		return nil
@@ -119,6 +185,7 @@ func ValidateExportOptions(options ExportOptions) error {
 
 type csvSink struct {
 	writer    *csv.Writer
+	closer    io.Closer
 	nullValue string
 }
 
@@ -128,12 +195,47 @@ func newCSVSink(writer io.Writer, options CSVOptions) (*csvSink, error) {
 		return nil, err
 	}
 
-	csvWriter := csv.NewWriter(writer)
+	encoding, err := normalizeCSVEncoding(options.Encoding)
+	if err != nil {
+		return nil, err
+	}
+
+	output := writer
+	var closer io.Closer
+	switch encoding {
+	case CSVEncodingUTF8:
+	case CSVEncodingUTF8BOM:
+		if _, err := writer.Write([]byte{0xef, 0xbb, 0xbf}); err != nil {
+			return nil, fmt.Errorf("write UTF-8 BOM: %w", err)
+		}
+	case CSVEncodingUTF16LE:
+		encodedWriter := transform.NewWriter(
+			writer,
+			textunicode.UTF16(textunicode.LittleEndian, textunicode.UseBOM).NewEncoder(),
+		)
+		output = encodedWriter
+		closer = encodedWriter
+	}
+
+	csvWriter := csv.NewWriter(output)
 	csvWriter.Comma = delimiter
 	return &csvSink{
 		writer:    csvWriter,
+		closer:    closer,
 		nullValue: options.NullValue,
 	}, nil
+}
+
+func normalizeCSVEncoding(value CSVEncoding) (CSVEncoding, error) {
+	if value == "" {
+		return CSVEncodingUTF8, nil
+	}
+	switch value {
+	case CSVEncodingUTF8, CSVEncodingUTF8BOM, CSVEncodingUTF16LE:
+		return value, nil
+	default:
+		return "", fmt.Errorf("unsupported CSV encoding %q", value)
+	}
 }
 
 func parseCSVDelimiter(value string) (rune, error) {
@@ -172,7 +274,13 @@ func (s *csvSink) writeValues(values []interface{}) error {
 
 func (s *csvSink) close() error {
 	s.writer.Flush()
-	return s.writer.Error()
+	if err := s.writer.Error(); err != nil {
+		return err
+	}
+	if s.closer != nil {
+		return s.closer.Close()
+	}
+	return nil
 }
 
 func formatCSVValue(value interface{}, nullValue string) (string, error) {
@@ -212,6 +320,18 @@ func formatCSVValue(value interface{}, nullValue string) (string, error) {
 }
 
 func WriteCSVStream(writer io.Writer, rows RowStream, options CSVOptions) (ExportStats, error) {
+	return WriteCSVStreamContext(context.Background(), writer, rows, options)
+}
+
+func WriteCSVStreamContext(
+	ctx context.Context,
+	writer io.Writer,
+	rows RowStream,
+	options CSVOptions,
+) (ExportStats, error) {
+	if err := CheckExportContext(ctx); err != nil {
+		return ExportStats{}, err
+	}
 	columns, err := rows.Columns()
 	if err != nil {
 		return ExportStats{}, fmt.Errorf("read export columns: %w", err)
@@ -227,6 +347,9 @@ func WriteCSVStream(writer io.Writer, rows RowStream, options CSVOptions) (Expor
 
 	var count int64
 	for rows.Next() {
+		if err := CheckExportContext(ctx); err != nil {
+			return ExportStats{}, err
+		}
 		values, err := rows.Values()
 		if err != nil {
 			return ExportStats{}, fmt.Errorf("read export row: %w", err)
@@ -242,9 +365,13 @@ func WriteCSVStream(writer io.Writer, rows RowStream, options CSVOptions) (Expor
 			return ExportStats{}, fmt.Errorf("write CSV row: %w", err)
 		}
 		count++
+		ReportExportProgress(ctx, count)
 	}
 	if err := rows.Err(); err != nil {
 		return ExportStats{}, fmt.Errorf("read export rows: %w", err)
+	}
+	if err := CheckExportContext(ctx); err != nil {
+		return ExportStats{}, err
 	}
 	if err := sink.close(); err != nil {
 		return ExportStats{}, fmt.Errorf("flush CSV export: %w", err)
@@ -259,8 +386,21 @@ func WriteCSVRows(
 	rows []map[string]interface{},
 	options CSVOptions,
 ) (ExportStats, error) {
+	return WriteCSVRowsContext(context.Background(), writer, columns, rows, options)
+}
+
+func WriteCSVRowsContext(
+	ctx context.Context,
+	writer io.Writer,
+	columns []string,
+	rows []map[string]interface{},
+	options CSVOptions,
+) (ExportStats, error) {
 	if len(columns) == 0 && len(rows) > 0 {
 		return ExportStats{}, fmt.Errorf("query result columns are required")
+	}
+	if err := CheckExportContext(ctx); err != nil {
+		return ExportStats{}, err
 	}
 
 	sink, err := newCSVSink(writer, options)
@@ -271,7 +411,11 @@ func WriteCSVRows(
 		return ExportStats{}, fmt.Errorf("write CSV header: %w", err)
 	}
 
+	var count int64
 	for _, row := range rows {
+		if err := CheckExportContext(ctx); err != nil {
+			return ExportStats{}, err
+		}
 		values := make([]interface{}, len(columns))
 		for index, column := range columns {
 			values[index] = row[column]
@@ -279,12 +423,14 @@ func WriteCSVRows(
 		if err := sink.writeValues(values); err != nil {
 			return ExportStats{}, fmt.Errorf("write CSV row: %w", err)
 		}
+		count++
+		ReportExportProgress(ctx, count)
 	}
 	if err := sink.close(); err != nil {
 		return ExportStats{}, fmt.Errorf("flush CSV export: %w", err)
 	}
 
-	return ExportStats{Rows: int64(len(rows))}, nil
+	return ExportStats{Rows: count}, nil
 }
 
 type orderedJSONRow struct {
@@ -490,6 +636,18 @@ func (s *jsonSink) close() error {
 }
 
 func WriteJSONStream(writer io.Writer, rows RowStream, options JSONOptions) (ExportStats, error) {
+	return WriteJSONStreamContext(context.Background(), writer, rows, options)
+}
+
+func WriteJSONStreamContext(
+	ctx context.Context,
+	writer io.Writer,
+	rows RowStream,
+	options JSONOptions,
+) (ExportStats, error) {
+	if err := CheckExportContext(ctx); err != nil {
+		return ExportStats{}, err
+	}
 	columns, err := rows.Columns()
 	if err != nil {
 		return ExportStats{}, fmt.Errorf("read export columns: %w", err)
@@ -500,6 +658,9 @@ func WriteJSONStream(writer io.Writer, rows RowStream, options JSONOptions) (Exp
 		return ExportStats{}, fmt.Errorf("start JSON export: %w", err)
 	}
 	for rows.Next() {
+		if err := CheckExportContext(ctx); err != nil {
+			return ExportStats{}, err
+		}
 		values, err := rows.Values()
 		if err != nil {
 			return ExportStats{}, fmt.Errorf("read export row: %w", err)
@@ -507,9 +668,13 @@ func WriteJSONStream(writer io.Writer, rows RowStream, options JSONOptions) (Exp
 		if err := sink.writeValues(columns, values); err != nil {
 			return ExportStats{}, fmt.Errorf("write JSON row: %w", err)
 		}
+		ReportExportProgress(ctx, sink.rows)
 	}
 	if err := rows.Err(); err != nil {
 		return ExportStats{}, fmt.Errorf("read export rows: %w", err)
+	}
+	if err := CheckExportContext(ctx); err != nil {
+		return ExportStats{}, err
 	}
 	if err := sink.close(); err != nil {
 		return ExportStats{}, fmt.Errorf("finish JSON export: %w", err)
@@ -523,8 +688,21 @@ func WriteJSONRows(
 	rows []map[string]interface{},
 	options JSONOptions,
 ) (ExportStats, error) {
+	return WriteJSONRowsContext(context.Background(), writer, columns, rows, options)
+}
+
+func WriteJSONRowsContext(
+	ctx context.Context,
+	writer io.Writer,
+	columns []string,
+	rows []map[string]interface{},
+	options JSONOptions,
+) (ExportStats, error) {
 	if len(columns) == 0 && len(rows) > 0 {
 		return ExportStats{}, fmt.Errorf("query result columns are required")
+	}
+	if err := CheckExportContext(ctx); err != nil {
+		return ExportStats{}, err
 	}
 
 	sink, err := newJSONSink(writer, options)
@@ -532,6 +710,9 @@ func WriteJSONRows(
 		return ExportStats{}, fmt.Errorf("start JSON export: %w", err)
 	}
 	for _, row := range rows {
+		if err := CheckExportContext(ctx); err != nil {
+			return ExportStats{}, err
+		}
 		values := make([]interface{}, len(columns))
 		for index, column := range columns {
 			values[index] = row[column]
@@ -539,6 +720,7 @@ func WriteJSONRows(
 		if err := sink.writeValues(columns, values); err != nil {
 			return ExportStats{}, fmt.Errorf("write JSON row: %w", err)
 		}
+		ReportExportProgress(ctx, sink.rows)
 	}
 	if err := sink.close(); err != nil {
 		return ExportStats{}, fmt.Errorf("finish JSON export: %w", err)
@@ -551,15 +733,24 @@ func WriteExportStream(
 	rows RowStream,
 	options ExportOptions,
 ) (ExportStats, error) {
+	return WriteExportStreamContext(context.Background(), writer, rows, options)
+}
+
+func WriteExportStreamContext(
+	ctx context.Context,
+	writer io.Writer,
+	rows RowStream,
+	options ExportOptions,
+) (ExportStats, error) {
 	if err := ValidateExportOptions(options); err != nil {
 		return ExportStats{}, err
 	}
 
 	switch options.Format {
 	case ExportFormatCSV:
-		return WriteCSVStream(writer, rows, options.CSV)
+		return WriteCSVStreamContext(ctx, writer, rows, options.CSV)
 	case ExportFormatJSON:
-		return WriteJSONStream(writer, rows, options.JSON)
+		return WriteJSONStreamContext(ctx, writer, rows, options.JSON)
 	case ExportFormatSQL:
 		return ExportStats{}, fmt.Errorf(
 			"SQL INSERT export requires a driver-specific table serializer",
@@ -575,15 +766,25 @@ func WriteExportRows(
 	rows []map[string]interface{},
 	options ExportOptions,
 ) (ExportStats, error) {
+	return WriteExportRowsContext(context.Background(), writer, columns, rows, options)
+}
+
+func WriteExportRowsContext(
+	ctx context.Context,
+	writer io.Writer,
+	columns []string,
+	rows []map[string]interface{},
+	options ExportOptions,
+) (ExportStats, error) {
 	if err := ValidateExportOptions(options); err != nil {
 		return ExportStats{}, err
 	}
 
 	switch options.Format {
 	case ExportFormatCSV:
-		return WriteCSVRows(writer, columns, rows, options.CSV)
+		return WriteCSVRowsContext(ctx, writer, columns, rows, options.CSV)
 	case ExportFormatJSON:
-		return WriteJSONRows(writer, columns, rows, options.JSON)
+		return WriteJSONRowsContext(ctx, writer, columns, rows, options.JSON)
 	case ExportFormatSQL:
 		return ExportStats{}, fmt.Errorf("SQL INSERT export requires a table source")
 	default:

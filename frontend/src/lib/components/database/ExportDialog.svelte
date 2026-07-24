@@ -10,8 +10,15 @@
 		Loader2,
 		TriangleAlert
 	} from 'lucide-svelte';
-	import type { ExportFormat, ExportScope, ExportSettings } from '$lib/export/options';
+	import {
+		formatExportBytes,
+		type CSVEncoding,
+		type ExportFormat,
+		type ExportScope,
+		type ExportSettings
+	} from '$lib/export/options';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
+	import { database } from '$lib/wailsjs/go/models';
 
 	interface Props {
 		open: boolean;
@@ -19,9 +26,14 @@
 		sourceName?: string;
 		pageRows: number;
 		totalRows: number;
+		selectedRows?: number;
+		initialScope?: ExportScope;
 		truncated?: boolean;
 		exporting?: boolean;
+		cancelling?: boolean;
+		progress?: database.ExportProgress | null;
 		onClose: () => void;
+		onCancelExport?: () => void | Promise<void>;
 		onExport: (settings: ExportSettings) => void | Promise<void>;
 	}
 
@@ -31,15 +43,21 @@
 		sourceName = '',
 		pageRows,
 		totalRows,
+		selectedRows = 0,
+		initialScope,
 		truncated = false,
 		exporting = false,
+		cancelling = false,
+		progress = null,
 		onClose,
+		onCancelExport,
 		onExport
 	}: Props = $props();
 
 	let scope = $state<ExportScope>('page');
 	let format = $state<ExportFormat>('csv');
 	let delimiter = $state<',' | ';' | '\t'>(',');
+	let csvEncoding = $state<CSVEncoding>('utf-8');
 	let includeHeader = $state(true);
 	let nullValue = $state('');
 	let prettyJSON = $state(true);
@@ -51,12 +69,28 @@
 		{ value: '500', label: '500 rows' },
 		{ value: '1000', label: '1,000 rows' }
 	];
+	const csvEncodingOptions = [
+		{ value: 'utf-8', label: 'UTF-8' },
+		{ value: 'utf-8-bom', label: 'UTF-8 with BOM' },
+		{ value: 'utf-16le', label: 'UTF-16 LE' }
+	];
+	const progressPercent = $derived(
+		progress && progress.totalRows > 0
+			? Math.min(100, Math.round((progress.rows / progress.totalRows) * 100))
+			: null
+	);
 
 	$effect(() => {
 		if (open && !wasOpen) {
-			scope = source === 'query' ? 'loaded' : 'page';
+			scope =
+				initialScope === 'selected' && selectedRows > 0
+					? 'selected'
+					: source === 'query'
+						? 'loaded'
+						: 'page';
 			format = 'csv';
 			delimiter = ',';
+			csvEncoding = 'utf-8';
 			includeHeader = true;
 			nullValue = '';
 			prettyJSON = true;
@@ -64,6 +98,12 @@
 			includeTransaction = true;
 		}
 		wasOpen = open;
+	});
+
+	$effect(() => {
+		if (scope === 'selected' && selectedRows === 0) {
+			scope = source === 'query' ? 'loaded' : 'page';
+		}
 	});
 
 	function close() {
@@ -79,12 +119,27 @@
 			scope,
 			format,
 			delimiter,
+			csvEncoding,
 			includeHeader,
 			nullValue,
 			prettyJSON,
 			sqlBatchSize,
 			includeTransaction
 		});
+	}
+
+	function cancel() {
+		if (exporting) {
+			if (!cancelling) void onCancelExport?.();
+			return;
+		}
+		close();
+	}
+
+	function formatElapsed(milliseconds: number): string {
+		if (!Number.isFinite(milliseconds) || milliseconds <= 0) return '0s';
+		if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+		return `${(milliseconds / 1000).toFixed(milliseconds < 10000 ? 1 : 0)}s`;
 	}
 </script>
 
@@ -99,7 +154,7 @@
 	></button>
 	<dialog
 		open
-		class="bg-popover text-popover-foreground fixed top-1/2 left-1/2 z-[81] m-0 flex w-[min(520px,calc(100vw-32px))] max-w-none -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border p-0 shadow-2xl"
+		class="bg-popover text-popover-foreground fixed top-1/2 left-1/2 z-[81] m-0 flex max-h-[calc(100vh-32px)] w-[min(560px,calc(100vw-32px))] max-w-none -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border p-0 shadow-2xl"
 		aria-modal="true"
 		aria-labelledby="export-dialog-title"
 	>
@@ -134,11 +189,17 @@
 			</button>
 		</header>
 
-		<div class="space-y-4 p-4">
+		<div class="min-h-0 space-y-4 overflow-y-auto p-4">
 			<div>
 				<div class="mb-2 flex items-center justify-between">
 					<span class="text-[10px] font-bold">Format</span>
-					<span class="text-muted-foreground text-[9px]">UTF-8</span>
+					<span class="text-muted-foreground text-[9px]">
+						{format === 'csv'
+							? csvEncodingOptions.find((option) => option.value === csvEncoding)?.label
+							: format === 'json'
+								? 'Unicode'
+								: 'PostgreSQL'}
+					</span>
 				</div>
 				<div class="grid gap-2 {source === 'table' ? 'grid-cols-3' : 'grid-cols-2'}">
 					<button
@@ -198,7 +259,7 @@
 				</div>
 
 				{#if source === 'table'}
-					<div class="grid grid-cols-2 gap-2">
+					<div class="grid grid-cols-3 gap-2">
 						<button
 							type="button"
 							class="flex min-h-16 cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left transition-colors {scope ===
@@ -206,6 +267,7 @@
 								? 'border-primary/50 bg-primary/5'
 								: 'hover:bg-[var(--surface-hover)]'}"
 							onclick={() => (scope = 'page')}
+							disabled={exporting}
 						>
 							<Rows3 class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
 							<span>
@@ -217,11 +279,29 @@
 						</button>
 						<button
 							type="button"
+							class="flex min-h-16 cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-45 {scope ===
+							'selected'
+								? 'border-primary/50 bg-primary/5'
+								: 'hover:bg-[var(--surface-hover)]'}"
+							onclick={() => (scope = 'selected')}
+							disabled={exporting || selectedRows === 0}
+						>
+							<Rows3 class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
+							<span>
+								<span class="block text-[10px] font-semibold">Selected</span>
+								<span class="text-muted-foreground mt-1 block text-[9px]"
+									>{selectedRows.toLocaleString()} on this page</span
+								>
+							</span>
+						</button>
+						<button
+							type="button"
 							class="flex min-h-16 cursor-pointer items-start gap-2.5 rounded-lg border p-3 text-left transition-colors {scope ===
 							'all'
 								? 'border-primary/50 bg-primary/5'
 								: 'hover:bg-[var(--surface-hover)]'}"
 							onclick={() => (scope = 'all')}
+							disabled={exporting}
 						>
 							<Database class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
 							<span>
@@ -233,24 +313,57 @@
 						</button>
 					</div>
 				{:else}
-					<div class="rounded-lg border bg-[var(--surface-sunken)] p-3">
-						<div class="flex items-center gap-2">
-							<Rows3 class="text-muted-foreground h-3.5 w-3.5" />
-							<span class="text-[10px] font-semibold">Loaded query result</span>
-							<span class="text-muted-foreground ml-auto text-[9px]"
-								>{totalRows.toLocaleString()} rows</span
+					<div class="grid {selectedRows > 0 ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
+						<button
+							type="button"
+							class="rounded-lg border p-3 text-left transition-colors {scope === 'loaded'
+								? 'border-primary/50 bg-primary/5'
+								: 'hover:bg-[var(--surface-hover)]'}"
+							onclick={() => (scope = 'loaded')}
+							disabled={exporting}
+						>
+							<span class="flex items-center gap-2">
+								<Rows3 class="text-muted-foreground h-3.5 w-3.5" />
+								<span class="text-[10px] font-semibold">Loaded query result</span>
+								<span class="text-muted-foreground ml-auto text-[9px]"
+									>{totalRows.toLocaleString()} rows</span
+								>
+							</span>
+						</button>
+						{#if selectedRows > 0}
+							<button
+								type="button"
+								class="rounded-lg border p-3 text-left transition-colors {scope === 'selected'
+									? 'border-primary/50 bg-primary/5'
+									: 'hover:bg-[var(--surface-hover)]'}"
+								onclick={() => (scope = 'selected')}
+								disabled={exporting}
 							>
-						</div>
+								<span class="flex items-center gap-2">
+									<Rows3 class="text-muted-foreground h-3.5 w-3.5" />
+									<span class="text-[10px] font-semibold">Selected rows</span>
+									<span class="text-muted-foreground ml-auto text-[9px]"
+										>{selectedRows.toLocaleString()} rows</span
+									>
+								</span>
+							</button>
+						{/if}
+					</div>
+					<div class="rounded-lg bg-[var(--surface-sunken)] px-3 py-2.5">
 						{#if truncated}
-							<div
-								class="mt-2 flex items-start gap-2 rounded-md bg-amber-500/10 px-2.5 py-2 text-[9px] text-amber-700 dark:text-amber-300"
-							>
+							<div class="flex items-start gap-2 text-[9px] text-amber-700 dark:text-amber-300">
 								<TriangleAlert class="mt-0.5 h-3 w-3 shrink-0" />
 								<span>
 									The interactive result was capped. This export contains only the rows currently
-									loaded in the query tab.
+									loaded in the query tab{scope === 'selected' ? ' and selected on this page' : ''}.
 								</span>
 							</div>
+						{:else}
+							<p class="text-muted-foreground text-[9px]">
+								{scope === 'selected'
+									? 'Only checked rows from the visible result page will be exported.'
+									: 'All rows currently held by this query tab will be exported.'}
+							</p>
 						{/if}
 					</div>
 				{/if}
@@ -260,6 +373,20 @@
 				<div>
 					<span class="mb-2 block text-[10px] font-bold">CSV options</span>
 					<div class="grid grid-cols-[1fr_1fr] gap-3 rounded-lg border p-3">
+						<label class="space-y-1.5">
+							<span class="text-muted-foreground block text-[9px] font-semibold">Encoding</span>
+							<FilterCombobox
+								id="export-csv-encoding"
+								options={csvEncodingOptions}
+								value={csvEncoding}
+								onChange={(value) => (csvEncoding = value as CSVEncoding)}
+								placeholder="Encoding"
+								searchable={false}
+								disabled={exporting}
+								triggerClass="h-8 px-2.5 text-[9px]"
+							/>
+						</label>
+
 						<label class="space-y-1.5">
 							<span class="text-muted-foreground block text-[9px] font-semibold">Delimiter</span>
 							<span class="flex rounded-md border bg-[var(--surface-sunken)] p-0.5">
@@ -279,7 +406,7 @@
 							</span>
 						</label>
 
-						<label class="space-y-1.5">
+						<label class="col-span-2 space-y-1.5">
 							<span class="text-muted-foreground block text-[9px] font-semibold">NULL value</span>
 							<input
 								class="rt-input h-8 w-full px-2.5 font-mono text-[9px]"
@@ -381,20 +508,74 @@
 					</div>
 				</div>
 			{/if}
+
+			{#if exporting}
+				<div class="rounded-lg border bg-[var(--surface-sunken)] p-3" aria-live="polite">
+					<div class="flex items-start justify-between gap-3">
+						<div class="flex min-w-0 items-start gap-2.5">
+							<span
+								class="bg-primary/10 text-primary mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+							>
+								<Loader2 class="h-3.5 w-3.5 animate-spin" />
+							</span>
+							<span class="min-w-0">
+								<span class="block text-[10px] font-semibold">
+									{cancelling || progress?.status === 'cancelling'
+										? 'Stopping export safely…'
+										: progress?.status === 'running'
+											? 'Writing export file…'
+											: 'Choose a destination in the system dialog'}
+								</span>
+								<span class="text-muted-foreground mt-1 block text-[9px]">
+									{#if progress?.status === 'running' || progress?.status === 'cancelling'}
+										{progress.rows.toLocaleString()}
+										{progress.totalRows > 0 ? ` of ${progress.totalRows.toLocaleString()}` : ''}
+										rows · {formatExportBytes(progress.bytes)} · {formatElapsed(progress.elapsedMs)}
+									{:else}
+										No destination file is changed until writing completes.
+									{/if}
+								</span>
+							</span>
+						</div>
+						{#if progressPercent !== null && progress?.status !== 'preparing'}
+							<span class="text-primary text-[9px] font-bold tabular-nums">{progressPercent}%</span>
+						{/if}
+					</div>
+					<div
+						class="bg-muted mt-3 h-1 overflow-hidden rounded-full"
+						role="progressbar"
+						aria-label="Export progress"
+						aria-valuemin="0"
+						aria-valuemax="100"
+						aria-valuenow={progressPercent ?? undefined}
+					>
+						{#if progressPercent === null || progress?.status === 'preparing'}
+							<div class="rt-loading-progress h-full w-full"></div>
+						{:else}
+							<div
+								class="bg-primary h-full rounded-full transition-[width] duration-200"
+								style={`width: ${progressPercent}%`}
+							></div>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		</div>
 
 		<footer class="flex items-center justify-between border-t bg-[var(--surface-sunken)] px-4 py-3">
 			<span class="text-muted-foreground text-[9px]">
-				The destination is written only after export completes.
+				{exporting
+					? 'Cancellation keeps any existing destination file intact.'
+					: 'The destination is written only after export completes.'}
 			</span>
 			<div class="flex items-center gap-2">
 				<button
 					type="button"
 					class="rt-toolbar-button h-8 cursor-pointer px-3 text-[10px] font-semibold"
-					onclick={close}
-					disabled={exporting}
+					onclick={cancel}
+					disabled={exporting && (cancelling || progress?.cancellable === false)}
 				>
-					Cancel
+					{exporting ? (cancelling ? 'Cancelling…' : 'Cancel export') : 'Cancel'}
 				</button>
 				<button
 					type="button"
@@ -404,7 +585,7 @@
 				>
 					{#if exporting}
 						<Loader2 class="h-3.5 w-3.5 animate-spin" />
-						Exporting…
+						{cancelling ? 'Stopping…' : 'Exporting…'}
 					{:else}
 						<Download class="h-3.5 w-3.5" />
 						Choose destination

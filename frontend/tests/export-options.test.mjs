@@ -13,6 +13,7 @@ test('builds explicit CSV options for the backend contract', () => {
 			scope: 'all',
 			format: 'csv',
 			delimiter: '\t',
+			csvEncoding: 'utf-16le',
 			includeHeader: false,
 			nullValue: 'NULL',
 			prettyJSON: true,
@@ -23,6 +24,7 @@ test('builds explicit CSV options for the backend contract', () => {
 			format: 'csv',
 			csv: {
 				delimiter: '\t',
+				encoding: 'utf-16le',
 				includeHeader: false,
 				nullValue: 'NULL'
 			}
@@ -36,6 +38,7 @@ test('builds JSON options without leaking CSV settings', () => {
 			scope: 'loaded',
 			format: 'json',
 			delimiter: ';',
+			csvEncoding: 'utf-8-bom',
 			includeHeader: false,
 			nullValue: 'NULL',
 			prettyJSON: false,
@@ -59,6 +62,7 @@ test('builds PostgreSQL INSERT options without leaking other format settings', (
 			scope: 'all',
 			format: 'sql',
 			delimiter: ',',
+			csvEncoding: 'utf-8',
 			includeHeader: true,
 			nullValue: '',
 			prettyJSON: true,

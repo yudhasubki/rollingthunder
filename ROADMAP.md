@@ -23,6 +23,8 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Regression tests for SQL context parsing and dialect catalogs
 - [x] Streaming CSV and JSON export for table pages, all filtered rows, and loaded query results
 - [x] Streaming PostgreSQL `INSERT` export for table pages and all filtered rows
+- [x] Checked-row export for table pages and query-result pages
+- [x] Live export progress, safe cancellation, and configurable CSV encodings
 - [x] Dark and light appearance modes
 - [x] Activity console and informative loading states
 
@@ -48,13 +50,13 @@ explicit, tested ordering behavior.
 - [x] Export table rows and loaded query results as JSON.
 - [x] Export PostgreSQL table rows as SQL `INSERT` statements.
 - [x] Choose between the current table page or all filtered rows.
-- [ ] Export selected rows.
+- [x] Export selected rows.
 - [x] Stream all-filtered table exports instead of holding the complete dataset in memory.
 - [x] Use the native destination picker and show useful completion, cancellation, and error
       messages.
-- [ ] Add granular progress and cancellation for a running export.
-- [x] Add delimiter, header, and null-value options; write CSV as UTF-8.
-- [ ] Add configurable CSV encodings.
+- [x] Add granular progress and cancellation for a running export.
+- [x] Add delimiter, header, and null-value options.
+- [x] Add UTF-8, UTF-8 BOM, and UTF-16 LE CSV encodings.
 
 ### Query and data safety
 

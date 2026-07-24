@@ -677,6 +677,11 @@ func buildPostgresExportQueryWithProjection(
 			return "", fmt.Errorf("current-page export requires a positive table limit")
 		}
 		query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
+	case database.ExportScopeSelected:
+		if table.Limit <= 0 {
+			return "", fmt.Errorf("selected-row export requires a positive table limit")
+		}
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", table.Limit, table.Offset)
 	case database.ExportScopeAll:
 	default:
 		return "", fmt.Errorf("unsupported table export scope %q", scope)
@@ -724,17 +729,30 @@ func (p *Postgres) ExportTable(
 	}
 	defer rows.Close()
 
+	var exportRows database.RowStream = &sqlxExportRows{rows: rows}
+	if request.Scope == database.ExportScopeSelected {
+		exportRows, err = newSelectedRowStream(
+			exportRows,
+			request.SelectedRowIndexes,
+			request.Table.Limit,
+		)
+		if err != nil {
+			return database.ExportStats{}, err
+		}
+	}
+
 	if request.Options.Format == database.ExportFormatSQL {
-		return writePostgresInsertStream(
+		return writePostgresInsertStreamContext(
+			ctx,
 			writer,
-			&sqlxExportRows{rows: rows},
+			exportRows,
 			request.Table,
 			insertColumns,
 			request.Options.SQL,
 		)
 	}
 
-	return database.WriteExportStream(writer, &sqlxExportRows{rows: rows}, request.Options)
+	return database.WriteExportStreamContext(ctx, writer, exportRows, request.Options)
 }
 
 // CreateTable creates a new table in the database

@@ -1,10 +1,12 @@
-export type ExportScope = 'page' | 'all' | 'loaded';
+export type ExportScope = 'page' | 'all' | 'loaded' | 'selected';
 export type ExportFormat = 'csv' | 'json' | 'sql';
+export type CSVEncoding = 'utf-8' | 'utf-8-bom' | 'utf-16le';
 
 export interface ExportSettings {
 	scope: ExportScope;
 	format: ExportFormat;
 	delimiter: ',' | ';' | '\t';
+	csvEncoding: CSVEncoding;
 	includeHeader: boolean;
 	nullValue: string;
 	prettyJSON: boolean;
@@ -36,6 +38,7 @@ export function buildExportOptions(settings: ExportSettings) {
 		format: 'csv',
 		csv: {
 			delimiter: settings.delimiter,
+			encoding: settings.csvEncoding,
 			includeHeader: settings.includeHeader,
 			nullValue: settings.nullValue
 		}

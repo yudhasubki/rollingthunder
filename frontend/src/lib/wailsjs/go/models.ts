@@ -4,6 +4,7 @@ export namespace database {
 	    delimiter: string;
 	    includeHeader: boolean;
 	    nullValue: string;
+	    encoding: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new CSVOptions(source);
@@ -14,6 +15,7 @@ export namespace database {
 	        this.delimiter = source["delimiter"];
 	        this.includeHeader = source["includeHeader"];
 	        this.nullValue = source["nullValue"];
+	        this.encoding = source["encoding"];
 	    }
 	}
 	export class ColumnDefinition {
@@ -150,6 +152,30 @@ export namespace database {
 		    return a;
 		}
 	}
+	export class ExportProgress {
+	    jobId: string;
+	    status: string;
+	    rows: number;
+	    bytes: number;
+	    totalRows: number;
+	    elapsedMs: number;
+	    cancellable: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExportProgress(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.jobId = source["jobId"];
+	        this.status = source["status"];
+	        this.rows = source["rows"];
+	        this.bytes = source["bytes"];
+	        this.totalRows = source["totalRows"];
+	        this.elapsedMs = source["elapsedMs"];
+	        this.cancellable = source["cancellable"];
+	    }
+	}
 	export class ExportResult {
 	    path: string;
 	    rows: number;
@@ -226,6 +252,8 @@ export namespace database {
 	export class RowsExportRequest {
 	    columns: string[];
 	    rows: any[];
+	    jobId: string;
+	    expectedRows: number;
 	    suggestedName: string;
 	    options: ExportOptions;
 	
@@ -237,6 +265,8 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.columns = source["columns"];
 	        this.rows = source["rows"];
+	        this.jobId = source["jobId"];
+	        this.expectedRows = source["expectedRows"];
 	        this.suggestedName = source["suggestedName"];
 	        this.options = this.convertValues(source["options"], ExportOptions);
 	    }
@@ -395,6 +425,9 @@ export namespace database {
 	export class TableExportRequest {
 	    table: Table;
 	    scope: string;
+	    selectedRowIndexes: number[];
+	    jobId: string;
+	    expectedRows: number;
 	    suggestedName: string;
 	    options: ExportOptions;
 	
@@ -406,6 +439,9 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.table = this.convertValues(source["table"], Table);
 	        this.scope = source["scope"];
+	        this.selectedRowIndexes = source["selectedRowIndexes"];
+	        this.jobId = source["jobId"];
+	        this.expectedRows = source["expectedRows"];
 	        this.suggestedName = source["suggestedName"];
 	        this.options = this.convertValues(source["options"], ExportOptions);
 	    }
@@ -790,6 +826,38 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], db.SavedConnection);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_ExportProgress_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.ExportProgress;
+	
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_ExportProgress_(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.ExportProgress);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

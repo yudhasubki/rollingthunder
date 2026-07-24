@@ -41,12 +41,15 @@ type Service struct {
 	activeID    string
 	mu          sync.RWMutex
 	saveDialog  saveFileDialogFunc
+	exportJobs  map[string]*exportJob
+	exportMu    sync.RWMutex
 }
 
 func NewService() *Service {
 	return &Service{
 		connections: make(map[string]*Connection),
 		saveDialog:  defaultSaveFileDialog,
+		exportJobs:  make(map[string]*exportJob),
 	}
 }
 

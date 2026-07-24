@@ -188,9 +188,30 @@ func TestBuildPostgresExportQueryOmitsPaginationForAllRows(t *testing.T) {
 func TestBuildPostgresExportQueryRejectsInvalidScope(t *testing.T) {
 	if _, err := buildPostgresExportQuery(
 		database.Table{Schema: "public", Name: "orders", Limit: 100},
-		database.ExportScope("selected"),
+		database.ExportScope("unknown"),
 		database.Structures{{Name: "id", IsPrimary: true}},
 	); err == nil {
 		t.Fatal("expected unsupported-scope error")
+	}
+}
+
+func TestBuildPostgresExportQueryUsesPageBoundsForSelectedRows(t *testing.T) {
+	query, err := buildPostgresExportQuery(
+		database.Table{
+			Schema: "public",
+			Name:   "orders",
+			Offset: 200,
+			Limit:  100,
+		},
+		database.ExportScopeSelected,
+		database.Structures{{Name: "id", IsPrimary: true}},
+	)
+	if err != nil {
+		t.Fatalf("build selected-row export query: %v", err)
+	}
+
+	const expected = `SELECT * FROM "public"."orders" ORDER BY "id" ASC NULLS LAST LIMIT 100 OFFSET 200`
+	if query != expected {
+		t.Fatalf("query = %q, want %q", query, expected)
 	}
 }

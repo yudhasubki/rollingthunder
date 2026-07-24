@@ -42,7 +42,8 @@
 		sorting?: SortingState;
 		onSortingChange?: (sorting: SortingState) => void;
 		onAddFilter?: () => void;
-		onExport?: () => void;
+		onExport?: (preferredScope?: 'selected') => void;
+		onSelectionChange?: (rows: Record<string, any>[], indexes: number[]) => void;
 		exporting?: boolean;
 		detailTitle?: string;
 		gridTitle?: string;
@@ -64,6 +65,7 @@
 		onSortingChange,
 		onAddFilter,
 		onExport,
+		onSelectionChange,
 		exporting = false,
 		detailTitle = 'Table row',
 		gridTitle = 'Data rows',
@@ -94,6 +96,8 @@
 	let editingCell = $state<{ rowIndex: number; colName: string } | null>(null);
 	let editValue = $state<string>('');
 	let selectedRowIndex = $state<number | null>(null);
+	let exportSelectedRowIndexes = $state<number[]>([]);
+	let selectAllCheckbox = $state<HTMLInputElement | null>(null);
 	let previousData = data;
 	let columnWidths = $state<Record<string, number>>({});
 	let resizingColumn = $state<string | null>(null);
@@ -101,8 +105,14 @@
 	let resizeStartWidth = 0;
 	let resizePointerId: number | null = null;
 
-	const rowNumberWidth = 40;
+	const rowNumberWidth = 64;
 	const actionColumnWidth = 36;
+	const allDisplayRowsSelected = $derived(
+		displayData.length > 0 && exportSelectedRowIndexes.length === displayData.length
+	);
+	const someDisplayRowsSelected = $derived(
+		exportSelectedRowIndexes.length > 0 && !allDisplayRowsSelected
+	);
 	const tablePixelWidth = $derived(
 		rowNumberWidth +
 			actionColumnWidth +
@@ -191,7 +201,14 @@
 
 		previousData = currentData;
 		selectedRowIndex = null;
+		updateExportSelection([]);
 		closeRowDetails(false);
+	});
+
+	$effect(() => {
+		if (selectAllCheckbox) {
+			selectAllCheckbox.indeterminate = someDisplayRowsSelected;
+		}
 	});
 
 	function getRowClass(row: Record<string, any>, rowIndex: number): string {
@@ -267,6 +284,7 @@
 				newRow[col.name] = null;
 			}
 		});
+		updateExportSelection([]);
 		stageDataInsert(tabId, newRow);
 	}
 
@@ -279,6 +297,23 @@
 
 	function selectRow(rowIndex: number) {
 		selectedRowIndex = selectedRowIndex === rowIndex ? null : rowIndex;
+	}
+
+	function updateExportSelection(indexes: number[]) {
+		exportSelectedRowIndexes = indexes;
+		onSelectionChange?.(indexes.map((index) => displayData[index]).filter(Boolean), [...indexes]);
+	}
+
+	function toggleExportRow(rowIndex: number) {
+		updateExportSelection(
+			exportSelectedRowIndexes.includes(rowIndex)
+				? exportSelectedRowIndexes.filter((index) => index !== rowIndex)
+				: [...exportSelectedRowIndexes, rowIndex].sort((left, right) => left - right)
+		);
+	}
+
+	function toggleAllDisplayRows() {
+		updateExportSelection(allDisplayRowsSelected ? [] : displayData.map((_, index) => index));
 	}
 
 	function openRowDetails(
@@ -385,7 +420,7 @@
 				{#if onExport}
 					<button
 						class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium disabled:pointer-events-none disabled:opacity-40"
-						onclick={onExport}
+						onclick={() => onExport?.(exportSelectedRowIndexes.length > 0 ? 'selected' : undefined)}
 						disabled={exporting || loading}
 					>
 						{#if exporting}
@@ -394,6 +429,13 @@
 							<Download class="h-3 w-3" />
 						{/if}
 						Export
+						{#if exportSelectedRowIndexes.length > 0}
+							<span
+								class="bg-primary/10 text-primary inline-flex min-w-4 items-center justify-center rounded px-1 text-[7px] font-bold tabular-nums"
+							>
+								{exportSelectedRowIndexes.length}
+							</span>
+						{/if}
 					</button>
 				{/if}
 				{#if onAddFilter}
@@ -445,9 +487,22 @@
 						<th
 							class="column-header-cell frozen-edge frozen-edge--left row-number-cell text-muted-foreground h-9 border-r border-b px-0 text-center align-middle font-mono text-[9px] font-semibold"
 							style="width: {rowNumberWidth}px; min-width: {rowNumberWidth}px; max-width: {rowNumberWidth}px;"
-							aria-label="Row number"
+							aria-label="Select rows and row number"
 						>
-							#
+							<span class="flex h-full items-center justify-center gap-2 px-2">
+								<input
+									bind:this={selectAllCheckbox}
+									type="checkbox"
+									class="accent-primary h-3.5 w-3.5 cursor-pointer"
+									checked={allDisplayRowsSelected}
+									disabled={displayData.length === 0 || loading}
+									onchange={toggleAllDisplayRows}
+									aria-label={allDisplayRowsSelected
+										? 'Clear selected rows'
+										: 'Select all rows on this page'}
+								/>
+								<span aria-hidden="true">#</span>
+							</span>
 						</th>
 						{#each columns as col (col.name)}
 							{@const sortIndex = getSortIndex(col.name)}
@@ -563,12 +618,13 @@
 							<tr
 								class="data-row group cursor-pointer transition-colors {getRowClass(row, rowIndex)}"
 								data-selected={selectedRowIndex === rowIndex}
+								data-export-selected={exportSelectedRowIndexes.includes(rowIndex)}
 								aria-selected={selectedRowIndex === rowIndex}
 								onclick={() => selectRow(rowIndex)}
 								oncontextmenu={(event) => handleContextMenu(event, row, rowIndex)}
 							>
 								<td
-									class="frozen-edge frozen-edge--left row-number-cell text-muted-foreground h-10 border-r border-b p-0 text-center align-middle text-[9px]"
+									class="frozen-edge frozen-edge--left row-number-cell text-muted-foreground relative h-10 border-r border-b p-0 text-center align-middle text-[9px]"
 									style="width: {rowNumberWidth}px; min-width: {rowNumberWidth}px; max-width: {rowNumberWidth}px;"
 								>
 									{#if selectedRowIndex === rowIndex}
@@ -577,19 +633,29 @@
 											aria-hidden="true"
 										></span>
 									{/if}
-									<button
-										type="button"
-										class="hover:bg-accent hover:text-foreground inline-flex h-6 min-w-6 items-center justify-center rounded px-1 font-mono tabular-nums transition-colors"
-										onclick={(event) => {
-											event.stopPropagation();
-											selectedRowIndex = rowIndex;
-											openRowDetails(row, rowIndex, event.currentTarget);
-										}}
-										title="Open row details"
-										aria-label={`Open details for row ${currentPage * pageSize + rowIndex + 1}`}
-									>
-										{currentPage * pageSize + rowIndex + 1}
-									</button>
+									<span class="flex h-full items-center justify-center gap-1 px-1">
+										<input
+											type="checkbox"
+											class="accent-primary h-3.5 w-3.5 shrink-0 cursor-pointer"
+											checked={exportSelectedRowIndexes.includes(rowIndex)}
+											onclick={(event) => event.stopPropagation()}
+											onchange={() => toggleExportRow(rowIndex)}
+											aria-label={`Select row ${currentPage * pageSize + rowIndex + 1} for export`}
+										/>
+										<button
+											type="button"
+											class="hover:bg-accent hover:text-foreground inline-flex h-6 min-w-6 items-center justify-center rounded px-1 font-mono tabular-nums transition-colors"
+											onclick={(event) => {
+												event.stopPropagation();
+												selectedRowIndex = rowIndex;
+												openRowDetails(row, rowIndex, event.currentTarget);
+											}}
+											title="Open row details"
+											aria-label={`Open details for row ${currentPage * pageSize + rowIndex + 1}`}
+										>
+											{currentPage * pageSize + rowIndex + 1}
+										</button>
+									</span>
 								</td>
 								{#each columns as col (col.name)}
 									<td
@@ -868,11 +934,19 @@
 		background: var(--surface-hover);
 	}
 
+	.data-grid-table tbody tr.data-row[data-export-selected='true'] {
+		background: color-mix(in srgb, var(--primary) 4%, var(--surface-raised));
+	}
+
+	.data-grid-table tbody tr.data-row[data-export-selected='true'] .frozen-edge {
+		background: color-mix(in srgb, var(--primary) 4%, var(--surface-raised));
+	}
+
 	.data-grid-table tbody tr.data-row[data-selected='true'] {
-		background: color-mix(in srgb, var(--primary) 6%, var(--surface-raised));
+		background: color-mix(in srgb, var(--primary) 8%, var(--surface-raised));
 	}
 
 	.data-grid-table tbody tr.data-row[data-selected='true'] .frozen-edge {
-		background: color-mix(in srgb, var(--primary) 6%, var(--surface-raised));
+		background: color-mix(in srgb, var(--primary) 8%, var(--surface-raised));
 	}
 </style>
