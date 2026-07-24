@@ -89,6 +89,16 @@ removal requires a separate two-step action.
 ## Network behavior
 
 Rolling Thunder connects to database endpoints explicitly configured by the user. The diagnostics
-manager itself has no upload endpoint and performs no network request. Release checks and GitHub
-Actions described in repository documentation run only in development/CI environments, not inside
-the installed application's diagnostics flow.
+manager itself has no upload endpoint and performs no network request.
+
+At application startup, Rolling Thunder makes one unauthenticated request to the public GitHub
+Releases API to check the latest published stable version. The request includes the installed
+application version in its user-agent and necessarily exposes ordinary connection metadata such as
+the device IP address to GitHub. It does not include queries, table data, database endpoints, saved
+profiles, credentials, diagnostics, or a device identifier. A failed check is ignored and never
+blocks startup.
+
+When a newer release exists, its version, publication date, and plain-text release notes are shown
+in a local dialog. Choosing “Remind me tomorrow” stores only the release version and reminder
+deadline in browser-local application storage. Choosing “Download update” opens the trusted
+Rolling Thunder GitHub Release page in the system browser; installation is never started silently.

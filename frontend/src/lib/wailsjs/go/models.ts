@@ -2198,6 +2198,38 @@ export namespace response {
 		    return a;
 		}
 	}
+	export class BaseResponse_rollingthunder_internal_updater_CheckResult_ {
+	    errors?: BaseErrorResponse[];
+	    data?: updater.CheckResult;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_internal_updater_CheckResult_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], updater.CheckResult);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class BaseResponse_rollingthunder_pkg_database_Capabilities_ {
 	    errors?: BaseErrorResponse[];
 	    data?: database.Capabilities;
@@ -2773,6 +2805,35 @@ export namespace response {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace updater {
+
+	export class CheckResult {
+	    available: boolean;
+	    currentVersion: string;
+	    latestVersion?: string;
+	    name?: string;
+	    releaseNotes?: string;
+	    releaseUrl?: string;
+	    publishedAt?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new CheckResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.name = source["name"];
+	        this.releaseNotes = source["releaseNotes"];
+	        this.releaseUrl = source["releaseUrl"];
+	        this.publishedAt = source["publishedAt"];
+	    }
 	}
 
 }

@@ -137,6 +137,8 @@
 - Fail-safe migration of legacy plaintext profile passwords into the OS credential store.
 - Local-only, opt-in frontend diagnostics with redaction, rotation, explicit export, and deletion.
 - Minimal local crash reports without automatic upload.
+- Non-blocking stable-release checks with a snoozable in-app update dialog and an explicit,
+  browser-based download action.
 - Keyboard focus traps, skip navigation, live status announcements, and reduced-motion support.
 - Headless end-to-end coverage for connect, edit, export, truncate, and drop workflows.
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.0/8.4 LTS, and MariaDB 10.11/11.4 LTS.

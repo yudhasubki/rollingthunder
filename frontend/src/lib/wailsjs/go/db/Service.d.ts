@@ -20,6 +20,8 @@ export function CancelQuery(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function CheckConnection(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_ConnectionHealth_>;
 
+export function CheckForUpdates():Promise<response.BaseResponse_rollingthunder_internal_updater_CheckResult_>;
+
 export function ChooseImportFile():Promise<response.BaseResponse_rollingthunder_pkg_database_ImportFileSelection_>;
 
 export function ChooseSQLiteDatabaseFile(arg1:boolean):Promise<response.BaseResponse_string_>;

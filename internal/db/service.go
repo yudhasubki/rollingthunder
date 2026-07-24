@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"rollingthunder/internal/diagnostics"
+	"rollingthunder/internal/updater"
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 
@@ -70,6 +71,7 @@ type Service struct {
 	healthCancel        context.CancelFunc
 	healthDone          chan struct{}
 	diagnostics         *diagnostics.Manager
+	updateChecker       *updater.Checker
 }
 
 func NewService() *Service {
@@ -78,6 +80,13 @@ func NewService() *Service {
 
 func NewServiceWithDiagnostics(
 	diagnosticManager *diagnostics.Manager,
+) *Service {
+	return NewServiceWithDiagnosticsAndVersion(diagnosticManager, "0.0.1")
+}
+
+func NewServiceWithDiagnosticsAndVersion(
+	diagnosticManager *diagnostics.Manager,
+	currentVersion string,
 ) *Service {
 	if diagnosticManager == nil {
 		diagnosticManager = diagnostics.NewManager()
@@ -100,6 +109,7 @@ func NewServiceWithDiagnostics(
 		healthInterval:     20 * time.Second,
 		healthTimeout:      5 * time.Second,
 		diagnostics:        diagnosticManager,
+		updateChecker:      updater.NewChecker(currentVersion),
 	}
 }
 

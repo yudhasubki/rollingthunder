@@ -13,7 +13,8 @@ unsigned, and manual workflow runs produce preview artifacts without publishing 
   provenance attestation, and publishes the tag release.
 
 The numeric part of the release tag is injected into Wails package metadata before each native
-build. The Linux build uses WebKitGTK 4.1 and the `webkit2_41` build tag.
+build. The installed application uses that same embedded version when comparing against GitHub's
+latest published stable release. The Linux build uses WebKitGTK 4.1 and the `webkit2_41` build tag.
 
 ## Required release secrets
 

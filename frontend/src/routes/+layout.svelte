@@ -4,6 +4,7 @@
 	import { GetDiagnosticsSettings, RecordFrontendError } from '$lib/wailsjs/go/db/Service';
 	import { diagnostics } from '$lib/wailsjs/go/models';
 	import { hasBackendMethod } from '$lib/wails/backendCompatibility';
+	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 
 	let { children } = $props();
 
@@ -82,3 +83,4 @@
 
 <a class="rt-skip-link" href="#main-content">Skip to main content</a>
 {@render children()}
+<UpdateDialog />

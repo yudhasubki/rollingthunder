@@ -30,6 +30,10 @@ export function CheckConnection(arg1) {
   return window['go']['db']['Service']['CheckConnection'](arg1);
 }
 
+export function CheckForUpdates() {
+  return window['go']['db']['Service']['CheckForUpdates']();
+}
+
 export function ChooseImportFile() {
   return window['go']['db']['Service']['ChooseImportFile']();
 }
