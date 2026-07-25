@@ -33,11 +33,16 @@ func TestPostgresLiveConformance(t *testing.T) {
 	if err := driver.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	t.Cleanup(func() { _ = driver.Close() })
+	t.Cleanup(func() {
+		if err := driver.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 	drivertest.RunLiveContract(t, drivertest.LiveConfig{
-		Driver:      driver,
-		Schema:      "public",
-		IntegerType: "integer",
-		TextType:    "text",
+		Driver:             driver,
+		Schema:             "public",
+		IntegerType:        "integer",
+		TextType:           "text",
+		ExercisePrivileged: os.Getenv("ROLLINGTHUNDER_TEST_PRIVILEGED") == "1",
 	})
 }

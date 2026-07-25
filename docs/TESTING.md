@@ -36,8 +36,27 @@ wails build -m -nocolour -tags webkit2_41
 
 ## Live database integration
 
-The same workflow is exercised for each driver: connect, ping, create a temporary table, insert,
-inspect metadata, execute a parameterized query, update atomically, stream CSV, delete, and drop.
+Each server driver has two live layers:
+
+- the integration smoke workflow connects, creates a temporary table, runs a parameterized query,
+  applies an atomic update, streams CSV, deletes, and drops;
+- the package conformance workflow exercises every required `database.Driver` method, verifies that
+  advertised capabilities implement their interfaces, and runs safe representative optional
+  workflows. It covers schema/database info, data types,
+  table DDL, primary/foreign-key metadata, filters and sorting, direct and staged CRUD, bounded query
+  results, commit and rollback, Explain, reviewed column/index/view changes, object details and
+  dependencies, CSV/JSON/SQL export, truncate, drop, and close.
+
+PostgreSQL and MySQL/MariaDB conformance also reads activity and security metadata. In disposable CI
+containers, `ROLLINGTHUNDER_TEST_PRIVILEGED=1` additionally creates and drops a uniquely named test
+role so `ApplySecurityChange` is covered. Do not enable that flag against a shared or production
+server.
+
+SQLite conformance is always available locally:
+
+```bash
+go test ./pkg/database/sqlite -run TestSQLiteLiveConformance -count=1 -v
+```
 
 ### PostgreSQL
 
@@ -49,6 +68,18 @@ RT_DATABASE_USER=rolling \
 RT_DATABASE_PASSWORD=rolling \
 RT_DATABASE_NAME=rolling \
 go test ./integration -run TestPostgreSQLDriverWorkflow -count=1 -v
+```
+
+The full PostgreSQL conformance suite uses:
+
+```bash
+ROLLINGTHUNDER_POSTGRES_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_POSTGRES_TEST_PORT=5432 \
+ROLLINGTHUNDER_POSTGRES_TEST_USER=rolling \
+ROLLINGTHUNDER_POSTGRES_TEST_PASSWORD=rolling \
+ROLLINGTHUNDER_POSTGRES_TEST_DATABASE=rolling \
+ROLLINGTHUNDER_POSTGRES_TEST_SSL_MODE=disable \
+go test ./pkg/database/postgres -run TestPostgresLiveConformance -count=1 -v
 ```
 
 ### MySQL
@@ -66,6 +97,18 @@ go test ./integration -run TestMySQLCompatibleDriverWorkflow -count=1 -v
 
 Use `RT_DATABASE_DRIVER=mariadb` against MariaDB. CI runs the version matrix documented in
 [RELEASING.md](RELEASING.md).
+
+The full MySQL/MariaDB conformance suite uses:
+
+```bash
+ROLLINGTHUNDER_MYSQL_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_MYSQL_TEST_PORT=3306 \
+ROLLINGTHUNDER_MYSQL_TEST_USER=root \
+ROLLINGTHUNDER_MYSQL_TEST_PASSWORD=rolling \
+ROLLINGTHUNDER_MYSQL_TEST_DATABASE=rolling \
+ROLLINGTHUNDER_MYSQL_TEST_SSL_MODE=disable \
+go test ./pkg/database/mysql -run TestMySQLLiveConformance -count=1 -v
+```
 
 ### Oracle Database
 

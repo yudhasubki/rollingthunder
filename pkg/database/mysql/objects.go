@@ -726,6 +726,111 @@ func mysqlTableDependency(
 	}
 }
 
+type mysqlViewCandidateRow struct {
+	Schema string `db:"rt_table_schema"`
+	Name   string `db:"rt_table_name"`
+	Type   string `db:"rt_table_type"`
+}
+
+func mysqlViewCandidateKind(value string) database.ObjectKind {
+	if strings.Contains(strings.ToUpper(strings.TrimSpace(value)), "VIEW") {
+		return database.ObjectKindView
+	}
+	return database.ObjectKindTable
+}
+
+func inferMySQLViewDependencies(
+	definition string,
+	candidates []mysqlViewCandidateRow,
+) []database.ObjectDependency {
+	result := make([]database.ObjectDependency, 0)
+	for _, candidate := range candidates {
+		if !database.SQLReferencesIdentifier(definition, candidate.Name) {
+			continue
+		}
+		result = append(result, mysqlTableDependency(
+			mysqlViewCandidateKind(candidate.Type),
+			candidate.Schema,
+			candidate.Name,
+			"Inferred from the stored view definition",
+		))
+	}
+	return result
+}
+
+func (m *MySQL) inferredViewDependencies(
+	ctx context.Context,
+	reference database.ObjectReference,
+) ([]database.ObjectDependency, error) {
+	var definition sql.NullString
+	if err := m.conn.GetContext(ctx, &definition, `
+		SELECT view_definition
+		FROM information_schema.views
+		WHERE table_schema = ? AND table_name = ?`,
+		reference.Schema,
+		reference.Name,
+	); err != nil || !definition.Valid {
+		return nil, nil
+	}
+	var candidates []mysqlViewCandidateRow
+	if err := m.conn.SelectContext(ctx, &candidates, `
+		SELECT
+			table_schema AS rt_table_schema,
+			table_name AS rt_table_name,
+			table_type AS rt_table_type
+		FROM information_schema.tables
+		WHERE table_schema = ? AND table_name <> ?
+		ORDER BY table_name`,
+		reference.Schema,
+		reference.Name,
+	); err != nil {
+		return nil, err
+	}
+	return inferMySQLViewDependencies(definition.String, candidates), nil
+}
+
+func (m *MySQL) inferredViewDependents(
+	ctx context.Context,
+	reference database.ObjectReference,
+) ([]database.ObjectDependency, error) {
+	type viewDefinitionRow struct {
+		Schema     string         `db:"rt_view_schema"`
+		Name       string         `db:"rt_view_name"`
+		Definition sql.NullString `db:"rt_view_definition"`
+	}
+	var views []viewDefinitionRow
+	if err := m.conn.SelectContext(ctx, &views, `
+		SELECT
+			table_schema AS rt_view_schema,
+			table_name AS rt_view_name,
+			view_definition AS rt_view_definition
+		FROM information_schema.views
+		WHERE table_schema = ? AND table_name <> ?
+		ORDER BY table_name`,
+		reference.Schema,
+		reference.Name,
+	); err != nil {
+		return nil, err
+	}
+	result := make([]database.ObjectDependency, 0)
+	for _, view := range views {
+		if !view.Definition.Valid ||
+			!database.SQLReferencesIdentifier(
+				view.Definition.String,
+				reference.Name,
+			) {
+			continue
+		}
+		result = append(result, mysqlTableDependency(
+			database.ObjectKindView,
+			view.Schema,
+			view.Name,
+			"Inferred from the stored view definition",
+		))
+	}
+	return result, nil
+}
+
 func (m *MySQL) objectDependencies(
 	ctx context.Context,
 	object database.DatabaseObject,
@@ -772,7 +877,7 @@ func (m *MySQL) objectDependencies(
 	}
 	if reference.Kind == database.ObjectKindView {
 		var rows []usageRow
-		if err := m.conn.SelectContext(ctx, &rows, `
+		usageErr := m.conn.SelectContext(ctx, &rows, `
 			SELECT
 				table_schema AS rt_table_schema,
 				table_name AS rt_table_name
@@ -780,7 +885,8 @@ func (m *MySQL) objectDependencies(
 			WHERE view_schema = ? AND view_name = ?`,
 			reference.Schema,
 			reference.Name,
-		); err == nil {
+		)
+		if usageErr == nil {
 			for _, row := range rows {
 				add(
 					&dependencies,
@@ -792,6 +898,15 @@ func (m *MySQL) objectDependencies(
 						"Referenced by view definition",
 					),
 				)
+			}
+		}
+		if usageErr != nil {
+			inferred, err := m.inferredViewDependencies(ctx, reference)
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, dependency := range inferred {
+				add(&dependencies, seenDependencies, dependency)
 			}
 		}
 	}
@@ -881,7 +996,7 @@ func (m *MySQL) objectDependencies(
 			Name   string `db:"rt_view_name"`
 		}
 		var views []viewUsageRow
-		if err := m.conn.SelectContext(ctx, &views, `
+		usageErr := m.conn.SelectContext(ctx, &views, `
 			SELECT
 				view_schema AS rt_view_schema,
 				view_name AS rt_view_name
@@ -889,7 +1004,8 @@ func (m *MySQL) objectDependencies(
 			WHERE table_schema = ? AND table_name = ?`,
 			reference.Schema,
 			reference.Name,
-		); err == nil {
+		)
+		if usageErr == nil {
 			for _, row := range views {
 				add(
 					&dependents,
@@ -901,6 +1017,15 @@ func (m *MySQL) objectDependencies(
 						"View definition references this object",
 					),
 				)
+			}
+		}
+		if usageErr != nil {
+			inferred, err := m.inferredViewDependents(ctx, reference)
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, dependency := range inferred {
+				add(&dependents, seenDependents, dependency)
 			}
 		}
 	}

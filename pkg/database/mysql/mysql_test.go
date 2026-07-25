@@ -33,12 +33,17 @@ func TestMySQLLiveConformance(t *testing.T) {
 	if err := driver.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	t.Cleanup(func() { _ = driver.Close() })
+	t.Cleanup(func() {
+		if err := driver.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 	drivertest.RunLiveContract(t, drivertest.LiveConfig{
-		Driver:      driver,
-		Schema:      config.Db,
-		IntegerType: "INT",
-		TextType:    "VARCHAR(255)",
+		Driver:             driver,
+		Schema:             config.Db,
+		IntegerType:        "INT",
+		TextType:           "VARCHAR(255)",
+		ExercisePrivileged: os.Getenv("ROLLINGTHUNDER_TEST_PRIVILEGED") == "1",
 	})
 }
 

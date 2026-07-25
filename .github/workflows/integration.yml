@@ -43,6 +43,9 @@ jobs:
       - name: Run SQLite workflow
         run: go test ./integration -run TestSQLiteDriverWorkflow -count=1 -v
 
+      - name: Run SQLite driver conformance
+        run: go test ./pkg/database/sqlite -run TestSQLiteLiveConformance -count=1 -v
+
   postgres:
     name: PostgreSQL ${{ matrix.version }}
     runs-on: ubuntu-24.04
@@ -84,6 +87,17 @@ jobs:
           RT_DATABASE_PASSWORD: rolling
           RT_DATABASE_NAME: rolling
         run: go test ./integration -run TestPostgreSQLDriverWorkflow -count=1 -v
+
+      - name: Run PostgreSQL driver conformance
+        env:
+          ROLLINGTHUNDER_POSTGRES_TEST_HOST: 127.0.0.1
+          ROLLINGTHUNDER_POSTGRES_TEST_PORT: "5432"
+          ROLLINGTHUNDER_POSTGRES_TEST_USER: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_PASSWORD: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_DATABASE: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_SSL_MODE: disable
+          ROLLINGTHUNDER_TEST_PRIVILEGED: "1"
+        run: go test ./pkg/database/postgres -run TestPostgresLiveConformance -count=1 -v
 
   mysql-compatible:
     name: ${{ matrix.name }}
@@ -155,6 +169,17 @@ jobs:
           RT_DATABASE_PASSWORD: rolling
           RT_DATABASE_NAME: rolling
         run: go test ./integration -run TestMySQLCompatibleDriverWorkflow -count=1 -v
+
+      - name: Run MySQL-compatible driver conformance
+        env:
+          ROLLINGTHUNDER_MYSQL_TEST_HOST: 127.0.0.1
+          ROLLINGTHUNDER_MYSQL_TEST_PORT: "3306"
+          ROLLINGTHUNDER_MYSQL_TEST_USER: root
+          ROLLINGTHUNDER_MYSQL_TEST_PASSWORD: rolling
+          ROLLINGTHUNDER_MYSQL_TEST_DATABASE: rolling
+          ROLLINGTHUNDER_MYSQL_TEST_SSL_MODE: disable
+          ROLLINGTHUNDER_TEST_PRIVILEGED: "1"
+        run: go test ./pkg/database/mysql -run TestMySQLLiveConformance -count=1 -v
 
   sql-server:
     name: SQL Server ${{ matrix.version }}

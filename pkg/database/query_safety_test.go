@@ -193,6 +193,67 @@ func TestLeadingSQLKeywordsSkipsComments(t *testing.T) {
 	}
 }
 
+func TestSQLReferencesIdentifier(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want bool
+	}{
+		{
+			name: "unquoted qualified identifier",
+			sql:  "SELECT * FROM app.orders;",
+			want: true,
+		},
+		{
+			name: "supported identifier quotes",
+			sql:  "SELECT * FROM `orders` JOIN [orders] ON 1 = 1",
+			want: true,
+		},
+		{
+			name: "identifier substring",
+			sql:  "SELECT * FROM orders_archive",
+			want: false,
+		},
+		{
+			name: "single quoted literal",
+			sql:  "SELECT 'orders'",
+			want: false,
+		},
+		{
+			name: "backslash escaped literal",
+			sql:  `SELECT 'not \'orders\''`,
+			want: false,
+		},
+		{
+			name: "line and block comments",
+			sql:  "SELECT 1 -- orders\n/* orders */",
+			want: false,
+		},
+		{
+			name: "postgres dollar quote",
+			sql:  "SELECT $$orders$$",
+			want: false,
+		},
+		{
+			name: "oracle alternative quote",
+			sql:  "SELECT q'[orders]' FROM dual",
+			want: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := SQLReferencesIdentifier(test.sql, "orders"); got != test.want {
+				t.Fatalf(
+					"SQLReferencesIdentifier(%q, orders) = %t, want %t",
+					test.sql,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
 func TestHasTopLevelStatementSeparatorIgnoresQuotedSemicolon(t *testing.T) {
 	if HasTopLevelStatementSeparator(`';'`) {
 		t.Fatal("quoted semicolon was treated as a statement separator")

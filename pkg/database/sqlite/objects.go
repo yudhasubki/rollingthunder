@@ -528,22 +528,7 @@ func sqliteObjectReference(
 }
 
 func sqliteSQLReferencesName(sqlText, name string) bool {
-	lowerSQL := strings.ToLower(sqlText)
-	lowerName := strings.ToLower(name)
-	candidates := []string{
-		`"` + lowerName + `"`,
-		"`" + lowerName + "`",
-		"[" + lowerName + "]",
-		" " + lowerName + " ",
-		" " + lowerName + "\n",
-		"." + lowerName + " ",
-	}
-	for _, candidate := range candidates {
-		if strings.Contains(lowerSQL, candidate) {
-			return true
-		}
-	}
-	return false
+	return database.SQLReferencesIdentifier(sqlText, name)
 }
 
 func (s *SQLite) objectDependencies(

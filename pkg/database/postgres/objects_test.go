@@ -91,3 +91,33 @@ func TestDependencyFromPostgresRowPreservesInspectableIdentity(t *testing.T) {
 		t.Fatalf("dependency = %+v", dependency)
 	}
 }
+
+func TestMergePostgresDependenciesDeduplicatesRewriteEdges(t *testing.T) {
+	table := database.ObjectDependency{
+		Reference: database.ObjectReference{
+			ID:     "pg_class:19",
+			Kind:   database.ObjectKindTable,
+			Schema: "public",
+			Name:   "accounts",
+		},
+		Description: "table public.accounts",
+	}
+	view := database.ObjectDependency{
+		Reference: database.ObjectReference{
+			ID:     "pg_class:20",
+			Kind:   database.ObjectKindView,
+			Schema: "public",
+			Name:   "active_accounts",
+		},
+		Description: "view public.active_accounts",
+	}
+	merged := mergePostgresDependencies(
+		[]database.ObjectDependency{table},
+		[]database.ObjectDependency{table, view},
+	)
+	if len(merged) != 2 ||
+		merged[0].Reference.ID != "pg_class:19" ||
+		merged[1].Reference.ID != "pg_class:20" {
+		t.Fatalf("merged dependencies = %+v", merged)
+	}
+}

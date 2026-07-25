@@ -119,6 +119,105 @@ func TestSQLiteAttachedDatabaseAndGeneratedMetadata(t *testing.T) {
 	}
 }
 
+func TestSQLiteViewDetailIncludesStructureAndDependency(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "views.sqlite3")
+	driver := NewSQLite(context.Background(), Config{Db: path})
+	if err := driver.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(func() { _ = driver.Close() })
+	if _, err := driver.conn.Exec(`
+		CREATE TABLE main.orders (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL
+		);
+		CREATE VIEW main.order_names AS
+		SELECT id, name FROM main.orders;
+	`); err != nil {
+		t.Fatalf("create view fixture: %v", err)
+	}
+
+	structures, err := driver.GetCollectionStructures(
+		table("main", "order_names"),
+	)
+	if err != nil {
+		t.Fatalf("GetCollectionStructures(view) error = %v", err)
+	}
+	if len(structures) != 2 ||
+		structures[0].Name != "id" ||
+		structures[1].Name != "name" {
+		t.Fatalf("view structures = %+v", structures)
+	}
+
+	detail, err := driver.GetObjectDetail(
+		context.Background(),
+		database.ObjectReference{
+			Kind:   database.ObjectKindView,
+			Schema: "main",
+			Name:   "order_names",
+		},
+	)
+	if err != nil {
+		t.Fatalf("GetObjectDetail(view) error = %v", err)
+	}
+	if len(detail.Columns) != 2 ||
+		len(detail.Dependencies) != 1 ||
+		detail.Dependencies[0].Reference.Name != "orders" {
+		t.Fatalf("view detail = %+v", detail)
+	}
+}
+
+func TestSQLiteSQLReferenceDetectionUsesIdentifierBoundaries(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want bool
+	}{
+		{
+			name: "unquoted qualified identifier before punctuation",
+			sql:  "SELECT * FROM main.orders;",
+			want: true,
+		},
+		{
+			name: "quoted identifier",
+			sql:  `SELECT * FROM "main"."orders"`,
+			want: true,
+		},
+		{
+			name: "bracket identifier",
+			sql:  "SELECT * FROM [main].[orders]",
+			want: true,
+		},
+		{
+			name: "string literal is not an identifier",
+			sql:  "SELECT 'orders'",
+			want: false,
+		},
+		{
+			name: "comment is not an identifier",
+			sql:  "SELECT 1 -- orders\n",
+			want: false,
+		},
+		{
+			name: "identifier substring",
+			sql:  "SELECT * FROM main.orders_archive",
+			want: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sqliteSQLReferencesName(test.sql, "orders"); got != test.want {
+				t.Fatalf(
+					"sqliteSQLReferencesName(%q, orders) = %t, want %t",
+					test.sql,
+					got,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
 func TestSQLiteReviewedAddAndDropColumn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "structure.sqlite3")
 	driver := NewSQLite(context.Background(), Config{Db: path})
@@ -177,6 +276,98 @@ func TestSQLiteReviewedAddAndDropColumn(t *testing.T) {
 	structures, err = driver.GetCollectionStructures(table("main", "orders"))
 	if err != nil || len(structures) != 2 {
 		t.Fatalf("structures after drop = %+v, %v", structures, err)
+	}
+}
+
+func TestSQLiteReviewedTriggerLifecycle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "triggers.sqlite3")
+	driver := NewSQLite(context.Background(), Config{Db: path})
+	if err := driver.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(func() { _ = driver.Close() })
+	if _, err := driver.conn.Exec(`
+		CREATE TABLE main.events (
+			id INTEGER PRIMARY KEY,
+			touched INTEGER NOT NULL DEFAULT 0
+		);
+	`); err != nil {
+		t.Fatalf("create trigger fixture table: %v", err)
+	}
+	ctx := context.Background()
+	reference := database.ObjectReference{
+		Kind:         database.ObjectKindTrigger,
+		Schema:       "main",
+		Name:         "touch_inserted_event",
+		ParentSchema: "main",
+		ParentName:   "events",
+	}
+	create, err := driver.BuildObjectChange(
+		ctx,
+		database.ObjectChangeRequest{
+			Action:    database.ObjectChangeCreate,
+			Reference: reference,
+			Definition: `CREATE TRIGGER main.touch_inserted_event
+				AFTER INSERT ON events
+				BEGIN
+					UPDATE events SET touched = 1 WHERE id = NEW.id;
+				END`,
+		},
+	)
+	if err != nil {
+		t.Fatalf("BuildObjectChange(create trigger) error = %v", err)
+	}
+	if err := driver.ApplyObjectChange(ctx, create); err != nil {
+		t.Fatalf("ApplyObjectChange(create trigger) error = %v", err)
+	}
+	if _, err := driver.conn.Exec(
+		"INSERT INTO main.events(id) VALUES (1)",
+	); err != nil {
+		t.Fatalf("insert trigger fixture row: %v", err)
+	}
+	var touched int
+	if err := driver.conn.Get(
+		&touched,
+		"SELECT touched FROM main.events WHERE id = 1",
+	); err != nil {
+		t.Fatalf("read trigger fixture row: %v", err)
+	}
+	if touched != 1 {
+		t.Fatalf("trigger result = %d, want 1", touched)
+	}
+
+	objects, err := driver.ListObjects(ctx, database.ObjectFilter{
+		Schema: "main",
+		Kinds:  []database.ObjectKind{database.ObjectKindTrigger},
+		Search: reference.Name,
+	})
+	if err != nil {
+		t.Fatalf("ListObjects(trigger) error = %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("trigger objects = %+v", objects)
+	}
+	detail, err := driver.GetObjectDetail(ctx, objects[0].Reference)
+	if err != nil {
+		t.Fatalf("GetObjectDetail(trigger) error = %v", err)
+	}
+	if detail.Definition == "" ||
+		detail.Object.Reference.ParentName != "events" {
+		t.Fatalf("trigger detail = %+v", detail)
+	}
+
+	drop, err := driver.BuildObjectChange(
+		ctx,
+		database.ObjectChangeRequest{
+			Action:    database.ObjectChangeDrop,
+			Reference: objects[0].Reference,
+		},
+	)
+	if err != nil {
+		t.Fatalf("BuildObjectChange(drop trigger) error = %v", err)
+	}
+	if err := driver.ApplyObjectChange(ctx, drop); err != nil {
+		t.Fatalf("ApplyObjectChange(drop trigger) error = %v", err)
 	}
 }
 

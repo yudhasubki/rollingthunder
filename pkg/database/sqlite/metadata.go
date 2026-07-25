@@ -81,6 +81,29 @@ func (s *SQLite) sqliteForeignKeys(
 	return rows, nil
 }
 
+func (s *SQLite) sqliteCollectionDefinition(
+	table database.Table,
+) (string, error) {
+	table.Schema = normalizeSQLiteSchema(table.Schema)
+	query := fmt.Sprintf(
+		`SELECT sql
+		 FROM %s.sqlite_schema
+		 WHERE type IN ('table', 'view') AND name = ?`,
+		quoteSQLiteIdentifier(table.Schema),
+	)
+	var definition sql.NullString
+	if err := s.conn.Get(&definition, query, table.Name); err != nil {
+		return "", err
+	}
+	if !definition.Valid || strings.TrimSpace(definition.String) == "" {
+		return "", fmt.Errorf(
+			"SQLite collection %q has no stored DDL",
+			table.Name,
+		)
+	}
+	return strings.TrimSpace(definition.String), nil
+}
+
 func (s *SQLite) GetCollectionStructures(
 	table database.Table,
 ) (database.Structures, error) {
@@ -117,7 +140,7 @@ func (s *SQLite) GetCollectionStructures(
 		}
 	}
 
-	ddl, err := s.GetTableDDL(table)
+	ddl, err := s.sqliteCollectionDefinition(table)
 	if err != nil {
 		return nil, err
 	}

@@ -147,7 +147,11 @@ func TestOracleLiveConformance(t *testing.T) {
 	if err := driver.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	t.Cleanup(func() { _ = driver.Close() })
+	t.Cleanup(func() {
+		if err := driver.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 	schema := driver.currentSchema
 	if strings.TrimSpace(schema) == "" {
 		t.Fatal("Oracle current schema is empty")

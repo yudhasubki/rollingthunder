@@ -883,6 +883,114 @@ func (p *Postgres) objectDependencies(
 	return result, nil
 }
 
+func (p *Postgres) rewriteDependencies(
+	ctx context.Context,
+	oid uint64,
+	dependents bool,
+) ([]database.ObjectDependency, error) {
+	query := `
+		SELECT
+			dependency.refclassid::regclass::text AS catalog,
+			dependency.refobjid::oid::bigint AS object_oid,
+			identified.type AS object_type,
+			COALESCE(identified.schema, '') AS schema_name,
+			COALESCE(identified.name, '') AS object_name,
+			COALESCE(identified.identity, '') AS identity,
+			pg_describe_object(
+				dependency.refclassid,
+				dependency.refobjid,
+				0
+			) AS description
+		FROM pg_rewrite rewrite
+		JOIN pg_depend dependency
+			ON dependency.classid = 'pg_rewrite'::regclass
+			AND dependency.objid = rewrite.oid
+		CROSS JOIN LATERAL pg_identify_object(
+			dependency.refclassid,
+			dependency.refobjid,
+			0
+		) identified
+		WHERE rewrite.ev_class = $1::oid
+			AND dependency.refclassid = 'pg_class'::regclass
+			AND dependency.refobjid <> $1::oid
+			AND dependency.deptype = 'n'
+		ORDER BY identified.type, identified.schema, identified.name
+		LIMIT 200`
+	if dependents {
+		query = `
+			SELECT
+				'pg_class'::text AS catalog,
+				rewrite.ev_class::oid::bigint AS object_oid,
+				identified.type AS object_type,
+				COALESCE(identified.schema, '') AS schema_name,
+				COALESCE(identified.name, '') AS object_name,
+				COALESCE(identified.identity, '') AS identity,
+				pg_describe_object(
+					'pg_class'::regclass,
+					rewrite.ev_class,
+					0
+				) AS description
+			FROM pg_depend dependency
+			JOIN pg_rewrite rewrite
+				ON dependency.classid = 'pg_rewrite'::regclass
+				AND dependency.objid = rewrite.oid
+			CROSS JOIN LATERAL pg_identify_object(
+				'pg_class'::regclass,
+				rewrite.ev_class,
+				0
+			) identified
+			WHERE dependency.refclassid = 'pg_class'::regclass
+				AND dependency.refobjid = $1::oid
+				AND rewrite.ev_class <> $1::oid
+				AND dependency.deptype = 'n'
+			ORDER BY identified.type, identified.schema, identified.name
+			LIMIT 200`
+	}
+
+	var rows []postgresDependencyRow
+	if err := p.conn.SelectContext(ctx, &rows, query, oid); err != nil {
+		return nil, err
+	}
+	result := make([]database.ObjectDependency, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		dependency := dependencyFromPostgresRow(row)
+		key := dependency.Reference.ID
+		if key == "" {
+			key = string(dependency.Reference.Kind) + ":" +
+				dependency.Reference.QualifiedName()
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, dependency)
+	}
+	return result, nil
+}
+
+func mergePostgresDependencies(
+	groups ...[]database.ObjectDependency,
+) []database.ObjectDependency {
+	result := make([]database.ObjectDependency, 0)
+	seen := make(map[string]struct{})
+	for _, group := range groups {
+		for _, dependency := range group {
+			key := dependency.Reference.ID
+			if key == "" {
+				key = string(dependency.Reference.Kind) + ":" +
+					dependency.Reference.QualifiedName()
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, dependency)
+		}
+	}
+	return result
+}
+
 func sortObjectProperties(properties []database.ObjectProperty) {
 	sort.SliceStable(properties, func(left, right int) bool {
 		if properties[left].Category != properties[right].Category {
@@ -915,6 +1023,24 @@ func (p *Postgres) GetObjectDetail(
 	dependents, err := p.objectDependencies(ctx, catalog, oid, true)
 	if err != nil {
 		return database.ObjectDetail{}, err
+	}
+	if catalog == "pg_class" {
+		rewriteDependencies, err := p.rewriteDependencies(ctx, oid, false)
+		if err != nil {
+			return database.ObjectDetail{}, err
+		}
+		rewriteDependents, err := p.rewriteDependencies(ctx, oid, true)
+		if err != nil {
+			return database.ObjectDetail{}, err
+		}
+		dependencies = mergePostgresDependencies(
+			dependencies,
+			rewriteDependencies,
+		)
+		dependents = mergePostgresDependencies(
+			dependents,
+			rewriteDependents,
+		)
 	}
 	sortObjectProperties(properties)
 
