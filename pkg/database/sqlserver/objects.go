@@ -21,7 +21,7 @@ func objectID(prefix string, values ...string) string {
 }
 
 func objectKind(value string) database.ObjectKind {
-	switch strings.ToUpper(value) {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
 	case "U":
 		return database.ObjectKindTable
 	case "V":

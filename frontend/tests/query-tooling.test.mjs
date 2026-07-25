@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { extractQueryVariableNames, coerceQueryVariable } from '../src/lib/query/variables.ts';
@@ -11,6 +12,10 @@ import {
 	parseShortcuts,
 	shortcutFromKeyboardEvent
 } from '../src/lib/commands/shortcuts.ts';
+
+async function componentSource(path) {
+	return readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+}
 
 test('extracts unique query variables outside strings and comments', () => {
 	const names = extractQueryVariableNames(`
@@ -107,4 +112,28 @@ test('normalizes and matches cross-platform keyboard shortcuts', () => {
 	assert.equal(matchesShortcut(event, 'Mod+K'), true);
 	assert.equal(normalizeShortcut('shift + mod + e'), 'Mod+Shift+E');
 	assert.equal(parseShortcuts('broken').commandPalette, 'Mod+K');
+});
+
+test('surfaces SQL tooling behavior and object targets in the workspace', async () => {
+	const [queryEditor, tableContent, toolingSettings] = await Promise.all([
+		componentSource('src/lib/components/QueryEditorContent.svelte'),
+		componentSource('src/lib/components/TableContent.svelte'),
+		componentSource('src/lib/components/query/QueryToolingSettings.svelte')
+	]);
+
+	assert.doesNotMatch(queryEditor, /findIdentifierReferences/);
+	assert.match(queryEditor, />\s*Open object\s*</);
+	assert.match(queryEditor, /navigationNotice/);
+	assert.match(queryEditor, /focusColumn:\s*target\.column/);
+	assert.match(queryEditor, /container-type:\s*inline-size/);
+	assert.match(queryEditor, /@container\s+\(max-width:\s*1040px\)/);
+	assert.match(queryEditor, /\.query-editor-actions[\s\S]*flex-wrap:\s*wrap/);
+
+	assert.match(tableContent, /data-column-name=/);
+	assert.match(tableContent, /scrollIntoView/);
+	assert.match(tableContent, />Target</);
+
+	assert.match(toolingSettings, /Runs only when you choose Format/);
+	assert.match(toolingSettings, /Runs automatically while you type/);
+	assert.match(toolingSettings, /issues\.slice\(0,\s*5\)/);
 });

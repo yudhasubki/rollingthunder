@@ -1,16 +1,27 @@
 <script lang="ts">
-	import { Settings2, X } from 'lucide-svelte';
+	import { CheckCircle2, Settings2, TriangleAlert, WandSparkles, X } from 'lucide-svelte';
 	import { queryToolingStore } from '$lib/stores/queryTooling.svelte';
+	import type { SqlLintIssue } from '$lib/sql/tooling';
 	import { focusTrap } from '$lib/actions/focusTrap';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 
 	interface Props {
 		open: boolean;
+		issues?: SqlLintIssue[];
 		onClose: () => void;
 		onChanged?: () => void;
+		onFormat?: () => void;
+		onSelectIssue?: (issue: SqlLintIssue) => void;
 	}
 
-	let { open, onClose, onChanged = () => {} }: Props = $props();
+	let {
+		open,
+		issues = [],
+		onClose,
+		onChanged = () => {},
+		onFormat = () => {},
+		onSelectIssue = () => {}
+	}: Props = $props();
 
 	const keywordCaseOptions = [
 		{ value: 'upper', label: 'UPPERCASE' },
@@ -26,6 +37,15 @@
 		queryToolingStore.updateLint(patch);
 		onChanged();
 	}
+
+	function formatCurrentSql(): void {
+		onFormat();
+		onClose();
+	}
+
+	function openIssue(issue: SqlLintIssue): void {
+		onSelectIssue(issue);
+	}
 </script>
 
 {#if open}
@@ -38,7 +58,7 @@
 		></button>
 		<div
 			use:focusTrap
-			class="rt-popover relative w-full max-w-md overflow-hidden rounded-xl"
+			class="rt-popover relative flex max-h-[min(720px,calc(100vh-48px))] w-full max-w-lg flex-col overflow-hidden rounded-xl"
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="query-tooling-title"
@@ -50,8 +70,10 @@
 					<Settings2 class="h-4 w-4" />
 				</span>
 				<div class="min-w-0 flex-1">
-					<h2 id="query-tooling-title" class="text-[12px] font-bold">SQL tooling</h2>
-					<p class="text-muted-foreground mt-0.5 text-[8px]">Formatting and live lint rules</p>
+					<h2 id="query-tooling-title" class="text-[12px] font-bold">Format & lint</h2>
+					<p class="text-muted-foreground mt-0.5 text-[8px]">
+						Manual formatting preferences and automatic editor checks
+					</p>
 				</div>
 				<button
 					type="button"
@@ -63,9 +85,20 @@
 				</button>
 			</header>
 
-			<div class="space-y-4 p-4">
+			<div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
 				<section>
-					<h3 class="text-[9px] font-bold">Formatter</h3>
+					<div class="flex items-start justify-between gap-3">
+						<div>
+							<h3 class="text-[9px] font-bold">Formatter</h3>
+							<p class="text-muted-foreground mt-0.5 text-[8px]">
+								Runs only when you choose Format or press Shift+Alt+F.
+							</p>
+						</div>
+						<span
+							class="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 text-[7px] font-semibold"
+							>On demand</span
+						>
+					</div>
 					<div class="mt-2 grid grid-cols-2 gap-3">
 						<label>
 							<span class="text-muted-foreground mb-1 block text-[8px]">Keyword case</span>
@@ -76,7 +109,6 @@
 									queryToolingStore.updateFormat({
 										keywordCase: value as 'upper' | 'lower' | 'preserve'
 									});
-									onChanged();
 								}}
 								searchable={false}
 								triggerClass="h-8 px-2 text-[9px]"
@@ -92,7 +124,6 @@
 									queryToolingStore.updateFormat({
 										indentSize: Number(value) as 2 | 4
 									});
-									onChanged();
 								}}
 								searchable={false}
 								triggerClass="h-8 px-2 text-[9px]"
@@ -100,10 +131,32 @@
 							/>
 						</label>
 					</div>
+					<button
+						type="button"
+						class="rt-toolbar-button mt-3 h-8 cursor-pointer gap-1.5 px-3 text-[9px] font-semibold"
+						onclick={formatCurrentSql}
+					>
+						<WandSparkles class="h-3 w-3" />
+						Format current SQL
+					</button>
 				</section>
 
 				<section class="border-t pt-4">
-					<h3 class="text-[9px] font-bold">Live lint rules</h3>
+					<div class="flex items-start justify-between gap-3">
+						<div>
+							<h3 class="text-[9px] font-bold">Live lint</h3>
+							<p class="text-muted-foreground mt-0.5 text-[8px]">
+								Runs automatically while you type and underlines issues in the editor.
+							</p>
+						</div>
+						<span
+							class="{issues.length
+								? 'border-warning-border bg-warning-soft text-warning'
+								: 'bg-muted text-muted-foreground'} shrink-0 rounded border border-transparent px-1.5 py-0.5 text-[7px] font-semibold tabular-nums"
+						>
+							{issues.length ? `${issues.length} active` : 'No issues'}
+						</span>
+					</div>
 					<div class="mt-2 space-y-2">
 						<label class="flex cursor-pointer items-start gap-2 rounded-lg border p-2.5">
 							<input
@@ -144,6 +197,45 @@
 							/>
 							<span class="text-[9px] font-semibold">Require a terminal semicolon</span>
 						</label>
+					</div>
+
+					<div class="mt-3 rounded-lg border bg-[var(--surface-sunken)]">
+						<div class="flex h-8 items-center justify-between border-b px-2.5">
+							<span class="text-[8px] font-bold">Current editor</span>
+							<span class="text-muted-foreground text-[7px]">Click an issue to reveal it</span>
+						</div>
+						{#if issues.length}
+							<div class="divide-y">
+								{#each issues.slice(0, 5) as issue}
+									<button
+										type="button"
+										class="flex w-full cursor-pointer items-start gap-2 px-2.5 py-2 text-left hover:bg-[var(--surface-hover)]"
+										onclick={() => openIssue(issue)}
+									>
+										<TriangleAlert
+											class="{issue.severity === 'error'
+												? 'text-danger'
+												: 'text-warning'} mt-0.5 h-3 w-3 shrink-0"
+										/>
+										<span class="min-w-0 flex-1">
+											<span class="block text-[8px] font-semibold">{issue.message}</span>
+											<span class="text-muted-foreground mt-0.5 block text-[7px]">{issue.rule}</span
+											>
+										</span>
+									</button>
+								{/each}
+								{#if issues.length > 5}
+									<div class="text-muted-foreground px-2.5 py-2 text-[7px]">
+										+{issues.length - 5} more issues are underlined in the editor
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<div class="text-muted-foreground flex items-center gap-2 px-2.5 py-3 text-[8px]">
+								<CheckCircle2 class="h-3 w-3 shrink-0" />
+								No active lint issues for the enabled rules.
+							</div>
+						{/if}
 					</div>
 				</section>
 			</div>

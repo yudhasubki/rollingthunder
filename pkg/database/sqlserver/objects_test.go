@@ -18,6 +18,27 @@ func indexReference() database.ObjectReference {
 	}
 }
 
+func TestObjectKindNormalizesCatalogTypeCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+		want database.ObjectKind
+	}{
+		{name: "padded table", code: "U ", want: database.ObjectKindTable},
+		{name: "padded view", code: " V", want: database.ObjectKindView},
+		{name: "lowercase routine", code: "fn", want: database.ObjectKindFunction},
+		{name: "unknown", code: "  ", want: database.ObjectKindUnknown},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := objectKind(test.code); got != test.want {
+				t.Fatalf("objectKind(%q) = %q, want %q", test.code, got, test.want)
+			}
+		})
+	}
+}
+
 func TestFormatSQLServerIndexDefinitionPreservesIndexDetails(t *testing.T) {
 	definition, err := formatSQLServerIndexDefinition(
 		indexReference(),

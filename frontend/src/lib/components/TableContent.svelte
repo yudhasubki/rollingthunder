@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { writable } from 'svelte/store';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import type { Tab } from '$lib/models/Tab';
@@ -52,6 +52,7 @@
 		Loader2,
 		KeyRound,
 		Link2,
+		LocateFixed,
 		X,
 		Settings2,
 		Trash2
@@ -87,6 +88,9 @@
 	let capabilities = $state<database.Capabilities | null>(null);
 	let changeIntent = $state<StructuralChangeIntent | null>(null);
 	let changeReference = $state<database.ObjectReference | null>(null);
+	let structureScrollElement: HTMLDivElement | null = null;
+	let handledFocusRequest = 0;
+	const focusedColumn = $derived(tab.focusColumn?.trim() || '');
 	const writeBlocked = $derived(
 		Boolean(
 			connectionStore.connections.find((connection) => connection.id === tab.connectionId)
@@ -132,6 +136,26 @@
 
 	$effect(() => {
 		tableTabValueStore.set(tab.activeSubTab || 'structure');
+	});
+
+	$effect(() => {
+		const focusRequest = tab.focusRequest || 0;
+		const columnName = tab.focusColumn?.trim() || '';
+		const structureReady = $tabValue === 'structure' && !isLoadingStructure && columns.length > 0;
+		if (!focusRequest || focusRequest === handledFocusRequest || !columnName || !structureReady) {
+			return;
+		}
+
+		handledFocusRequest = focusRequest;
+		void tick().then(() => {
+			const rows = structureScrollElement?.querySelectorAll<HTMLElement>('[data-column-name]');
+			const target = Array.from(rows || []).find(
+				(row) => row.dataset.columnName?.toLowerCase() === columnName.toLowerCase()
+			);
+			if (!target) return;
+			target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			target.focus({ preventScroll: true });
+		});
 	});
 
 	// Filter management functions
@@ -498,17 +522,38 @@
 		return getForeignRelation(column, tab.schema || '');
 	}
 
+	function isFocusedColumn(columnName: string): boolean {
+		return Boolean(focusedColumn) && columnName.toLowerCase() === focusedColumn.toLowerCase();
+	}
+
+	function clearFocusedColumn(): void {
+		tabsStore.updateTab(tab.id, {
+			focusColumn: undefined,
+			focusRequest: undefined
+		});
+	}
+
 	function openForeignReference(column: database.Structure) {
 		const relation = getColumnRelation(column);
 		if (!relation) return;
 
 		const existing = tabsStore.findTableTab(tab.connectionId, relation.schema, relation.table);
+		let targetTabID: string;
 		if (existing) {
 			tabsStore.setActive(existing.id);
+			targetTabID = existing.id;
 		} else {
-			tabsStore.newTableTab(tab.connectionId, relation.schema, relation.table);
+			targetTabID = tabsStore.newTableTab(tab.connectionId, relation.schema, relation.table);
 		}
-		updateStatus(`Opened ${relation.schema}.${relation.table}`, 'info');
+		tabsStore.updateTab(targetTabID, {
+			activeSubTab: 'structure',
+			focusColumn: relation.column || undefined,
+			focusRequest: Date.now()
+		});
+		updateStatus(
+			`Opened ${relation.schema}.${relation.table}${relation.column ? ` · ${relation.column}` : ''}`,
+			'info'
+		);
 	}
 
 	function openTableChange(
@@ -621,6 +666,7 @@
 		<!-- Structure Tab -->
 		<div
 			use:melt={$tabContent('structure')}
+			bind:this={structureScrollElement}
 			data-structure-scroll
 			class="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--background)] p-3"
 		>
@@ -751,10 +797,29 @@
 									<Table2 class="text-muted-foreground h-3.5 w-3.5" />
 									<h3 class="text-[10px] font-semibold">Columns</h3>
 								</div>
-								<span
-									class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[8px] tabular-nums"
-									>{columns.length}</span
-								>
+								<div class="flex items-center gap-1.5">
+									{#if focusedColumn}
+										<span
+											class="border-info-border bg-info-soft text-info inline-flex h-6 max-w-64 items-center gap-1 rounded-md border px-2 text-[8px] font-semibold"
+										>
+											<LocateFixed class="h-3 w-3 shrink-0" />
+											<span class="shrink-0">Target</span>
+											<span class="truncate font-mono">{focusedColumn}</span>
+											<button
+												type="button"
+												class="-mr-1 inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+												onclick={clearFocusedColumn}
+												aria-label="Clear target column"
+											>
+												<X class="h-2.5 w-2.5" />
+											</button>
+										</span>
+									{/if}
+									<span
+										class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[8px] tabular-nums"
+										>{columns.length}</span
+									>
+								</div>
 							</div>
 							<div class="overflow-x-auto">
 								<table class="w-full min-w-[840px] table-fixed caption-bottom">
@@ -770,7 +835,13 @@
 										{#each columns as col (col.name)}
 											{@const relation = getColumnRelation(col)}
 											<tr
-												class="h-11 border-b transition-colors last:border-b-0 hover:bg-[var(--surface-hover)]"
+												data-column-name={col.name}
+												tabindex="-1"
+												class="h-11 border-b transition-colors last:border-b-0 focus:outline-none {isFocusedColumn(
+													col.name
+												)
+													? 'bg-info-soft ring-info-border ring-1 ring-inset'
+													: 'hover:bg-[var(--surface-hover)]'}"
 											>
 												<td class="h-11 px-3">
 													<div class="flex min-w-0 items-center gap-2">

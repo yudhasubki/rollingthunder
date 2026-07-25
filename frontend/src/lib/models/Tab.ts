@@ -22,5 +22,7 @@ export interface Tab {
 	status?: string;
 	level?: 'info' | 'warn' | 'error';
 	activeSubTab?: 'structure' | 'data' | 'ddl';
+	focusColumn?: string;
+	focusRequest?: number;
 	revision?: number;
 }

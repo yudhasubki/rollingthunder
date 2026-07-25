@@ -7,7 +7,7 @@
 		Trash2,
 		Clock,
 		X,
-		RefreshCw,
+		Eraser,
 		TriangleAlert,
 		CircleDot,
 		CheckCheck,
@@ -15,7 +15,6 @@
 		Square,
 		Bookmark,
 		ChartNoAxesCombined,
-		ListChecks,
 		LocateFixed,
 		Settings2,
 		WandSparkles,
@@ -73,7 +72,7 @@
 	import QueryToolingSettings from '$lib/components/query/QueryToolingSettings.svelte';
 	import QueryResultChart from '$lib/components/query/QueryResultChart.svelte';
 	import { extractQueryVariableNames, type QueryVariableInput } from '$lib/query/variables';
-	import { formatSql, lintSql } from '$lib/sql/tooling';
+	import { formatSql, lintSql, type SqlLintIssue } from '$lib/sql/tooling';
 	import { queryToolingStore } from '$lib/stores/queryTooling.svelte';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import { getSqlIdentifierAtOffset, resolveSqlObjectTarget } from '$lib/sql/navigation';
@@ -91,6 +90,11 @@
 		tab: Tab;
 	}
 
+	interface NavigationNotice {
+		title: string;
+		detail: string;
+	}
+
 	let { tab }: Props = $props();
 
 	let editorContainer: HTMLDivElement;
@@ -102,6 +106,7 @@
 	let contentChangeRegistration: Monaco.IDisposable | null = null;
 	let focusRegistration: Monaco.IDisposable | null = null;
 	let connectionSwitchHandler: (() => void) | null = null;
+	let databaseObjectsChangedHandler: ((event: Event) => void) | null = null;
 	let destroyed = false;
 	let currentSql = $state(tab.sql || '');
 	let sqlFileToken = $state(tab.sqlFileToken || '');
@@ -159,18 +164,17 @@
 	let pendingVariableQuery = $state('');
 	let resultNotice = $state('');
 	let capabilities = $state<database.Capabilities | null>(null);
+	let lintIssues = $state<SqlLintIssue[]>([]);
+	let navigationNotice = $state<NavigationNotice | null>(null);
 	let lintTimer: ReturnType<typeof setTimeout> | null = null;
 	let queryCommandHandler: ((event: Event) => void) | null = null;
 	const visibleQueryResults = $derived(getQueryResultPage(queryResults, resultPage));
 	const autocompleteMetadata = $derived(getSqlAutocompleteMetadata(tab.connectionId));
 
-	async function refreshAutocomplete(force = false, showSuggestions = false) {
+	async function refreshAutocomplete(force = false) {
 		autocompleteRefreshing = true;
 		try {
 			await loadSchemaInfo(tab.connectionId, force);
-			if (showSuggestions) {
-				editor?.trigger('metadata-refresh', 'editor.action.triggerSuggest', {});
-			}
 		} finally {
 			autocompleteRefreshing = false;
 		}
@@ -248,6 +252,7 @@
 		contentChangeRegistration = editor.onDidChangeModelContent(() => {
 			currentSql = editor?.getValue() || '';
 			tabsStore.updateTab(tab.id, { sql: currentSql });
+			navigationNotice = null;
 			scheduleLint();
 		});
 		focusRegistration = editor.onDidFocusEditorText(() => {
@@ -261,6 +266,13 @@
 			void refreshCapabilities();
 		};
 		window.addEventListener('connection-switched', connectionSwitchHandler);
+		databaseObjectsChangedHandler = (event: Event) => {
+			const detail = (event as CustomEvent<{ connectionId?: string }>).detail;
+			if (!detail?.connectionId || detail.connectionId === tab.connectionId) {
+				void refreshAutocomplete(true);
+			}
+		};
+		window.addEventListener('database-objects-changed', databaseObjectsChangedHandler);
 
 		themeObserver = new MutationObserver(() => {
 			monaco?.editor.setTheme(
@@ -281,9 +293,6 @@
 		});
 		editor.addCommand(monaco.KeyCode.F12, () => {
 			void jumpToIdentifier();
-		});
-		editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F12, () => {
-			findIdentifierReferences();
 		});
 
 		queryCommandHandler = (event: Event) => {
@@ -307,9 +316,6 @@
 				case 'saveQuery':
 					savedQueriesOpen = true;
 					break;
-				case 'findReferences':
-					findIdentifierReferences();
-					break;
 				case 'jumpToObject':
 					void jumpToIdentifier();
 					break;
@@ -323,6 +329,9 @@
 		destroyed = true;
 		if (connectionSwitchHandler) {
 			window.removeEventListener('connection-switched', connectionSwitchHandler);
+		}
+		if (databaseObjectsChangedHandler) {
+			window.removeEventListener('database-objects-changed', databaseObjectsChangedHandler);
 		}
 		if (queryCommandHandler) {
 			window.removeEventListener(APPLICATION_EVENTS.queryCommand, queryCommandHandler);
@@ -441,6 +450,7 @@
 		lintTimer = globalThis.setTimeout(() => {
 			if (!editorModel || !monaco) return;
 			const issues = lintSql(editorModel.getValue(), queryToolingStore.lint);
+			lintIssues = issues;
 			monaco.editor.setModelMarkers(
 				editorModel,
 				`${APPLICATION.id}-sql-lint-${tab.id}`,
@@ -465,6 +475,21 @@
 		}, UI_RUNTIME.sqlLintDebounceMs);
 	}
 
+	function selectLintIssue(issue: SqlLintIssue) {
+		if (!editor || !editorModel) return;
+		const start = editorModel.getPositionAt(issue.start);
+		const end = editorModel.getPositionAt(Math.max(issue.end, issue.start + 1));
+		editor.setSelection({
+			startLineNumber: start.lineNumber,
+			startColumn: start.column,
+			endLineNumber: end.lineNumber,
+			endColumn: end.column
+		});
+		editor.revealPositionInCenter(start);
+		editor.focus();
+		toolingSettingsOpen = false;
+	}
+
 	function formatEditor() {
 		if (!editor || !editorModel) return;
 		const selection = editor.getSelection();
@@ -481,6 +506,34 @@
 		]);
 		editor.pushUndoStop();
 		updateStatus('SQL formatted with the active dialect settings', 'success');
+	}
+
+	function clearEditor() {
+		if (!editor || !editorModel) {
+			updateStatus('The SQL editor is still loading', 'info');
+			return;
+		}
+		if (!editorModel.getValue()) {
+			updateStatus('The SQL editor is already empty', 'info');
+			editor.focus();
+			return;
+		}
+
+		editor.pushUndoStop();
+		editor.executeEdits(`${APPLICATION.id}-clear-editor`, [
+			{
+				range: editorModel.getFullModelRange(),
+				text: '',
+				forceMoveMarkers: true
+			}
+		]);
+		editor.pushUndoStop();
+		editor.setPosition({ lineNumber: 1, column: 1 });
+		editor.focus();
+		updateStatus(
+			`SQL editor cleared${sqlFileName ? ' · file has unsaved changes' : ''} · press Ctrl/Cmd+Z to undo`,
+			'info'
+		);
 	}
 
 	async function openSQLWorkspaceFile() {
@@ -546,30 +599,6 @@
 		}
 	}
 
-	function findIdentifierReferences() {
-		if (!editor || !editorModel) return;
-		const position = editor.getPosition();
-		if (!position) return;
-		const identifier = getSqlIdentifierAtOffset(
-			editorModel.getValue(),
-			editorModel.getOffsetAt(position)
-		);
-		if (!identifier) {
-			updateStatus('Place the cursor on an identifier first', 'warn');
-			return;
-		}
-		const start = editorModel.getPositionAt(identifier.start);
-		const end = editorModel.getPositionAt(identifier.end);
-		editor.setSelection({
-			startLineNumber: start.lineNumber,
-			startColumn: start.column,
-			endLineNumber: end.lineNumber,
-			endColumn: end.column
-		});
-		void editor.getAction('actions.find')?.run();
-		updateStatus(`Finding references to ${identifier.text}`, 'info');
-	}
-
 	async function jumpToIdentifier() {
 		if (!editor || !editorModel) return;
 		const position = editor.getPosition();
@@ -577,21 +606,40 @@
 		const sql = editorModel.getValue();
 		const identifier = getSqlIdentifierAtOffset(sql, editorModel.getOffsetAt(position));
 		if (!identifier) {
-			updateStatus('Place the cursor on a table or column first', 'warn');
+			navigationNotice = {
+				title: 'Select a table or column',
+				detail: 'Place the caret on its SQL identifier, then choose Open object or press F12.'
+			};
 			return;
 		}
-		await ensureColumnsForTables(tab.connectionId, parseTableReferences(sql));
+		try {
+			await ensureColumnsForTables(tab.connectionId, parseTableReferences(sql));
+		} catch (error) {
+			navigationNotice = {
+				title: 'Could not load object metadata',
+				detail: error instanceof Error ? error.message : 'Refresh the connection and try again.'
+			};
+			return;
+		}
 		const target = resolveSqlObjectTarget(
 			sql,
 			identifier,
 			getSqlAutocompleteMetadata(tab.connectionId)
 		);
 		if (!target) {
-			updateStatus(`No unique database object matches ${identifier.text}`, 'warn');
+			navigationNotice = {
+				title: `Could not resolve “${identifier.text}”`,
+				detail: 'Qualify it as schema.table or alias.column so the target is unambiguous.'
+			};
 			return;
 		}
+		navigationNotice = null;
 		const targetTabID = tabsStore.newTableTab(tab.connectionId, target.schema, target.table);
-		tabsStore.updateTab(targetTabID, { activeSubTab: 'structure' });
+		tabsStore.updateTab(targetTabID, {
+			activeSubTab: 'structure',
+			focusColumn: target.column,
+			focusRequest: Date.now()
+		});
 		updateStatus(
 			`Opened ${target.schema}.${target.table}${target.column ? ` · ${target.column}` : ''}`,
 			'success'
@@ -1323,9 +1371,11 @@
 	}}
 />
 
-<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)] p-3">
+<div
+	class="query-editor-shell relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)] p-3"
+>
 	<!-- Toolbar -->
-	<div class="mb-2 flex min-h-8 shrink-0 items-center justify-between gap-3">
+	<div class="query-editor-toolbar mb-2 flex min-h-8 shrink-0 items-center justify-between gap-3">
 		<div class="flex min-w-0 items-center gap-2">
 			<span class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-md">
 				<Play class="h-3 w-3" fill="currentColor" />
@@ -1339,28 +1389,25 @@
 					title={autocompleteMetadata.error || 'Schema-aware SQL autocomplete'}
 				>
 					{#if autocompleteRefreshing || autocompleteMetadata.isLoading}
-						Indexing database metadata…
+						Refreshing autocomplete metadata…
 					{:else if autocompleteMetadata.error}
-						Autocomplete metadata unavailable
+						Autocomplete unavailable · focus editor to retry
 					{:else}
-						{autocompleteMetadata.engine} autocomplete · {autocompleteMetadata.tables.length} tables
+						{autocompleteMetadata.engine} · {autocompleteMetadata.tables.length} tables indexed · Ctrl+Space
+						for suggestions
 					{/if}
 				</p>
 			</div>
 		</div>
-		<div class="flex shrink-0 items-center gap-1">
+		<div class="query-editor-actions flex shrink-0 items-center gap-1">
 			<button
-				class="rt-toolbar-button h-7 w-7 cursor-pointer disabled:cursor-wait disabled:opacity-50"
-				onclick={() => refreshAutocomplete(true, true)}
-				disabled={autocompleteRefreshing || autocompleteMetadata.isLoading}
-				title="Refresh SQL autocomplete metadata"
-				aria-label="Refresh SQL autocomplete metadata"
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold"
+				onclick={clearEditor}
+				title="Clear the SQL editor. Undo with Ctrl/Cmd+Z."
+				aria-label="Clear SQL editor"
 			>
-				<RefreshCw
-					class="h-3 w-3 {autocompleteRefreshing || autocompleteMetadata.isLoading
-						? 'animate-spin'
-						: ''}"
-				/>
+				<Eraser class="h-3 w-3" />
+				Clear SQL
 			</button>
 			<button
 				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[10px]"
@@ -1403,36 +1450,37 @@
 				</span>
 			</button>
 			<button
-				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold"
 				onclick={formatEditor}
 				title="Format SQL (Shift+Alt+F)"
 				aria-label="Format SQL"
 			>
-				<WandSparkles class="h-3.5 w-3.5" />
+				<WandSparkles class="h-3 w-3" />
+				Format
 			</button>
 			<button
-				class="rt-toolbar-button h-7 w-7 cursor-pointer"
-				onclick={findIdentifierReferences}
-				title="Find identifier references (Shift+F12)"
-				aria-label="Find identifier references"
-			>
-				<ListChecks class="h-3.5 w-3.5" />
-			</button>
-			<button
-				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold"
 				onclick={() => void jumpToIdentifier()}
-				title="Jump to database object (F12)"
-				aria-label="Jump to database object"
+				title="Open the table or column under the caret (F12)"
+				aria-label="Open database object under the caret"
 			>
-				<LocateFixed class="h-3.5 w-3.5" />
+				<LocateFixed class="h-3 w-3" />
+				Open object
 			</button>
 			<button
-				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold"
 				onclick={() => (toolingSettingsOpen = true)}
-				title="SQL tooling settings"
-				aria-label="SQL tooling settings"
+				title="Manual formatter preferences and live lint rules"
+				aria-label={`Format and lint settings${lintIssues.length ? `, ${lintIssues.length} issues` : ''}`}
 			>
-				<Settings2 class="h-3.5 w-3.5" />
+				<Settings2 class="h-3 w-3" />
+				Format & lint
+				{#if lintIssues.length}
+					<span
+						class="border-warning-border bg-warning-soft text-warning inline-flex min-w-4 items-center justify-center rounded border px-1 text-[7px] tabular-nums"
+						>{lintIssues.length}</span
+					>
+				{/if}
 			</button>
 			<span class="bg-border mx-0.5 h-4 w-px"></span>
 
@@ -1544,6 +1592,28 @@
 			{/if}
 		</div>
 	</div>
+
+	{#if navigationNotice}
+		<div
+			class="border-warning-border bg-warning-soft text-warning mb-2 flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2"
+			role="status"
+			aria-live="polite"
+		>
+			<LocateFixed class="h-3.5 w-3.5 shrink-0" />
+			<div class="min-w-0 flex-1 text-[9px]">
+				<span class="font-bold">{navigationNotice.title}</span>
+				<span class="ml-1 opacity-80">{navigationNotice.detail}</span>
+			</div>
+			<button
+				type="button"
+				class="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md hover:bg-[var(--surface-hover)]"
+				onclick={() => (navigationNotice = null)}
+				aria-label="Dismiss object navigation message"
+			>
+				<X class="h-3 w-3" />
+			</button>
+		</div>
+	{/if}
 
 	<!-- History Panel (slide-out) -->
 	{#if showHistory}
@@ -1895,8 +1965,11 @@
 
 <QueryToolingSettings
 	open={toolingSettingsOpen}
+	issues={lintIssues}
 	onClose={() => (toolingSettingsOpen = false)}
 	onChanged={scheduleLint}
+	onFormat={formatEditor}
+	onSelectIssue={selectLintIssue}
 />
 
 <SavedQueriesDrawer
@@ -1908,3 +1981,23 @@
 	onLoad={loadSavedQuery}
 	onSaved={handleNamedQuerySaved}
 />
+
+<style>
+	.query-editor-shell {
+		container-type: inline-size;
+	}
+
+	@container (max-width: 1040px) {
+		.query-editor-toolbar {
+			align-items: stretch;
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.query-editor-actions {
+			flex-wrap: wrap;
+			justify-content: flex-start;
+			width: 100%;
+		}
+	}
+</style>
