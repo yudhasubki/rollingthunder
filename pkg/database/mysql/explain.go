@@ -53,7 +53,24 @@ func mysqlPlanChildren(
 	parentID string,
 	idPrefix string,
 ) []database.ExplainPlanNode {
+	if queryPlan, ok := source["query_plan"].(map[string]interface{}); ok {
+		return mysqlPlanChildren(
+			queryPlan,
+			parentID,
+			idPrefix+"-query-plan",
+		)
+	}
+	if operation := mysqlPlanString(source["operation"]); operation != "" {
+		return []database.ExplainPlanNode{
+			mysqlAccessPlanNode(source, parentID, idPrefix+"-operation"),
+		}
+	}
+
 	nodes := make([]database.ExplainPlanNode, 0)
+	nodes = append(
+		nodes,
+		mysqlInputPlanNodes(source, parentID, idPrefix)...,
+	)
 	if table, ok := source["table"].(map[string]interface{}); ok {
 		nodes = append(nodes, mysqlTablePlanNode(table, parentID, idPrefix+"-table"))
 	}
@@ -107,6 +124,110 @@ func mysqlPlanChildren(
 		nodes = append(nodes, wrapper)
 	}
 	return nodes
+}
+
+func mysqlInputPlanNodes(
+	source map[string]interface{},
+	parentID string,
+	idPrefix string,
+) []database.ExplainPlanNode {
+	inputs, ok := source["inputs"].([]interface{})
+	if !ok {
+		return nil
+	}
+	nodes := make([]database.ExplainPlanNode, 0, len(inputs))
+	for index, value := range inputs {
+		input, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		nodes = append(
+			nodes,
+			mysqlPlanChildren(
+				input,
+				parentID,
+				fmt.Sprintf("%s-input-%d", idPrefix, index),
+			)...,
+		)
+	}
+	return nodes
+}
+
+func mysqlAccessPlanNode(
+	source map[string]interface{},
+	parentID string,
+	id string,
+) database.ExplainPlanNode {
+	operation := mysqlPlanString(source["operation"])
+	nodeType := strings.ToUpper(mysqlPlanString(source["access_type"]))
+	if nodeType == "" {
+		nodeType = "OPERATION"
+	}
+	relation := mysqlPlanString(source["table_name"])
+	if schema := mysqlPlanString(source["schema_name"]); schema != "" && relation != "" {
+		relation = schema + "." + relation
+	}
+	node := database.ExplainPlanNode{
+		ID:            id,
+		ParentID:      parentID,
+		NodeType:      nodeType,
+		Relation:      relation,
+		Summary:       operation,
+		TotalCost:     numericPlanValue(source["estimated_total_cost"]),
+		EstimatedRows: numericPlanValue(source["estimated_rows"]),
+		ActualRows:    numericPlanValue(source["actual_rows"]),
+		Details:       make(map[string]string),
+		Children:      make([]database.ExplainPlanNode, 0),
+	}
+	for _, key := range []string{
+		"alias",
+		"index_name",
+		"index_access_type",
+		"join_type",
+		"join_algorithm",
+		"condition",
+		"lookup_condition",
+		"covering",
+		"ranges",
+		"key_columns",
+		"used_columns",
+		"filter_columns",
+		"actual_loops",
+		"actual_first_row_ms",
+		"actual_last_row_ms",
+	} {
+		if value, exists := source[key]; exists {
+			node.Details[strings.ReplaceAll(key, "_", " ")] =
+				mysqlPlanDetailValue(value)
+		}
+	}
+	if len(node.Details) == 0 {
+		node.Details = nil
+	}
+	node.Children = mysqlInputPlanNodes(source, node.ID, id)
+	return node
+}
+
+func mysqlPlanString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	result, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(result)
+}
+
+func mysqlPlanDetailValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	encoded, err := json.Marshal(value)
+	if err == nil {
+		return string(encoded)
+	}
+	return fmt.Sprint(value)
 }
 
 func mysqlWrapperNode(

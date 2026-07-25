@@ -259,6 +259,7 @@ func dropDefaultConstraintBatch(table database.Table, column string) string {
 	tableName := quoteQualified(table.Schema, table.Name)
 	return fmt.Sprintf(
 		`DECLARE @rt_default sysname;
+DECLARE @rt_sql nvarchar(max);
 SELECT @rt_default = default_object.name
 FROM sys.default_constraints default_object
 JOIN sys.columns column_object
@@ -267,10 +268,13 @@ JOIN sys.columns column_object
 WHERE default_object.parent_object_id = OBJECT_ID(%s)
 	AND column_object.name = %s;
 IF @rt_default IS NOT NULL
-	EXEC(N'ALTER TABLE %s DROP CONSTRAINT ' + QUOTENAME(@rt_default));`,
+BEGIN
+	SET @rt_sql = %s + QUOTENAME(@rt_default) + N';';
+	EXEC sys.sp_executesql @rt_sql;
+END;`,
 		sqlString(quoteQualified(table.Schema, table.Name)),
 		sqlString(column),
-		tableName,
+		sqlString("ALTER TABLE "+tableName+" DROP CONSTRAINT "),
 	)
 }
 

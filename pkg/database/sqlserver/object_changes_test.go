@@ -140,6 +140,22 @@ func TestBuildSQLServerDropColumnRemovesDefaultFirst(t *testing.T) {
 	if !strings.Contains(plan.Statements[0], "sys.default_constraints") {
 		t.Fatalf("default constraint cleanup missing: %q", plan.Statements[0])
 	}
+	if !strings.Contains(
+		plan.Statements[0],
+		"SET @rt_sql = N'ALTER TABLE [dbo].[orders] DROP CONSTRAINT ' + "+
+			"QUOTENAME(@rt_default) + N';';",
+	) {
+		t.Fatalf("default constraint statement is not safely assembled: %q", plan.Statements[0])
+	}
+	if !strings.Contains(
+		plan.Statements[0],
+		"EXEC sys.sp_executesql @rt_sql;",
+	) {
+		t.Fatalf("default constraint statement is not executed safely: %q", plan.Statements[0])
+	}
+	if strings.Contains(plan.Statements[0], "EXEC(N'") {
+		t.Fatalf("default constraint statement uses invalid inline EXEC: %q", plan.Statements[0])
+	}
 	if plan.Statements[1] !=
 		"ALTER TABLE [dbo].[orders] DROP COLUMN [status];" {
 		t.Fatalf("drop SQL = %q", plan.Statements[1])
