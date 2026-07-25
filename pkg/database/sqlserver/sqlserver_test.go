@@ -528,14 +528,14 @@ func runSQLServerSecurityConformance(
 			},
 		},
 	}
+	for _, change := range changes {
+		applySQLServerSecurityConformanceChange(t, ctx, driver, change)
+	}
 	if _, err := driver.conn.ExecContext(
 		ctx,
 		"DROP TABLE [dbo].["+tableName+"];",
 	); err != nil {
 		t.Fatalf("drop SQL Server security target: %v", err)
-	}
-	for _, change := range changes {
-		applySQLServerSecurityConformanceChange(t, ctx, driver, change)
 	}
 }
 
