@@ -97,6 +97,36 @@ type columnMetadata struct {
 	virtualColumn string
 }
 
+const oracleCollectionStructuresQuery = `
+	SELECT
+		column_object.column_name,
+		column_object.data_type,
+		column_object.data_length,
+		column_object.char_length,
+		column_object.data_precision,
+		column_object.data_scale,
+		column_object.nullable,
+		column_object.data_default,
+		column_object.identity_column,
+		(
+			SELECT identity_object.generation_type
+			FROM all_tab_identity_cols identity_object
+			WHERE identity_object.owner = column_object.owner
+				AND identity_object.table_name = column_object.table_name
+				AND identity_object.column_name = column_object.column_name
+		),
+		NVL((
+			SELECT column_flags.virtual_column
+			FROM all_tab_cols column_flags
+			WHERE column_flags.owner = column_object.owner
+				AND column_flags.table_name = column_object.table_name
+				AND column_flags.column_name = column_object.column_name
+		), 'NO')
+	FROM all_tab_columns column_object
+	WHERE column_object.owner = :1
+		AND column_object.table_name = :2
+	ORDER BY column_object.column_id`
+
 func displayOracleType(column columnMetadata) string {
 	nativeType := strings.ToUpper(strings.TrimSpace(column.nativeType))
 	switch nativeType {
@@ -255,28 +285,8 @@ func (o *Oracle) GetCollectionStructures(
 			foreign[constraint.column] = constraint
 		}
 	}
-	rows, err := o.conn.Query(`
-		SELECT
-			column_name,
-			data_type,
-			data_length,
-			char_length,
-			data_precision,
-			data_scale,
-			nullable,
-			data_default,
-			identity_column,
-			(
-				SELECT identity_object.generation_type
-				FROM all_tab_identity_cols identity_object
-				WHERE identity_object.owner = all_tab_columns.owner
-					AND identity_object.table_name = all_tab_columns.table_name
-					AND identity_object.column_name = all_tab_columns.column_name
-			),
-			virtual_column
-		FROM all_tab_columns
-		WHERE owner = :1 AND table_name = :2
-		ORDER BY column_id`,
+	rows, err := o.conn.Query(
+		oracleCollectionStructuresQuery,
 		table.Schema,
 		table.Name,
 	)

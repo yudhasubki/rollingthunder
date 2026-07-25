@@ -116,6 +116,20 @@ func TestOracleIndexColumnPrefersFunctionExpression(t *testing.T) {
 	}
 }
 
+func TestOracleColumnMetadataReadsVirtualFlagFromTabCols(t *testing.T) {
+	normalized := strings.ToLower(oracleCollectionStructuresQuery)
+	if !strings.Contains(normalized, "from all_tab_columns column_object") {
+		t.Fatal("column metadata no longer uses the visible-column catalog")
+	}
+	if !strings.Contains(normalized, "from all_tab_cols column_flags") ||
+		!strings.Contains(normalized, "column_flags.virtual_column") {
+		t.Fatal("virtual column metadata is not read from all_tab_cols")
+	}
+	if strings.Contains(normalized, "\n\t\tvirtual_column\n") {
+		t.Fatal("column metadata still selects virtual_column from all_tab_columns")
+	}
+}
+
 func TestOracleLiveConformance(t *testing.T) {
 	host := os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_HOST")
 	if host == "" {
