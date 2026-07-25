@@ -212,6 +212,14 @@
 		font: inherit;
 	}
 
+	input,
+	select,
+	textarea {
+		font-variant-caps: normal;
+		letter-spacing: normal;
+		text-transform: none !important;
+	}
+
 	button:focus-visible,
 	a:focus-visible,
 	input:focus-visible,
@@ -521,6 +529,9 @@ html {
 	background: color-mix(in oklab, var(--surface-raised) 90%, var(--surface-sunken));
 	border: 1px solid var(--input);
 	border-radius: var(--radius);
+	font-variant-caps: normal;
+	letter-spacing: normal;
+	text-transform: none !important;
 	transition:
 		border-color 120ms ease,
 		box-shadow 120ms ease,

@@ -47,6 +47,25 @@ test('the theme defines the complete semantic feedback palette', async () => {
 	}
 });
 
+test('form controls never inherit decorative uppercase text', async () => {
+	const styles = await readFile(new URL('../src/app.css', import.meta.url), 'utf8');
+	assert.match(
+		styles,
+		/input,\s*select,\s*textarea\s*\{[^}]*font-variant-caps:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-transform:\s*none\s*!important;/s
+	);
+	assert.match(
+		styles,
+		/\.rt-input\s*\{[^}]*font-variant-caps:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-transform:\s*none\s*!important;/s
+	);
+});
+
+test('the application disables WebKit text autocapitalization and correction', async () => {
+	const template = await readFile(new URL('../src/app.html', import.meta.url), 'utf8');
+	assert.match(template, /<body[^>]*autocapitalize="none"/s);
+	assert.match(template, /<body[^>]*autocorrect="off"/s);
+	assert.match(template, /<body[^>]*spellcheck="false"/s);
+});
+
 test('connection profiles use risk environments, not arbitrary presentation colors', async () => {
 	const manager = await readFile(
 		new URL('../src/lib/components/ConnectionManagerModal.svelte', import.meta.url),
