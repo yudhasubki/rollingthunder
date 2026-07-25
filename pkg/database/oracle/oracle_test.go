@@ -37,16 +37,13 @@ func runOracleDataPumpLiveConformance(
 	if _, err := driver.conn.ExecContext(
 		ctx,
 		`CREATE USER `+schema+`
-		 IDENTIFIED BY "RollingThunder_DP_2026"
-		 DEFAULT TABLESPACE USERS
-		 TEMPORARY TABLESPACE TEMP
-		 QUOTA UNLIMITED ON USERS`,
+		 IDENTIFIED BY "RollingThunder_DP_2026"`,
 	); err != nil {
 		t.Fatalf("create Data Pump conformance schema: %v", err)
 	}
 	if _, err := driver.conn.ExecContext(
 		ctx,
-		`GRANT CREATE SESSION, CREATE TABLE TO `+schema,
+		`GRANT CREATE SESSION, CREATE TABLE, UNLIMITED TABLESPACE TO `+schema,
 	); err != nil {
 		t.Fatalf("grant Data Pump conformance privileges: %v", err)
 	}
