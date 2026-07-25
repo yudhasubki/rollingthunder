@@ -274,6 +274,11 @@ export function removeSqlNoise(sql: string): string {
 	return maskSql(sql, false).text;
 }
 
+export function containsDdlStatement(sql: string): boolean {
+	const clean = removeSqlNoise(sql);
+	return /(?:^|;)\s*(?:CREATE|ALTER|DROP|TRUNCATE|RENAME|COMMENT|GRANT|REVOKE)\b/i.test(clean);
+}
+
 export function getStatementAtCursor(sql: string, cursorOffset: number): StatementAtCursor {
 	const clampedCursorOffset = Math.max(0, Math.min(cursorOffset, sql.length));
 	const statementSql = maskSql(sql, true).text;
@@ -295,6 +300,36 @@ export function getStatementAtCursor(sql: string, cursorOffset: number): Stateme
 		text: sql.slice(statementStart, statementEnd),
 		cursorOffset: Math.max(0, clampedCursorOffset - statementStart)
 	};
+}
+
+function containsExecutableSql(sql: string): boolean {
+	return removeSqlNoise(sql).replaceAll(';', '').trim().length > 0;
+}
+
+// Query actions should remain useful when the caret sits just after a
+// terminator or in a trailing comment. Autocomplete intentionally keeps using
+// getStatementAtCursor so a new blank statement still receives fresh
+// suggestions instead of inheriting context from the previous statement.
+export function getExecutableStatementAtCursor(
+	sql: string,
+	cursorOffset: number
+): StatementAtCursor {
+	const clampedCursorOffset = Math.max(0, Math.min(cursorOffset, sql.length));
+	const current = getStatementAtCursor(sql, clampedCursorOffset);
+	if (containsExecutableSql(current.text)) return current;
+
+	const statementSql = maskSql(sql, true).text;
+	let searchBefore = clampedCursorOffset;
+	while (searchBefore > 0) {
+		const delimiter = statementSql.lastIndexOf(';', searchBefore - 1);
+		if (delimiter < 0) break;
+
+		const previous = getStatementAtCursor(sql, delimiter);
+		if (containsExecutableSql(previous.text)) return previous;
+		searchBefore = delimiter;
+	}
+
+	return current;
 }
 
 export function isCursorInCommentOrString(sqlBeforeCursor: string): boolean {

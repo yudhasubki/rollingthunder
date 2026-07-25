@@ -80,6 +80,11 @@ func TestReadOnlyConnectionUnlockRequiresExactNameAndRelocks(t *testing.T) {
 		!unlocked.Data.TemporaryUnlock {
 		t.Fatalf("unlock response = %+v", unlocked)
 	}
+	active := service.GetActiveConnections()
+	if len(active.Errors) > 0 || len(active.Data) != 1 ||
+		!active.Data[0].ReadOnly || !active.Data[0].WriteUnlocked {
+		t.Fatalf("active connection after unlock = %+v", active)
+	}
 	inserted := service.InsertRow(
 		"production",
 		database.Table{Name: "customers"},
@@ -95,6 +100,11 @@ func TestReadOnlyConnectionUnlockRequiresExactNameAndRelocks(t *testing.T) {
 	})
 	if len(locked.Errors) > 0 || locked.Data.WriteEnabled {
 		t.Fatalf("lock response = %+v", locked)
+	}
+	active = service.GetActiveConnections()
+	if len(active.Errors) > 0 || len(active.Data) != 1 ||
+		!active.Data[0].ReadOnly || active.Data[0].WriteUnlocked {
+		t.Fatalf("active connection after relock = %+v", active)
 	}
 	blocked := service.InsertRow(
 		"production",

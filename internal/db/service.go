@@ -668,7 +668,7 @@ func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo]
 				Host:          conn.Config.Host,
 				Environment:   conn.Environment,
 				AccessMode:    writeAccess.AccessMode,
-				ReadOnly:      !writeAccess.WriteEnabled,
+				ReadOnly:      writeAccess.AccessMode == database.ConnectionAccessReadOnly,
 				WriteUnlocked: writeAccess.TemporaryUnlock,
 				SSHTunnel:     conn.Config.SSHEnabled,
 				IsActive:      conn.ID == activeID,

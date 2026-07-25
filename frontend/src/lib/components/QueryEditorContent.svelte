@@ -31,9 +31,11 @@
 		ExecuteQuery,
 		ExplainQuery,
 		ExportQueryResults,
+		GetCapabilities,
 		OpenSQLFile,
 		RollbackTransaction,
-		SaveSQLFile
+		SaveSQLFile,
+		SetConnectionWriteAccess
 	} from '$lib/wailsjs/go/db/Service';
 	import { createServiceError } from '$lib/errors/service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
@@ -73,9 +75,14 @@
 	import { extractQueryVariableNames, type QueryVariableInput } from '$lib/query/variables';
 	import { formatSql, lintSql } from '$lib/sql/tooling';
 	import { queryToolingStore } from '$lib/stores/queryTooling.svelte';
+	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import { getSqlIdentifierAtOffset, resolveSqlObjectTarget } from '$lib/sql/navigation';
 	import { ensureColumnsForTables } from '$lib/stores/schema.svelte';
-	import { getStatementAtCursor, parseTableReferences } from '$lib/sql/context';
+	import {
+		containsDdlStatement,
+		getExecutableStatementAtCursor,
+		parseTableReferences
+	} from '$lib/sql/context';
 	import type { SavedQuery } from '$lib/query/snippets';
 	import { focusTrap } from '$lib/actions/focusTrap';
 	import { APPLICATION, APPLICATION_EVENTS, TIME, UI_RUNTIME } from '$lib/config/application';
@@ -129,6 +136,8 @@
 	let transactionState = $state<
 		'idle' | 'starting' | 'active' | 'failed' | 'committing' | 'rolling_back'
 	>('idle');
+	let transactionHasActivity = $state(false);
+	let transactionRelockWrites = $state(false);
 	let showHistory = $state(false);
 	let autocompleteRefreshing = $state(false);
 	let exportDialogOpen = $state(false);
@@ -148,6 +157,8 @@
 	let variableNames = $state<string[]>([]);
 	let pendingQueryAction = $state<'run' | 'explain' | null>(null);
 	let pendingVariableQuery = $state('');
+	let resultNotice = $state('');
+	let capabilities = $state<database.Capabilities | null>(null);
 	let lintTimer: ReturnType<typeof setTimeout> | null = null;
 	let queryCommandHandler: ((event: Event) => void) | null = null;
 	const visibleQueryResults = $derived(getQueryResultPage(queryResults, resultPage));
@@ -165,11 +176,21 @@
 		}
 	}
 
+	async function refreshCapabilities() {
+		try {
+			const response = await GetCapabilities(tab.connectionId);
+			if (!response.errors?.length) capabilities = response.data || null;
+		} catch {
+			capabilities = null;
+		}
+	}
+
 	onMount(async () => {
 		const [, , monacoModule] = await Promise.all([
 			refreshAutocomplete(),
 			import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution'),
-			import('monaco-editor')
+			import('monaco-editor'),
+			refreshCapabilities()
 		]);
 		if (destroyed) return;
 
@@ -237,6 +258,7 @@
 
 		connectionSwitchHandler = () => {
 			void refreshAutocomplete(true);
+			void refreshCapabilities();
 		};
 		window.addEventListener('connection-switched', connectionSwitchHandler);
 
@@ -317,8 +339,14 @@
 		if (queryAttemptID) {
 			void CancelQuery(queryAttemptID).catch(() => {});
 		}
-		if (transactionID) {
-			void RollbackTransaction(transactionID).catch(() => {});
+		if (transactionID && transactionState !== 'committing' && transactionState !== 'rolling_back') {
+			const finishingID = transactionID;
+			const shouldRelock = transactionRelockWrites;
+			void RollbackTransaction(finishingID)
+				.catch(() => {})
+				.finally(() => {
+					if (shouldRelock) void relockTransactionWriteAccess(true);
+				});
 		}
 	});
 
@@ -338,7 +366,74 @@
 		if (!position) return fullText;
 
 		const offset = editor.getModel()?.getOffsetAt(position) || 0;
-		return getStatementAtCursor(fullText, offset).text.trim();
+		return getExecutableStatementAtCursor(fullText, offset).text.trim();
+	}
+
+	function getTabConnection() {
+		return connectionStore.connections.find((connection) => connection.id === tab.connectionId);
+	}
+
+	function temporaryWritesAreUnlocked(): boolean {
+		const connection = getTabConnection();
+		return connection?.accessMode === 'read-only' && Boolean(connection.writeUnlocked);
+	}
+
+	function invalidateConnectionViews() {
+		const revision = Date.now();
+		for (const openTab of tabsStore.allTabs) {
+			if (openTab.connectionId === tab.connectionId && openTab.kind === 'table') {
+				tabsStore.updateTab(openTab.id, { revision });
+			}
+		}
+		window.dispatchEvent(
+			new CustomEvent('database-objects-changed', {
+				detail: { connectionId: tab.connectionId }
+			})
+		);
+	}
+
+	function discardTransactionOutput() {
+		queryResults = [];
+		queryResultSets = [];
+		activeResultSetIndex = 0;
+		queryResultTruncated = false;
+		queryResultLimit = 0;
+		resultPage = 0;
+		resultColumns = [];
+		selectedRows = [];
+		selectedRowIndexes = [];
+		explainPlan = null;
+		executedQuery = '';
+		queryCancelled = false;
+		resultNotice =
+			'Transaction rolled back. Transaction-scoped results were cleared and database views were refreshed.';
+	}
+
+	async function relockTransactionWriteAccess(shouldRelock: boolean): Promise<boolean | null> {
+		if (!shouldRelock) return null;
+		const connection = getTabConnection();
+		const connectionLabel = connection?.name || connection?.database || 'this connection';
+		try {
+			const response = await SetConnectionWriteAccess(
+				new db.SetConnectionWriteAccessRequest({
+					connectionId: tab.connectionId,
+					enable: false,
+					confirmation: ''
+				})
+			);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not relock writes');
+			}
+			await connectionStore.refreshConnections();
+			addConsoleLog(`Writes relocked for ${connectionLabel}`, 'success');
+			return true;
+		} catch (error: any) {
+			addConsoleLog(
+				`Writes remain temporarily unlocked for ${connectionLabel}: ${error?.message || 'relock failed'}`,
+				'warn'
+			);
+			return false;
+		}
 	}
 
 	function scheduleLint() {
@@ -568,7 +663,27 @@
 	}
 
 	async function handleExplain() {
-		if (!editor || isRunning || explainLoading) return;
+		if (!editor) {
+			updateStatus('The query editor is still loading', 'info');
+			return;
+		}
+		if (isRunning) {
+			updateStatus('Wait for the running query to finish before building a plan', 'warn');
+			return;
+		}
+		if (explainLoading) {
+			updateStatus('An explain plan is already being built', 'info');
+			return;
+		}
+		if (transactionState !== 'idle') {
+			updateStatus(
+				transactionState === 'active' || transactionState === 'failed'
+					? 'Commit or roll back the active transaction before using Explain'
+					: 'Wait for the transaction action to finish before using Explain',
+				'warn'
+			);
+			return;
+		}
 		const query = getQueryToExecute();
 		if (!query.trim()) {
 			updateStatus('Enter or select one statement to explain', 'warn');
@@ -579,6 +694,9 @@
 
 	async function executeExplain(query: string, variables: database.QueryVariable[]) {
 		explainLoading = true;
+		explainPlan = null;
+		executedQuery = query;
+		resultNotice = '';
 		errorMessage = '';
 		errorCode = '';
 		errorHint = '';
@@ -671,10 +789,22 @@
 		if (isRunning) return;
 
 		const attemptID = crypto.randomUUID();
+		const executionTransactionID = transactionID;
+		if (executionTransactionID) {
+			transactionHasActivity = true;
+			transactionRelockWrites ||= temporaryWritesAreUnlocked();
+		}
+		const ddlMayAutoCommit = Boolean(
+			executionTransactionID &&
+				capabilities &&
+				!capabilities.transactionalDDL &&
+				containsDdlStatement(query)
+		);
 		isRunning = true;
 		queryCancelling = false;
 		queryAttemptID = attemptID;
 		queryCancelled = false;
+		resultNotice = '';
 		startQueryTimer();
 		errorMessage = '';
 		errorCode = '';
@@ -691,14 +821,22 @@
 		selectedRowIndexes = [];
 		executedQuery = query;
 		updateStatus(
-			transactionID
-				? 'Executing query inside transaction…'
-				: 'Executing query in auto-commit mode…',
-			'info'
+			ddlMayAutoCommit
+				? 'Executing DDL · this engine may auto-commit it, so Rollback may not undo the change'
+				: executionTransactionID
+					? 'Executing query inside transaction…'
+					: 'Executing query in auto-commit mode…',
+			ddlMayAutoCommit ? 'warn' : 'info'
 		);
 
+		if (ddlMayAutoCommit) {
+			addConsoleLog(
+				'This database reports non-transactional DDL. Verify the object after Rollback because the engine may have committed it automatically.',
+				'warn'
+			);
+		}
 		addConsoleLog(
-			`${transactionID ? '[TX] ' : ''}Executing: ${query.replace(/\n/g, ' ').substring(0, 100)}${query.length > 100 ? '...' : ''}`,
+			`${executionTransactionID ? '[TX] ' : ''}Executing: ${query.replace(/\n/g, ' ').substring(0, 100)}${query.length > 100 ? '...' : ''}`,
 			'info'
 		);
 
@@ -710,7 +848,7 @@
 					connectionId: tab.connectionId,
 					query,
 					attemptId: attemptID,
-					transactionId: transactionID || undefined,
+					transactionId: executionTransactionID || undefined,
 					allowUnfilteredMutation,
 					variables
 				})
@@ -798,11 +936,11 @@
 			if (errorCode === 'QUERY_CANCELLED') {
 				queryCancelled = true;
 				errorMessage = '';
-				if (transactionID) {
+				if (executionTransactionID) {
 					transactionState = 'failed';
 				}
 				updateStatus(
-					transactionID
+					executionTransactionID
 						? 'Query cancelled. Roll back the current transaction before continuing.'
 						: 'Query cancelled',
 					'info'
@@ -813,7 +951,7 @@
 
 			errorMessage = e?.message ?? 'Query execution failed';
 			if (
-				transactionID &&
+				executionTransactionID &&
 				errorCode !== 'UNFILTERED_MUTATION_REQUIRES_CONFIRMATION' &&
 				errorCode !== 'TRANSACTION_CONTROL_REQUIRES_MODE'
 			) {
@@ -854,6 +992,7 @@
 	async function beginTransaction() {
 		if (transactionID || transactionState !== 'idle' || isRunning) return;
 		const requestedID = crypto.randomUUID();
+		const shouldRelockWrites = temporaryWritesAreUnlocked();
 		transactionState = 'starting';
 		errorMessage = '';
 		errorCode = '';
@@ -872,15 +1011,23 @@
 			}
 			const startedID = response.data?.id || requestedID;
 			if (destroyed) {
-				void RollbackTransaction(startedID).catch(() => {});
+				void RollbackTransaction(startedID)
+					.catch(() => {})
+					.finally(() => {
+						if (shouldRelockWrites) void relockTransactionWriteAccess(true);
+					});
 				return;
 			}
 			transactionID = startedID;
 			transactionState = 'active';
+			transactionHasActivity = false;
+			transactionRelockWrites = shouldRelockWrites;
 			updateStatus('Transaction started. Changes remain pending until Commit.', 'warn');
 			addConsoleLog(`Transaction ${transactionID.slice(0, 8)} started`, 'info');
 		} catch (error: any) {
 			transactionState = 'idle';
+			transactionHasActivity = false;
+			transactionRelockWrites = false;
 			errorCode = error?.code || 'TRANSACTION_FAILED';
 			errorMessage = error?.message || 'Failed to start transaction';
 			errorHint = error?.hint || '';
@@ -891,6 +1038,9 @@
 	async function commitTransaction() {
 		if (!transactionID || transactionState !== 'active' || isRunning) return;
 		const finishingID = transactionID;
+		const hadActivity = transactionHasActivity;
+		const shouldRelockWrites = transactionRelockWrites;
+		let committed = false;
 		transactionState = 'committing';
 		updateStatus('Committing transaction…', 'info');
 
@@ -904,8 +1054,7 @@
 					hint: serviceError.hint
 				};
 			}
-			updateStatus('Transaction committed', 'success');
-			addConsoleLog(`Transaction ${finishingID.slice(0, 8)} committed`, 'success');
+			committed = true;
 			errorMessage = '';
 			errorCode = '';
 			errorHint = '';
@@ -916,13 +1065,38 @@
 			updateStatus(errorMessage, 'error');
 		} finally {
 			transactionID = '';
+			transactionHasActivity = false;
+			transactionRelockWrites = false;
+		}
+
+		let relocked: boolean | null = null;
+		try {
+			if (hadActivity) invalidateConnectionViews();
+			relocked = await relockTransactionWriteAccess(shouldRelockWrites);
+		} finally {
 			transactionState = 'idle';
+		}
+		if (committed) {
+			const relockMessage =
+				relocked === true
+					? ' · writes relocked'
+					: relocked === false
+						? ' · write guard needs attention'
+						: '';
+			updateStatus(
+				`Transaction committed${hadActivity ? ' · database views refreshed' : ''}${relockMessage}`,
+				relocked === false ? 'warn' : 'success'
+			);
+			addConsoleLog(`Transaction ${finishingID.slice(0, 8)} committed`, 'success');
 		}
 	}
 
 	async function rollbackTransaction() {
 		if (!transactionID || isRunning) return;
 		const finishingID = transactionID;
+		const hadActivity = transactionHasActivity;
+		const shouldRelockWrites = transactionRelockWrites;
+		let rolledBack = false;
 		transactionState = 'rolling_back';
 		updateStatus('Rolling back transaction…', 'info');
 
@@ -936,8 +1110,7 @@
 					hint: serviceError.hint
 				};
 			}
-			updateStatus('Transaction rolled back', 'success');
-			addConsoleLog(`Transaction ${finishingID.slice(0, 8)} rolled back`, 'warn');
+			rolledBack = true;
 			errorMessage = '';
 			errorCode = '';
 			errorHint = '';
@@ -948,7 +1121,32 @@
 			updateStatus(errorMessage, 'error');
 		} finally {
 			transactionID = '';
+			transactionHasActivity = false;
+			transactionRelockWrites = false;
+		}
+
+		let relocked: boolean | null = null;
+		try {
+			if (hadActivity) {
+				discardTransactionOutput();
+				invalidateConnectionViews();
+			}
+			relocked = await relockTransactionWriteAccess(shouldRelockWrites);
+		} finally {
 			transactionState = 'idle';
+		}
+		if (rolledBack) {
+			const relockMessage =
+				relocked === true
+					? ' · writes relocked'
+					: relocked === false
+						? ' · write guard needs attention'
+						: '';
+			updateStatus(
+				`Transaction rolled back${hadActivity ? ' · transaction results cleared' : ''}${relockMessage}`,
+				relocked === false ? 'warn' : 'success'
+			);
+			addConsoleLog(`Transaction ${finishingID.slice(0, 8)} rolled back`, 'warn');
 		}
 	}
 
@@ -1304,14 +1502,16 @@
 				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px] font-semibold disabled:pointer-events-none disabled:opacity-45"
 				onclick={() => void handleExplain()}
 				disabled={isRunning || explainLoading}
-				title="Build an estimated explain plan without executing the query"
+				title={transactionState === 'idle'
+					? 'Build an estimated explain plan without executing the query'
+					: 'Commit or roll back the current transaction before using Explain'}
 			>
 				{#if explainLoading}
 					<Loader2 class="h-3 w-3 animate-spin" />
 				{:else}
 					<ChartNoAxesCombined class="h-3 w-3" />
 				{/if}
-				Explain
+				{explainLoading ? 'Explaining…' : 'Explain'}
 			</button>
 
 			{#if isRunning}
@@ -1586,6 +1786,9 @@
 					{:else if queryCancelled}
 						<Square class="h-4 w-4 opacity-50" />
 						<span>Query cancelled after {queryElapsedSeconds}s</span>
+					{:else if resultNotice}
+						<Undo2 class="h-4 w-4 opacity-50" />
+						<span class="max-w-md text-center">{resultNotice}</span>
 					{:else}
 						<Play class="h-4 w-4 opacity-50" />
 						<span

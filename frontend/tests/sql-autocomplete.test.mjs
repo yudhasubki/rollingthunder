@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import {
 	analyzeCompletionContext,
+	containsDdlStatement,
+	getExecutableStatementAtCursor,
 	getStatementAtCursor,
 	isCursorInCommentOrString,
 	parseCteNames,
@@ -21,6 +23,34 @@ test('selects only the statement at the cursor', () => {
 
 	assert.equal(statement.text.trim(), 'SELECT * FROM public.users AS u WHERE u.');
 	assert.equal(statement.cursorOffset, statement.text.length);
+});
+
+test('query actions fall back to the previous statement after a trailing terminator', () => {
+	const sql = 'SELECT * FROM public.users;\n\n';
+	const statement = getExecutableStatementAtCursor(sql, sql.length);
+
+	assert.equal(statement.text.trim(), 'SELECT * FROM public.users');
+});
+
+test('query actions ignore a trailing comment after a completed statement', () => {
+	const sql = 'SELECT * FROM public.users;\n-- inspect this query';
+	const statement = getExecutableStatementAtCursor(sql, sql.length);
+
+	assert.equal(statement.text.trim(), 'SELECT * FROM public.users');
+});
+
+test('query actions do not invent a statement before the first delimiter', () => {
+	const sql = ';\nSELECT * FROM public.users';
+	const statement = getExecutableStatementAtCursor(sql, 0);
+
+	assert.equal(statement.text.trim(), '');
+});
+
+test('detects DDL that an engine may auto-commit without matching comments or strings', () => {
+	assert.equal(containsDdlStatement('ALTER TABLE users ADD COLUMN note TEXT'), true);
+	assert.equal(containsDdlStatement('SELECT 1; DROP TABLE users'), true);
+	assert.equal(containsDdlStatement("SELECT 'DROP TABLE users'"), false);
+	assert.equal(containsDdlStatement('-- DROP TABLE users\nSELECT 1'), false);
 });
 
 test('does not split PostgreSQL dollar-quoted bodies on internal semicolons', () => {

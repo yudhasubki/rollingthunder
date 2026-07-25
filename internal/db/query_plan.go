@@ -41,6 +41,15 @@ func (s *Service) ExplainQuery(
 			)
 		}
 	}
+	if control := database.FindTransactionControl(statements[0]); control != "" {
+		return serviceErrorWithCode[database.ExplainPlan](
+			http.StatusBadRequest,
+			errorCodeInvalidRequest,
+			"Transaction control cannot be explained",
+			fmt.Sprintf("%s changes transaction state and has no query plan.", control),
+			"Select the SELECT, INSERT, UPDATE, or DELETE statement you want to inspect.",
+		)
+	}
 
 	driver, release, err := s.driverFor(request.ConnectionID)
 	if err != nil {
