@@ -60,7 +60,7 @@ const sqlServerActivityQuery = `
 				ELSE 0
 			END
 		) AS duration_ms,
-		transaction_value.transaction_started,
+		transaction_details.transaction_started,
 		request_value.start_time AS query_started,
 		session_value.login_time AS started_at,
 		CONVERT(
@@ -74,15 +74,18 @@ const sqlServerActivityQuery = `
 	FROM sys.dm_exec_sessions session_value
 	LEFT JOIN sys.dm_exec_requests request_value
 		ON request_value.session_id = session_value.session_id
-	OUTER APPLY sys.dm_exec_sql_text(request_value.sql_handle) statement_value
-	OUTER APPLY (
-		SELECT MIN(active_transaction.transaction_begin_time) AS transaction_started
+	LEFT JOIN (
+		SELECT
+			session_transaction.session_id,
+			MIN(active_transaction.transaction_begin_time) AS transaction_started
 		FROM sys.dm_tran_session_transactions session_transaction
 		JOIN sys.dm_tran_active_transactions active_transaction
 			ON active_transaction.transaction_id =
 				session_transaction.transaction_id
-		WHERE session_transaction.session_id = session_value.session_id
-	) transaction_value
+		GROUP BY session_transaction.session_id
+	) AS transaction_details
+		ON transaction_details.session_id = session_value.session_id
+	OUTER APPLY sys.dm_exec_sql_text(request_value.sql_handle) statement_value
 	WHERE session_value.is_user_process = 1
 	ORDER BY
 		CASE WHEN request_value.session_id IS NULL THEN 1 ELSE 0 END,
