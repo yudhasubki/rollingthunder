@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,21 @@ func TestOracleSessionActionRejectsUntrustedIdentifiers(t *testing.T) {
 		if _, err := oracleSessionActionStatement(value, true); err == nil {
 			t.Fatalf("session ID %q was accepted", value)
 		}
+	}
+}
+
+func TestOracleActivityHandlesNullTextColumns(t *testing.T) {
+	if got := oracleActivityText(sql.NullString{}); got != "" {
+		t.Fatalf("NULL activity text = %q, want empty", got)
+	}
+	if got := oracleBlockedBy(sql.NullString{}); len(got) != 0 {
+		t.Fatalf("NULL blocker = %#v, want empty", got)
+	}
+	got := oracleBlockedBy(sql.NullString{
+		String: " 42,701 ",
+		Valid:  true,
+	})
+	if len(got) != 1 || got[0] != "42,701" {
+		t.Fatalf("blocker = %#v, want [42,701]", got)
 	}
 }

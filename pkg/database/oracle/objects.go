@@ -517,6 +517,19 @@ func (o *Oracle) objectDefinition(
 	ctx context.Context,
 	reference database.ObjectReference,
 ) (string, error) {
+	var catalogErr error
+	if reference.Kind == database.ObjectKindView ||
+		reference.Kind == database.ObjectKindMaterializedView {
+		// Oracle Free images can raise ORA-00600 while loading the XDB
+		// library behind DBMS_METADATA. The catalog contains the view query
+		// directly, so prefer that safe path and retain DBMS_METADATA only as
+		// a fallback for unusual catalog visibility failures.
+		var definition string
+		definition, catalogErr = o.catalogViewDefinition(ctx, reference)
+		if catalogErr == nil {
+			return definition, nil
+		}
+	}
 	objectType, err := metadataType(reference.Kind)
 	if err != nil {
 		return "", err
@@ -537,22 +550,17 @@ func (o *Oracle) objectDefinition(
 		}
 		return result, nil
 	}
-	if reference.Kind == database.ObjectKindView ||
-		reference.Kind == database.ObjectKindMaterializedView {
-		fallback, fallbackErr := o.catalogViewDefinition(ctx, reference)
-		if fallbackErr == nil {
-			return fallback, nil
-		}
+	if catalogErr != nil {
 		if metadataErr != nil {
 			return "", fmt.Errorf(
-				"read Oracle %s definition with DBMS_METADATA: %w; "+
-					"catalog fallback also failed: %v",
+				"read Oracle %s definition from the catalog: %v; "+
+					"DBMS_METADATA fallback also failed: %w",
 				reference.Kind,
+				catalogErr,
 				metadataErr,
-				fallbackErr,
 			)
 		}
-		return "", fallbackErr
+		return "", catalogErr
 	}
 	if metadataErr != nil {
 		return "", metadataErr

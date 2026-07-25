@@ -78,19 +78,26 @@ const oracleActivityQuery = `
 
 type oracleActivityRow struct {
 	ID           string
-	User         string
-	Database     string
-	Client       string
-	Application  string
-	Command      string
-	State        string
-	Query        string
-	WaitEvent    string
-	BlockedBy    string
+	User         sql.NullString
+	Database     sql.NullString
+	Client       sql.NullString
+	Application  sql.NullString
+	Command      sql.NullString
+	State        sql.NullString
+	Query        sql.NullString
+	WaitEvent    sql.NullString
+	BlockedBy    sql.NullString
 	DurationMS   int64
 	QueryStarted sql.NullTime
 	StartedAt    sql.NullTime
 	IsCurrent    int
+}
+
+func oracleActivityText(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 func oracleActivityTime(value sql.NullTime) *time.Time {
@@ -101,12 +108,12 @@ func oracleActivityTime(value sql.NullTime) *time.Time {
 	return &result
 }
 
-func oracleBlockedBy(value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
+func oracleBlockedBy(value sql.NullString) []string {
+	text := strings.TrimSpace(oracleActivityText(value))
+	if text == "" {
 		return []string{}
 	}
-	return []string{value}
+	return []string{text}
 }
 
 func (o *Oracle) GetDatabaseActivity(
@@ -148,21 +155,22 @@ func (o *Oracle) GetDatabaseActivity(
 			return database.DatabaseActivity{}, err
 		}
 		blockedBy := oracleBlockedBy(row.BlockedBy)
+		waitEvent := oracleActivityText(row.WaitEvent)
 		isCurrent := row.IsCurrent != 0
 		if isCurrent && currentID == "" {
 			currentID = row.ID
 		}
 		sessions = append(sessions, database.DatabaseSession{
 			ID:           row.ID,
-			User:         row.User,
-			Database:     row.Database,
-			Client:       row.Client,
-			Application:  row.Application,
-			Command:      row.Command,
-			State:        row.State,
-			Query:        row.Query,
-			WaitEvent:    row.WaitEvent,
-			Waiting:      row.WaitEvent != "" || len(blockedBy) > 0,
+			User:         oracleActivityText(row.User),
+			Database:     oracleActivityText(row.Database),
+			Client:       oracleActivityText(row.Client),
+			Application:  oracleActivityText(row.Application),
+			Command:      oracleActivityText(row.Command),
+			State:        oracleActivityText(row.State),
+			Query:        oracleActivityText(row.Query),
+			WaitEvent:    waitEvent,
+			Waiting:      waitEvent != "" || len(blockedBy) > 0,
 			BlockedBy:    blockedBy,
 			DurationMS:   row.DurationMS,
 			QueryStarted: oracleActivityTime(row.QueryStarted),
