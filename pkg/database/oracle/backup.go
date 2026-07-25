@@ -495,8 +495,26 @@ func (o *Oracle) dataPumpFailure(
 		oracleDataPumpLogLimit,
 	)
 	detail := strings.TrimSpace(log.String())
+	hint := oracleDataPumpFailureHint(cause, detail)
 	if detail == "" {
+		if hint != "" {
+			return fmt.Errorf(
+				"Oracle Data Pump %s failed: %w; %s",
+				operation,
+				cause,
+				hint,
+			)
+		}
 		return fmt.Errorf("Oracle Data Pump %s failed: %w", operation, cause)
+	}
+	if hint != "" {
+		return fmt.Errorf(
+			"Oracle Data Pump %s failed: %w; server log excerpt: %s; %s",
+			operation,
+			cause,
+			detail,
+			hint,
+		)
 	}
 	return fmt.Errorf(
 		"Oracle Data Pump %s failed: %w; server log excerpt: %s",
@@ -504,6 +522,21 @@ func (o *Oracle) dataPumpFailure(
 		cause,
 		detail,
 	)
+}
+
+func oracleDataPumpFailureHint(cause error, detail string) string {
+	message := strings.ToUpper(detail)
+	if cause != nil {
+		message += " " + strings.ToUpper(cause.Error())
+	}
+	if strings.Contains(message, "UNABLE TO LOAD XDB LIBRARY") {
+		return "the Oracle installation cannot load XDB; Oracle Database Free must use the full, non-lite image for Data Pump"
+	}
+	if strings.Contains(message, "ORA-39029") ||
+		strings.Contains(message, "ORA-31671") {
+		return "the server-side Data Pump worker exited unexpectedly; verify XDB is installed, provide sufficient container shared memory, and inspect the Oracle worker trace"
+	}
+	return ""
 }
 
 func (o *Oracle) BackupDatabaseToWriter(

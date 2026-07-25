@@ -127,7 +127,18 @@ go test ./integration -run TestOracleDriverWorkflow -count=1 -v
 The package-level shared conformance suite uses the equivalent connection variables. The privileged
 and Data Pump flags below create and remove a disposable role and application schema, then
 round-trip that schema through `DATA_PUMP_DIR`; enable them only against a disposable Oracle
-instance:
+instance. Use the full Oracle Database Free image, not `-lite`, because the lite image omits XDB
+components used by Data Pump. Give the container at least `1g` of shared memory:
+
+```bash
+docker run --rm --name rollingthunder-oracle \
+  --shm-size=1g \
+  -p 1521:1521 \
+  -e ORACLE_PWD=RollingThunder_2026 \
+  container-registry.oracle.com/database/free:23.26.0.0
+```
+
+Then run:
 
 ```bash
 ROLLINGTHUNDER_ORACLE_TEST_HOST=127.0.0.1 \

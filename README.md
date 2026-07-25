@@ -218,7 +218,8 @@ Other important limitations include:
 - Oracle Data Pump currently backs up one non-Oracle-maintained application schema with structure
   and data together. The connected account needs Data Pump privileges plus `READ` and `WRITE` on a
   visible Oracle DIRECTORY object; Rolling Thunder removes its temporary server files after each
-  transfer.
+  transfer. Oracle Database Free containers must use the full image because the `-lite` variant
+  omits XDB components required by Data Pump.
 - Oracle TNS parsing deliberately does not follow `IFILE` includes. Choose the reviewed file that
   directly contains the alias. TNS and Wallet profiles cannot also use Rolling Thunder's SSH
   tunnel; use a direct endpoint profile when SSH forwarding is required.

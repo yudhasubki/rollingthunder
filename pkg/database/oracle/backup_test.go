@@ -59,3 +59,33 @@ func TestOracleDataPumpBlocksUseBoundInputsAndCleanup(t *testing.T) {
 	}
 	var _ database.StreamingBackupDriver = (*Oracle)(nil)
 }
+
+func TestOracleDataPumpFailureHintExplainsBrokenServerWorkers(t *testing.T) {
+	tests := []struct {
+		name   string
+		cause  error
+		detail string
+		want   string
+	}{
+		{
+			name:   "missing XDB",
+			cause:  nil,
+			detail: "ORA-00600: unable to load XDB library",
+			want:   "full, non-lite image",
+		},
+		{
+			name:   "worker crash",
+			cause:  nil,
+			detail: "ORA-39029 worker terminated\nORA-31671 unhandled exception",
+			want:   "shared memory",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hint := oracleDataPumpFailureHint(test.cause, test.detail)
+			if !strings.Contains(hint, test.want) {
+				t.Fatalf("failure hint = %q, want %q", hint, test.want)
+			}
+		})
+	}
+}
