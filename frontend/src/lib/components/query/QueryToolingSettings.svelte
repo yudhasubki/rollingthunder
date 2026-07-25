@@ -21,7 +21,7 @@
 	<div class="fixed inset-0 z-[115] flex items-center justify-center p-6">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/35"
+			class="bg-overlay/35 absolute inset-0 cursor-default"
 			onclick={onClose}
 			aria-label="Close SQL tooling settings"
 		></button>

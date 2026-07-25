@@ -658,7 +658,7 @@
 									</button>
 									<button
 										type="button"
-										class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold text-red-500 hover:bg-red-500/10"
+										class="rt-toolbar-button text-danger hover:bg-danger-soft h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold"
 										onclick={() => openTableChange('drop-column')}
 										disabled={columns.length <= 1}
 									>
@@ -695,7 +695,7 @@
 						</div>
 						<div class="flex min-h-12 items-center gap-2.5 px-3">
 							<span
-								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-500/10 text-amber-500"
+								class="bg-muted text-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
 							>
 								<KeyRound class="h-3.5 w-3.5" />
 							</span>
@@ -706,7 +706,7 @@
 						</div>
 						<div class="flex min-h-12 items-center gap-2.5 px-3">
 							<span
-								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-sky-500/10 text-sky-500"
+								class="bg-info-soft text-info flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
 							>
 								<Link2 class="h-3.5 w-3.5" />
 							</span>
@@ -762,9 +762,9 @@
 															class="bg-muted flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
 														>
 															{#if col.is_primary}
-																<KeyRound class="h-3 w-3 text-amber-500" />
+																<KeyRound class="text-foreground h-3 w-3" />
 															{:else if relation}
-																<Link2 class="h-3 w-3 text-sky-500" />
+																<Link2 class="text-info h-3 w-3" />
 															{:else}
 																<span class="bg-muted-foreground/40 h-1.5 w-1.5 rounded-full"
 																></span>
@@ -782,7 +782,7 @@
 													>
 														<span
 															class="inline-flex max-w-full shrink-0 rounded px-1.5 py-1 font-mono text-[8px] {col.is_enum
-																? 'bg-violet-500/10 font-semibold text-violet-600 dark:text-violet-400'
+																? 'bg-muted text-muted-foreground dark:text-muted-foreground font-semibold'
 																: 'bg-muted text-muted-foreground'}"
 														>
 															{col.is_enum
@@ -807,7 +807,7 @@
 													<div class="flex min-w-0 items-center gap-1.5 overflow-hidden">
 														{#if col.is_primary}
 															<span
-																class="inline-flex h-5 shrink-0 items-center gap-1 rounded bg-amber-500/10 px-1.5 text-[7px] font-semibold text-amber-600 dark:text-amber-400"
+																class="bg-muted text-foreground inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[7px] font-semibold"
 															>
 																<KeyRound class="h-2.5 w-2.5" />
 																PK
@@ -815,7 +815,7 @@
 														{/if}
 														{#if relation}
 															<span
-																class="inline-flex h-5 shrink-0 items-center gap-1 rounded bg-sky-500/10 px-1.5 text-[7px] font-semibold text-sky-600 dark:text-sky-400"
+																class="bg-info-soft text-info inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[7px] font-semibold"
 															>
 																<Link2 class="h-2.5 w-2.5" />
 																FK
@@ -835,7 +835,7 @@
 														{/if}
 														{#if col.is_generated}
 															<span
-																class="inline-flex h-5 shrink-0 items-center rounded bg-violet-500/10 px-1.5 text-[7px] font-medium text-violet-600 dark:text-violet-400"
+																class="bg-muted text-muted-foreground dark:text-muted-foreground inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[7px] font-medium"
 																title={col.generation || 'Generated column'}>GENERATED</span
 															>
 														{/if}
@@ -857,7 +857,7 @@
 														{#if relation}
 															<button
 																type="button"
-																class="inline-flex min-w-0 cursor-pointer items-center gap-1 text-sky-600 transition-colors hover:text-sky-500 hover:underline dark:text-sky-400"
+																class="text-info hover:text-info inline-flex min-w-0 cursor-pointer items-center gap-1 transition-colors hover:underline"
 																title={`Open ${relation.schema}.${relation.table}`}
 																aria-label={`Open referenced table ${relation.schema}.${relation.table}`}
 																onclick={() => openForeignReference(col)}
@@ -911,7 +911,7 @@
 									<div class="flex min-h-14 items-start gap-2.5 border-b px-3 py-3 last:border-b-0">
 										<KeyRound
 											class="mt-0.5 h-3.5 w-3.5 shrink-0 {idx.is_primary
-												? 'text-amber-500'
+												? 'text-foreground'
 												: 'text-muted-foreground'}"
 										/>
 										<div class="min-w-0 flex-1">
@@ -930,7 +930,7 @@
 										{#if capabilities?.manageIndexes && !idx.is_primary}
 											<button
 												type="button"
-												class="rt-toolbar-button h-7 w-7 shrink-0 cursor-pointer text-red-500 hover:bg-red-500/10"
+												class="rt-toolbar-button text-danger hover:bg-danger-soft h-7 w-7 shrink-0 cursor-pointer"
 												onclick={() => openDropIndex(idx)}
 												title={`Drop index ${idx.name}`}
 												aria-label={`Drop index ${idx.name}`}

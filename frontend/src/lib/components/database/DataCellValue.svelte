@@ -24,7 +24,7 @@
 	>
 		<span
 			class="h-1.5 w-1.5 rounded-full {presentation.booleanValue
-				? 'bg-emerald-500'
+				? 'bg-success'
 				: 'bg-muted-foreground/55'}"
 		></span>
 		{presentation.text}

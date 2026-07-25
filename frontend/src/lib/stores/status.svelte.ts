@@ -1,6 +1,7 @@
 // src/lib/stores/status.store.svelte.ts
 
 import { database } from '$lib/wailsjs/go/models';
+import { UI_RUNTIME } from '$lib/config/application';
 
 interface LogEntry {
 	timestamp: Date;
@@ -66,7 +67,7 @@ export function addConsoleLog(
 ) {
 	state.consoleLogs = [
 		{ timestamp: new Date(), message, level },
-		...state.consoleLogs.slice(0, 99) // Keep last 100 logs
+		...state.consoleLogs.slice(0, UI_RUNTIME.consoleHistoryLimit - 1)
 	];
 	// Auto-show console on error
 	if (level === 'error') {

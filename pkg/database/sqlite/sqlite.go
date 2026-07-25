@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 
 	"github.com/google/uuid"
@@ -20,7 +21,12 @@ import (
 	modernsqlite "modernc.org/sqlite"
 )
 
-const defaultBusyTimeout = 5 * time.Second
+const (
+	defaultBusyTimeout        = 5 * time.Second
+	defaultMaxOpenConnections = 1
+	defaultMaxIdleConnections = 1
+	defaultConnectionLifetime = 0
+)
 
 type Config struct {
 	Db string
@@ -49,7 +55,7 @@ func sqliteDSN(configuredPath string) (string, string, error) {
 		return "", "", fmt.Errorf("SQLite database file is required")
 	}
 	if configuredPath == ":memory:" {
-		name := "rollingthunder-" + uuid.NewString()
+		name := application.Identifier + "-" + uuid.NewString()
 		return "file:" + name + "?mode=memory&cache=shared", ":memory:", nil
 	}
 	if strings.HasPrefix(configuredPath, "file:") {
@@ -91,9 +97,9 @@ func (s *SQLite) Connect(ctx context.Context) error {
 	}
 	// SQLite connection-local PRAGMAs and transaction semantics are safest
 	// when a Rolling Thunder connection owns one physical SQLite connection.
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-	sqlDB.SetConnMaxLifetime(0)
+	sqlDB.SetMaxOpenConns(defaultMaxOpenConnections)
+	sqlDB.SetMaxIdleConns(defaultMaxIdleConnections)
+	sqlDB.SetConnMaxLifetime(defaultConnectionLifetime)
 	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
 		return err
@@ -976,7 +982,7 @@ func writeSQLiteInsertStream(
 	}
 	sink := newSQLiteInsertSink(writer, table, columns, options)
 	if err := sink.write(
-		"-- Rolling Thunder SQLite INSERT export\n" +
+		"-- " + application.Name + " SQLite INSERT export\n" +
 			"-- Generated columns are omitted.\n\n",
 	); err != nil {
 		return database.ExportStats{}, err

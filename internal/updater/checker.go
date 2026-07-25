@@ -13,11 +13,13 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"rollingthunder/pkg/application"
 )
 
 const (
-	latestReleaseEndpoint  = "https://api.github.com/repos/yudhasubki/rollingthunder/releases/latest"
-	releasePageBaseURL     = "https://github.com/yudhasubki/rollingthunder/releases/tag/"
+	latestReleaseEndpoint  = "https://api.github.com/repos/" + application.GitHubRepository + "/releases/latest"
+	releasePageBaseURL     = "https://github.com/" + application.GitHubRepository + "/releases/tag/"
 	githubAPIVersion       = "2026-03-10"
 	maxReleaseResponseSize = 1 << 20
 	maxReleaseNotesLength  = 4_000
@@ -122,7 +124,7 @@ func (c *Checker) Check(ctx context.Context) (CheckResult, error) {
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
-	request.Header.Set("User-Agent", "RollingThunder/"+c.currentVersion)
+	request.Header.Set("User-Agent", application.UserAgent(c.currentVersion))
 
 	httpResponse, err := c.client.Do(request)
 	if err != nil {
@@ -170,7 +172,7 @@ func (c *Checker) Check(ctx context.Context) (CheckResult, error) {
 	result.LatestVersion = latestVersion
 	result.Name = strings.TrimSpace(release.Name)
 	if result.Name == "" {
-		result.Name = "Rolling Thunder " + latestVersion
+		result.Name = application.Name + " " + latestVersion
 	}
 	result.ReleaseNotes = truncateUTF8(
 		strings.TrimSpace(release.Body),

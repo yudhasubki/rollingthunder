@@ -23,6 +23,7 @@
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import { CheckConnection, ReconnectConnection } from '$lib/wailsjs/go/db/Service';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import { APPLICATION, UI_RUNTIME, connectionEnvironmentOption } from '$lib/config/application';
 
 	let theme: 'light' | 'dark' | 'system' = $state('system');
 	let healthBusy = $state(false);
@@ -56,7 +57,7 @@
 		void connectionStore.refreshConnections();
 		const healthRefreshTimer = globalThis.setInterval(() => {
 			void connectionStore.refreshConnections();
-		}, 15_000);
+		}, UI_RUNTIME.connectionHealthRefreshMs);
 		return () => globalThis.clearInterval(healthRefreshTimer);
 	});
 
@@ -127,13 +128,13 @@
 	function healthColor(state?: string): string {
 		switch (state) {
 			case 'healthy':
-				return 'bg-emerald-500';
+				return 'bg-success';
 			case 'degraded':
-				return 'bg-red-500';
+				return 'bg-danger';
 			case 'reconnecting':
-				return 'bg-amber-500';
+				return 'bg-warning';
 			default:
-				return 'bg-slate-400';
+				return 'bg-muted-foreground';
 		}
 	}
 
@@ -194,7 +195,7 @@
 		<div class="flex shrink-0 items-center gap-2.5 pr-3">
 			<img src="/logo.png" alt="" class="rt-brand-logo h-8 w-8 rounded-[9px]" />
 			<span class="hidden leading-none sm:block">
-				<span class="block text-[13px] font-bold tracking-[-0.02em]">Rolling Thunder</span>
+				<span class="block text-[13px] font-bold tracking-[-0.02em]">{APPLICATION.name}</span>
 				<span
 					class="text-muted-foreground mt-1 block text-[9px] font-semibold tracking-[0.14em] uppercase"
 					>Database studio</span
@@ -212,6 +213,9 @@
 					aria-expanded={$connOpen}
 				>
 					{#if connectionStore.activeConnection}
+						{@const activeEnvironment = connectionEnvironmentOption(
+							connectionStore.activeConnection.environment
+						)}
 						<span
 							class="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-[var(--surface-sunken)]"
 						>
@@ -223,8 +227,17 @@
 							></span>
 						</span>
 						<span class="min-w-0 flex-1">
-							<span class="block max-w-40 truncate text-[11px] font-bold">
-								{connectionStore.activeConnection.name || connectionStore.activeConnection.database}
+							<span class="flex max-w-44 items-center gap-1.5">
+								<span class="min-w-0 truncate text-[11px] font-bold">
+									{connectionStore.activeConnection.name ||
+										connectionStore.activeConnection.database}
+								</span>
+								<span
+									class="shrink-0 rounded border px-1 py-0.5 text-[6px] font-bold tracking-wide uppercase {activeEnvironment.toneClass}"
+									title={activeEnvironment.description}
+								>
+									{activeEnvironment.label}
+								</span>
 							</span>
 							<span class="text-muted-foreground block max-w-44 truncate text-[9px]">
 								{connectionStore.activeConnection.driver} ·
@@ -300,7 +313,7 @@
 											<span
 												class="text-muted-foreground flex shrink-0 items-center gap-1 text-[9px] font-semibold"
 											>
-												<Check class="h-3 w-3 text-emerald-500" />
+												<Check class="text-success h-3 w-3" />
 												Active
 											</span>
 										{/if}

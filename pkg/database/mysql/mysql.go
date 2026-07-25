@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -42,6 +43,13 @@ type MySQL struct {
 	conn   *sqlx.DB
 	engine string
 }
+
+const (
+	defaultConnectionTimeout  = 15 * time.Second
+	defaultConnectionLifetime = 5 * time.Minute
+	defaultMaxIdleConnections = 2
+	defaultMaxOpenConnections = 8
+)
 
 func NewMySQL(ctx context.Context, cfg Config) *MySQL {
 	return &MySQL{
@@ -74,9 +82,9 @@ func (m *MySQL) Connect(ctx context.Context) error {
 		return fmt.Errorf("configure MySQL connection: %w", err)
 	}
 	sqlDB := sql.OpenDB(connector)
-	sqlDB.SetConnMaxLifetime(5 * time.Minute)
-	sqlDB.SetMaxIdleConns(2)
-	sqlDB.SetMaxOpenConns(8)
+	sqlDB.SetConnMaxLifetime(defaultConnectionLifetime)
+	sqlDB.SetMaxIdleConns(defaultMaxIdleConnections)
+	sqlDB.SetMaxOpenConns(defaultMaxOpenConnections)
 	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
 		return err
@@ -96,11 +104,11 @@ func (m *MySQL) Connect(ctx context.Context) error {
 func buildMySQLDriverConfig(cfg Config) (*mysqldriver.Config, error) {
 	host := strings.TrimSpace(cfg.Host)
 	if host == "" {
-		host = "127.0.0.1"
+		host = database.DefaultHost
 	}
 	port := strings.TrimSpace(cfg.Port)
 	if port == "" {
-		port = "3306"
+		port = database.DefaultMySQLPort
 	}
 
 	driverConfig := mysqldriver.NewConfig()
@@ -110,9 +118,9 @@ func buildMySQLDriverConfig(cfg Config) (*mysqldriver.Config, error) {
 	driverConfig.Addr = net.JoinHostPort(host, port)
 	driverConfig.DBName = strings.TrimSpace(cfg.Db)
 	driverConfig.ParseTime = true
-	driverConfig.ConnectionAttributes = "program_name:Rolling Thunder"
+	driverConfig.ConnectionAttributes = "program_name:" + application.DatabaseClientName
 	driverConfig.Loc = time.UTC
-	driverConfig.Timeout = 15 * time.Second
+	driverConfig.Timeout = defaultConnectionTimeout
 	driverConfig.ReadTimeout = 0
 	driverConfig.WriteTimeout = 0
 	driverConfig.MultiStatements = false
@@ -981,7 +989,7 @@ func writeMySQLInsertStream(
 	}
 	sink := newMySQLInsertSink(writer, table, columns, options)
 	if err := sink.write(
-		"-- Rolling Thunder MySQL / MariaDB INSERT export\n" +
+		"-- " + application.Name + " MySQL / MariaDB INSERT export\n" +
 			"-- Generated and auto-increment columns are omitted.\n\n",
 	); err != nil {
 		return database.ExportStats{}, err

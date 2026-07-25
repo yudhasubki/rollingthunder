@@ -152,7 +152,7 @@
 	<div class="fixed inset-0 z-[135] flex items-center justify-center p-5">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={onClose}
 			aria-label="Close privacy and diagnostics"
 		></button>
@@ -291,7 +291,7 @@
 
 					{#if message}
 						<div
-							class="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[8px] text-emerald-700 dark:text-emerald-300"
+							class="border-success-border bg-success-soft text-success flex items-center gap-2 rounded-lg border px-3 py-2 text-[8px]"
 							role="status"
 						>
 							<Check class="h-3.5 w-3.5" />
@@ -300,7 +300,7 @@
 					{/if}
 					{#if error}
 						<div
-							class="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[8px] text-red-600 dark:text-red-400"
+							class="border-danger-border bg-danger-soft text-danger rounded-lg border px-3 py-2 text-[8px]"
 							role="alert"
 						>
 							{error}

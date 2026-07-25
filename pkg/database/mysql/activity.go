@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 )
 
@@ -31,7 +32,7 @@ func mysqlActivityQuery(withAttributes bool) string {
 			FROM performance_schema.session_connect_attrs attribute
 			WHERE attribute.PROCESSLIST_ID = process.ID
 			  AND attribute.ATTR_NAME = 'program_name'
-			  AND attribute.ATTR_VALUE = 'Rolling Thunder'
+			  AND attribute.ATTR_VALUE = ?
 		))`
 	}
 	return fmt.Sprintf(`
@@ -63,6 +64,7 @@ func (m *MySQL) GetDatabaseActivity(
 		ctx,
 		&rows,
 		mysqlActivityQuery(true),
+		application.DatabaseClientName,
 	); err != nil {
 		if fallbackErr := m.conn.SelectContext(
 			ctx,
@@ -136,8 +138,9 @@ func (m *MySQL) protectedActivitySession(
 		 FROM performance_schema.session_connect_attrs
 		 WHERE PROCESSLIST_ID = ?
 		   AND ATTR_NAME = 'program_name'
-		   AND ATTR_VALUE = 'Rolling Thunder'`,
+		   AND ATTR_VALUE = ?`,
 		id,
+		application.DatabaseClientName,
 	)
 	if err != nil {
 		return false, fmt.Errorf(

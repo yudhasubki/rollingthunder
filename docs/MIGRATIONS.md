@@ -68,6 +68,14 @@ metadata changes. If a development build ever wrote SSH secrets into a legacy `c
 Rolling Thunder moves every plaintext secret to the OS store before atomically rewriting the file.
 If any credential write fails, the source file remains available for a safe retry.
 
+## Version 3 to version 4 saved profiles
+
+Version 4 replaces arbitrary profile colors with an operational environment classification:
+`unclassified`, `development`, `staging`, or `production`. Legacy colors are discarded and unknown
+environment values fail safely to `unclassified`; they are never inferred from an old decorative
+color. Existing credentials remain in the operating-system credential store and are not rewritten
+into profile JSON.
+
 ## Backup before upgrade
 
 Close Rolling Thunder so pending query-tab writes have completed, then:

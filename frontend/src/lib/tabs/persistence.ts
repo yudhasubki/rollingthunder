@@ -1,6 +1,7 @@
 import type { Tab } from '$lib/models/Tab';
+import { APPLICATION_STORAGE } from '../config/application.ts';
 
-export const WORKSPACE_STORAGE_KEY = 'rollingthunder.workspace';
+export const WORKSPACE_STORAGE_KEY = APPLICATION_STORAGE.workspace;
 export const WORKSPACE_STORAGE_VERSION = 1;
 
 export interface PersistedQueryTab {

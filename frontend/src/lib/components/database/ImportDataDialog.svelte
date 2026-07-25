@@ -375,7 +375,7 @@
 	<div class="fixed inset-0 z-[130] flex items-center justify-center p-5">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={() => !busy && onClose()}
 			aria-label="Close import data"
 		></button>
@@ -443,7 +443,7 @@
 			{#if success}
 				<div class="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
 					<span
-						class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500"
+						class="bg-success-soft text-success mb-4 flex h-14 w-14 items-center justify-center rounded-full"
 					>
 						<Check class="h-7 w-7" />
 					</span>
@@ -454,7 +454,7 @@
 					</p>
 					{#if success.warnings?.length}
 						<div
-							class="mt-4 max-w-lg rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-left text-[9px] text-amber-700 dark:text-amber-300"
+							class="border-warning-border bg-warning-soft text-warning mt-4 max-w-lg rounded-lg border px-4 py-3 text-left text-[9px]"
 						>
 							{#each success.warnings as warning}
 								<p>{warning}</p>
@@ -791,7 +791,7 @@
 								</div>
 							</section>
 							<div
-								class="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-[9px] text-amber-700 dark:text-amber-300"
+								class="border-warning-border bg-warning-soft text-warning flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[9px]"
 							>
 								<TriangleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 								<span>
@@ -804,7 +804,7 @@
 
 					{#if error}
 						<div
-							class="mt-4 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2.5 text-[9px] text-red-600 dark:text-red-400"
+							class="border-danger-border bg-danger-soft text-danger mt-4 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[9px]"
 							role="alert"
 						>
 							<TriangleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />

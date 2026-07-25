@@ -860,8 +860,8 @@
 							>
 								<span
 									class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full {item.status === 'success'
-										? 'bg-emerald-500'
-										: 'bg-red-500'}"
+										? 'bg-success'
+										: 'bg-danger'}"
 								></span>
 								<div class="min-w-0 flex-1">
 									<div class="truncate font-mono text-[10px]">
@@ -877,7 +877,7 @@
 								</div>
 								<button
 									type="button"
-									class="text-muted-foreground invisible shrink-0 rounded p-0.5 group-hover:visible hover:bg-red-100 hover:text-red-600"
+									class="text-muted-foreground hover:bg-danger-soft hover:text-danger invisible shrink-0 rounded p-0.5 group-hover:visible"
 									onclick={(e) => {
 										e.stopPropagation();
 										deleteQueryHistoryItem(item.id);
@@ -1071,7 +1071,7 @@
 <!-- Confirmation Dialog -->
 {#if $dialogOpen}
 	<div use:melt={$portalled}>
-		<div use:melt={$overlay} class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"></div>
+		<div use:melt={$overlay} class="bg-overlay/50 fixed inset-0 z-50 backdrop-blur-sm"></div>
 		<div
 			use:melt={$content}
 			class="bg-popover text-popover-foreground fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-lg"
@@ -1110,13 +1110,13 @@
 				</button>
 				<button
 					type="button"
-					class="inline-flex items-center justify-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+					class="bg-danger text-on-solid hover:bg-danger/90 inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 					onclick={executeConfirmedAction}
 					disabled={actionLoading}
 				>
 					{#if actionLoading}
 						<div
-							class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+							class="border-on-solid h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
 						></div>
 						Processing...
 					{:else}

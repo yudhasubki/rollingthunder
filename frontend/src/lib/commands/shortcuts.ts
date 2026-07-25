@@ -1,3 +1,5 @@
+import { APPLICATION_STORAGE } from '../config/application.ts';
+
 export type CommandID =
 	| 'commandPalette'
 	| 'newQuery'
@@ -13,7 +15,7 @@ export type CommandID =
 
 export type ShortcutMap = Record<CommandID, string>;
 
-export const SHORTCUT_STORAGE_KEY = 'rollingthunder.shortcuts';
+export const SHORTCUT_STORAGE_KEY = APPLICATION_STORAGE.shortcuts;
 
 export interface CommandDefinition {
 	id: CommandID;

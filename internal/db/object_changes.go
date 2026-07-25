@@ -5,13 +5,10 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
-	"time"
 
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 )
-
-const objectChangeTimeout = 60 * time.Second
 
 func (s *Service) structuralChangeContext() (context.Context, context.CancelFunc) {
 	parent := s.ctx

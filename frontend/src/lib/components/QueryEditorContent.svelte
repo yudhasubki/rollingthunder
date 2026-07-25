@@ -70,6 +70,7 @@
 	import { getStatementAtCursor, parseTableReferences } from '$lib/sql/context';
 	import type { SavedQuery } from '$lib/query/snippets';
 	import { focusTrap } from '$lib/actions/focusTrap';
+	import { APPLICATION, APPLICATION_EVENTS, TIME, UI_RUNTIME } from '$lib/config/application';
 
 	interface Props {
 		tab: Tab;
@@ -165,7 +166,7 @@
 
 		const editorTheme = document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs';
 		const modelUri = monaco.Uri.parse(
-			`inmemory://rollingthunder/query/${encodeURIComponent(tab.connectionId)}/${tab.id}.sql`
+			`inmemory://${APPLICATION.id}/query/${encodeURIComponent(tab.connectionId)}/${tab.id}.sql`
 		);
 		monaco.editor.getModel(modelUri)?.dispose();
 		editorModel = monaco.editor.createModel(initialSql, 'sql', modelUri);
@@ -273,7 +274,7 @@
 					break;
 			}
 		};
-		window.addEventListener('rollingthunder-query-command', queryCommandHandler);
+		window.addEventListener(APPLICATION_EVENTS.queryCommand, queryCommandHandler);
 		scheduleLint();
 	});
 
@@ -283,7 +284,7 @@
 			window.removeEventListener('connection-switched', connectionSwitchHandler);
 		}
 		if (queryCommandHandler) {
-			window.removeEventListener('rollingthunder-query-command', queryCommandHandler);
+			window.removeEventListener(APPLICATION_EVENTS.queryCommand, queryCommandHandler);
 		}
 		themeObserver?.disconnect();
 		focusRegistration?.dispose();
@@ -328,7 +329,7 @@
 			const issues = lintSql(editorModel.getValue(), queryToolingStore.lint);
 			monaco.editor.setModelMarkers(
 				editorModel,
-				`rollingthunder-sql-lint-${tab.id}`,
+				`${APPLICATION.id}-sql-lint-${tab.id}`,
 				issues.map((issue) => {
 					const start = editorModel!.getPositionAt(issue.start);
 					const end = editorModel!.getPositionAt(Math.max(issue.end, issue.start + 1));
@@ -339,7 +340,7 @@
 						endColumn: end.column,
 						message: issue.message,
 						code: issue.rule,
-						source: 'Rolling Thunder SQL lint',
+						source: `${APPLICATION.name} SQL lint`,
 						severity:
 							issue.severity === 'error'
 								? monaco!.MarkerSeverity.Error
@@ -347,7 +348,7 @@
 					};
 				})
 			);
-		}, 180);
+		}, UI_RUNTIME.sqlLintDebounceMs);
 	}
 
 	function formatEditor() {
@@ -357,7 +358,7 @@
 		const source = editorModel.getValueInRange(range);
 		if (!source.trim()) return;
 		const formatted = formatSql(source, autocompleteMetadata.dialect, queryToolingStore.format);
-		editor.executeEdits('rollingthunder-format', [
+		editor.executeEdits(`${APPLICATION.id}-format`, [
 			{
 				range,
 				text: formatted,
@@ -537,8 +538,8 @@
 		const startedAt = Date.now();
 		queryElapsedSeconds = 0;
 		queryElapsedTimer = globalThis.setInterval(() => {
-			queryElapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-		}, 250);
+			queryElapsedSeconds = Math.floor((Date.now() - startedAt) / TIME.millisecondsPerSecond);
+		}, UI_RUNTIME.elapsedTimerTickMs);
 	}
 
 	function stopQueryTimer() {
@@ -793,7 +794,7 @@
 			}
 			transactionID = startedID;
 			transactionState = 'active';
-			updateStatus('Transaction started. Changes remain pending until Commit.', 'success');
+			updateStatus('Transaction started. Changes remain pending until Commit.', 'warn');
 			addConsoleLog(`Transaction ${transactionID.slice(0, 8)} started`, 'info');
 		} catch (error: any) {
 			transactionState = 'idle';
@@ -1003,7 +1004,7 @@
 			savedQueryId: query.id
 		});
 		savedQueriesOpen = false;
-		updateStatus(`Loaded named query “${query.name}”`, 'success');
+		updateStatus(`Loaded named query “${query.name}”`, 'info');
 	}
 
 	function handleNamedQuerySaved(query: SavedQuery) {
@@ -1125,8 +1126,8 @@
 				<span
 					class="inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[9px] font-semibold {transactionState ===
 					'failed'
-						? 'border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400'
-						: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'}"
+						? 'border-danger-border bg-danger-soft text-danger'
+						: 'border-warning-border bg-warning-soft text-warning'}"
 					title={`Transaction ${transactionID}`}
 				>
 					{#if transactionState === 'committing' || transactionState === 'rolling_back'}
@@ -1199,7 +1200,7 @@
 
 			{#if isRunning}
 				<button
-					class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-red-500/35 bg-red-500/10 px-3 text-[10px] font-bold text-red-600 transition-colors hover:bg-red-500/15 disabled:cursor-wait disabled:opacity-60 dark:text-red-400"
+					class="border-danger-border bg-danger-soft text-danger hover:bg-danger-soft inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-3 text-[10px] font-bold transition-colors disabled:cursor-wait disabled:opacity-60"
 					onclick={cancelRunningQuery}
 					disabled={queryCancelling}
 					title="Cancel the running query"
@@ -1267,9 +1268,9 @@
 						>
 							<div class="mt-0.5 shrink-0">
 								{#if item.status === 'success'}
-									<div class="h-2 w-2 rounded-full bg-green-500"></div>
+									<div class="bg-success h-2 w-2 rounded-full"></div>
 								{:else}
-									<div class="h-2 w-2 rounded-full bg-red-500"></div>
+									<div class="bg-danger h-2 w-2 rounded-full"></div>
 								{/if}
 							</div>
 							<div class="min-w-0 flex-1">
@@ -1290,7 +1291,7 @@
 								</div>
 							</div>
 							<button
-								class="invisible shrink-0 rounded p-1 group-hover:visible hover:bg-red-100 hover:text-red-600"
+								class="hover:bg-danger-soft hover:text-danger invisible shrink-0 rounded p-1 group-hover:visible"
 								onclick={(e) => {
 									e.stopPropagation();
 									deleteQueryHistoryItem(item.id);
@@ -1322,8 +1323,8 @@
 					>
 					{#if queryResultTruncated}
 						<span
-							class="ml-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600 dark:text-amber-400"
-							title="Rolling Thunder caps interactive query results to keep the workspace responsive"
+							class="bg-warning-soft text-warning ml-1 rounded px-1.5 py-0.5 text-[9px] font-semibold"
+							title={`${APPLICATION.name} caps interactive query results to keep the workspace responsive`}
 						>
 							Limited to {queryResultLimit.toLocaleString()}
 						</span>
@@ -1368,7 +1369,7 @@
 
 		{#if errorMessage}
 			<div
-				class="flex items-start gap-2.5 rounded-lg border border-red-500/35 bg-red-500/10 p-3 text-red-600 dark:text-red-400"
+				class="border-danger-border bg-danger-soft text-danger flex items-start gap-2.5 rounded-lg border p-3"
 			>
 				<TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
 				<div class="min-w-0">
@@ -1376,7 +1377,7 @@
 						<strong class="text-xs">{errorMessage}</strong>
 						{#if errorCode}
 							<span
-								class="rounded border border-red-500/25 bg-red-500/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-wide"
+								class="border-danger-border bg-danger-soft rounded border px-1.5 py-0.5 font-mono text-[8px] font-semibold tracking-wide"
 								>{errorCode}</span
 							>
 						{/if}
@@ -1397,7 +1398,7 @@
 			<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
 				{#if queryResultTruncated}
 					<div
-						class="flex shrink-0 items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[9px] text-amber-700 dark:text-amber-300"
+						class="border-warning-border bg-warning-soft text-warning flex shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-[9px]"
 					>
 						<TriangleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 						<span>
@@ -1453,7 +1454,7 @@
 	<div class="fixed inset-0 z-[90] flex items-center justify-center p-6">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[1px]"
 			onclick={cancelUnsafeMutation}
 			aria-label="Cancel unfiltered mutation"
 		></button>
@@ -1466,7 +1467,7 @@
 		>
 			<div class="flex items-start gap-3">
 				<span
-					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-500/10 text-red-600 dark:text-red-400"
+					class="bg-danger-soft text-danger flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
 				>
 					<TriangleAlert class="h-4 w-4" />
 				</span>
@@ -1484,13 +1485,13 @@
 				></pre>
 
 			<div
-				class="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[9px] leading-relaxed text-amber-700 dark:text-amber-300"
+				class="border-warning-border bg-warning-soft text-warning mt-3 rounded-lg border px-3 py-2 text-[9px] leading-relaxed"
 			>
 				{#if transactionID}
 					The statement will run inside the active transaction. You can inspect the result and roll
 					it back before committing.
 				{:else}
-					Auto-commit is active, so affected rows cannot be restored by Rolling Thunder after this
+					Auto-commit is active, so affected rows cannot be restored by {APPLICATION.name} after this
 					statement succeeds.
 				{/if}
 			</div>
@@ -1505,7 +1506,7 @@
 				</button>
 				<button
 					type="button"
-					class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md bg-red-600 px-3 text-[10px] font-bold text-white transition-colors hover:bg-red-700"
+					class="bg-danger text-on-solid hover:bg-danger/90 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[10px] font-bold transition-colors"
 					onclick={confirmUnsafeMutation}
 				>
 					<TriangleAlert class="h-3 w-3" />

@@ -21,6 +21,7 @@
 	import { BACKEND_RESTART_MESSAGE, hasBackendMethod } from '$lib/wails/backendCompatibility';
 	import { addConsoleLog, updateStatus } from '$lib/stores/status.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
+	import { APPLICATION } from '$lib/config/application';
 
 	let sourceConnectionId = $state('');
 	let targetConnectionId = $state('');
@@ -256,7 +257,7 @@
 			<section class="rounded-xl border bg-[var(--surface-raised)] p-3">
 				<div class="mb-2 flex items-center justify-between">
 					<span class="text-[8px] font-bold tracking-[0.08em] uppercase">Source</span>
-					<span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[7px] text-emerald-600"
+					<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[7px]"
 						>Desired</span
 					>
 				</div>
@@ -306,7 +307,7 @@
 			<section class="rounded-xl border bg-[var(--surface-raised)] p-3">
 				<div class="mb-2 flex items-center justify-between">
 					<span class="text-[8px] font-bold tracking-[0.08em] uppercase">Target</span>
-					<span class="rounded bg-sky-500/10 px-1.5 py-0.5 text-[7px] text-sky-600"
+					<span class="bg-warning-soft text-warning rounded px-1.5 py-0.5 text-[7px]"
 						>Will change</span
 					>
 				</div>
@@ -382,7 +383,7 @@
 	<section class="flex min-h-0 min-w-0 flex-col">
 		{#if error}
 			<div
-				class="m-4 mb-0 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[8px] text-red-600 dark:text-red-400"
+				class="border-danger-border bg-danger-soft text-danger m-4 mb-0 flex items-start gap-2 rounded-lg border px-3 py-2 text-[8px]"
 				role="alert"
 			>
 				<CircleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -400,8 +401,8 @@
 					</span>
 					<h3 class="mt-4 text-[12px] font-bold">Generate a reviewed migration</h3>
 					<p class="text-muted-foreground mt-1.5 text-[9px] leading-relaxed">
-						Rolling Thunder compares tables, columns, constraints, and indexes without changing
-						either connection.
+						{APPLICATION.name} compares tables, columns, constraints, and indexes without changing either
+						connection.
 					</p>
 				</div>
 			</div>
@@ -420,7 +421,7 @@
 				</div>
 				{#if preview.destructive}
 					<span
-						class="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-1 text-[8px] font-bold text-amber-700 dark:text-amber-300"
+						class="bg-warning-soft text-warning flex items-center gap-1 rounded-full px-2 py-1 text-[8px] font-bold"
 					>
 						<ShieldAlert class="h-3 w-3" />
 						Destructive
@@ -435,7 +436,7 @@
 							class="flex h-full min-h-32 items-center justify-center rounded-xl border border-dashed text-center"
 						>
 							<div>
-								<Check class="mx-auto h-5 w-5 text-emerald-500" />
+								<Check class="text-success mx-auto h-5 w-5" />
 								<p class="mt-2 text-[9px] font-bold">No structural drift found</p>
 							</div>
 						</div>
@@ -452,8 +453,8 @@
 										class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md {change.supported &&
 										change.selected
 											? change.destructive
-												? 'bg-amber-500/10 text-amber-600'
-												: 'bg-emerald-500/10 text-emerald-600'
+												? 'bg-danger-soft text-danger'
+												: 'bg-info-soft text-info'
 											: 'bg-muted text-muted-foreground'}"
 									>
 										{#if change.supported && change.selected}
@@ -468,9 +469,7 @@
 											{change.action.replaceAll('_', ' ')} · {change.object}
 										</span>
 										{#if change.reason}
-											<span class="mt-1 block text-[7px] text-amber-700 dark:text-amber-300"
-												>{change.reason}</span
-											>
+											<span class="text-warning mt-1 block text-[7px]">{change.reason}</span>
 										{/if}
 									</span>
 								</div>
@@ -479,11 +478,11 @@
 					{/if}
 				</div>
 
-				<div class="flex min-h-0 flex-col bg-[#111827] text-slate-200">
-					<div class="flex h-9 shrink-0 items-center gap-2 border-b border-white/10 px-3">
-						<Code2 class="h-3.5 w-3.5 text-slate-400" />
+				<div class="rt-code-surface flex min-h-0 flex-col">
+					<div class="border-on-solid/10 flex h-9 shrink-0 items-center gap-2 border-b px-3">
+						<Code2 class="text-muted-foreground h-3.5 w-3.5" />
 						<span class="text-[8px] font-bold tracking-[0.08em] uppercase">Migration SQL</span>
-						<span class="ml-auto font-mono text-[7px] text-slate-500"
+						<span class="text-muted-foreground ml-auto font-mono text-[7px]"
 							>{preview.fingerprint.slice(0, 12)}</span
 						>
 					</div>

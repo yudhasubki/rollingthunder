@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 
@@ -275,9 +276,21 @@ func backupDialogConfiguration(
 }
 
 func commandEnvironment(config database.Config) []string {
-	environment := os.Environ()
-	if config.Password != "" {
-		environment = append(environment, "PGPASSWORD="+config.Password)
+	blocked := map[string]struct{}{
+		"PGPASSWORD":    {},
+		"PGPASSFILE":    {},
+		"PGHOSTADDR":    {},
+		"PGSSLMODE":     {},
+		"PGSSLROOTCERT": {},
+		"PGSSLCERT":     {},
+		"PGSSLKEY":      {},
+	}
+	environment := make([]string, 0, len(os.Environ())+5)
+	for _, value := range os.Environ() {
+		name, _, _ := strings.Cut(value, "=")
+		if _, sensitive := blocked[name]; !sensitive {
+			environment = append(environment, value)
+		}
 	}
 	if config.SSLMode != "" {
 		environment = append(environment, "PGSSLMODE="+config.SSLMode)
@@ -297,6 +310,68 @@ func commandEnvironment(config database.Config) []string {
 		environment = append(environment, "PGHOSTADDR="+config.Host)
 	}
 	return environment
+}
+
+func postgresPasswordFileValue(value string) (string, error) {
+	if strings.ContainsAny(value, "\r\n") {
+		return "", fmt.Errorf("PostgreSQL password-file values cannot contain line breaks")
+	}
+	return strings.NewReplacer(`\`, `\\`, `:`, `\:`).Replace(value), nil
+}
+
+func postgresCommandEnvironment(
+	config database.Config,
+) ([]string, func(), error) {
+	environment := commandEnvironment(config)
+	if config.Password == "" {
+		return environment, func() {}, nil
+	}
+	fields := []string{
+		strings.TrimSpace(config.Host),
+		strings.TrimSpace(config.Port),
+		strings.TrimSpace(config.Db),
+		strings.TrimSpace(config.User),
+		config.Password,
+	}
+	if serverName := strings.TrimSpace(config.TLSServerName); serverName != "" {
+		fields[0] = serverName
+	}
+	for index := range fields {
+		if index < len(fields)-1 && fields[index] == "" {
+			fields[index] = "*"
+		}
+		escaped, err := postgresPasswordFileValue(fields[index])
+		if err != nil {
+			return nil, nil, err
+		}
+		fields[index] = escaped
+	}
+	file, err := os.CreateTemp("", "."+application.Identifier+"-pgpass-*")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create temporary PostgreSQL password file: %w", err)
+	}
+	path := file.Name()
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(path)
+	}
+	if err := file.Chmod(0o600); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("secure temporary PostgreSQL password file: %w", err)
+	}
+	if _, err := io.WriteString(file, strings.Join(fields, ":")+"\n"); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("write temporary PostgreSQL password file: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("sync temporary PostgreSQL password file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("close temporary PostgreSQL password file: %w", err)
+	}
+	return append(environment, "PGPASSFILE="+path), cleanup, nil
 }
 
 func postgresConnectionArguments(config database.Config) []string {
@@ -327,7 +402,7 @@ func mysqlOptionValue(value string) string {
 }
 
 func writeMySQLDefaults(config database.Config) (string, error) {
-	file, err := os.CreateTemp("", ".rollingthunder-mysql-client-*")
+	file, err := os.CreateTemp("", "."+application.Identifier+"-mysql-client-*")
 	if err != nil {
 		return "", err
 	}
@@ -456,12 +531,17 @@ func (s *Service) createBackup(
 			args = append(args, "--data-only")
 		}
 		args = append(args, config.Db)
+		environment, cleanup, err := postgresCommandEnvironment(config)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 		return runMaintenanceCommand(
 			ctx,
 			s.commandContext,
 			tool,
 			args,
-			commandEnvironment(config),
+			environment,
 			nil,
 		)
 
@@ -579,7 +659,7 @@ func (s *Service) BackupDatabase(
 
 	tempFile, err := os.CreateTemp(
 		filepath.Dir(targetPath),
-		".rollingthunder-database-backup-*",
+		"."+application.Identifier+"-database-backup-*",
 	)
 	if err != nil {
 		return serviceError[database.BackupResult](err.Error())
@@ -960,7 +1040,10 @@ func (s *Service) restoreSQLite(
 	driver database.NativeBackupDriver,
 	sourcePath string,
 ) error {
-	rollbackFile, err := os.CreateTemp("", ".rollingthunder-sqlite-rollback-*.sqlite3")
+	rollbackFile, err := os.CreateTemp(
+		"",
+		"."+application.Identifier+"-sqlite-rollback-*.sqlite3",
+	)
 	if err != nil {
 		return fmt.Errorf("prepare SQLite restore rollback: %w", err)
 	}
@@ -974,7 +1057,10 @@ func (s *Service) restoreSQLite(
 		return fmt.Errorf("create SQLite restore rollback: %w", err)
 	}
 	if err := driver.RestoreDatabase(ctx, sourcePath); err != nil {
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		rollbackCtx, cancel := context.WithTimeout(
+			context.Background(),
+			restoreRollbackTimeout,
+		)
 		defer cancel()
 		if rollbackErr := driver.RestoreDatabase(rollbackCtx, rollbackPath); rollbackErr != nil {
 			return fmt.Errorf(
@@ -1022,12 +1108,17 @@ func (s *Service) runRestore(
 			args = append(args, "--schema="+request.Schema)
 		}
 		args = append(args, grant.path)
+		environment, cleanup, err := postgresCommandEnvironment(config)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 		return runMaintenanceCommand(
 			ctx,
 			s.commandContext,
 			tool,
 			args,
-			commandEnvironment(config),
+			environment,
 			nil,
 		)
 

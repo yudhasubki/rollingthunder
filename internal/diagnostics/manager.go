@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"rollingthunder/pkg/application"
 )
 
 const (
@@ -66,8 +68,8 @@ func NewManager() *Manager {
 		cacheDirectory = configDirectory
 	}
 	return NewManagerAt(
-		filepath.Join(configDirectory, "RollingThunder", "diagnostics.json"),
-		filepath.Join(cacheDirectory, "RollingThunder", "diagnostics"),
+		filepath.Join(configDirectory, application.SettingsDirectoryName, "diagnostics.json"),
+		filepath.Join(cacheDirectory, application.SettingsDirectoryName, "diagnostics"),
 	)
 }
 
@@ -360,7 +362,7 @@ func (manager *Manager) Export(path string) (ExportResult, error) {
 	}
 	if _, err := io.WriteString(
 		manifest,
-		"Rolling Thunder diagnostics\n\nReports are local, redacted, and never uploaded automatically. Review every file before sharing.\n",
+		application.Name+" diagnostics\n\nReports are local, redacted, and never uploaded automatically. Review every file before sharing.\n",
 	); err != nil {
 		return ExportResult{}, err
 	}

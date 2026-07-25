@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 )
 
@@ -230,7 +231,7 @@ func writePostgresInsertStreamContext(
 		return database.ExportStats{}, err
 	}
 	if err := sink.writeString(
-		"-- Rolling Thunder PostgreSQL INSERT export\n" +
+		"-- " + application.Name + " PostgreSQL INSERT export\n" +
 			"-- Generated columns are omitted; sequence state is not modified.\n\n",
 	); err != nil {
 		return database.ExportStats{}, fmt.Errorf("start SQL export: %w", err)

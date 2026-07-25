@@ -5,6 +5,7 @@
 	import { onDestroy } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { focusTrap } from '$lib/actions/focusTrap';
+	import { UI_RUNTIME } from '$lib/config/application';
 
 	interface Props {
 		open: boolean;
@@ -84,7 +85,7 @@
 			if (copyResetTimer) clearTimeout(copyResetTimer);
 			copyResetTimer = setTimeout(() => {
 				copiedField = null;
-			}, 1600);
+			}, UI_RUNTIME.copyFeedbackMs);
 		} catch {
 			copiedField = null;
 		}
@@ -106,7 +107,7 @@
 {#if open && row}
 	<button
 		type="button"
-		class="fixed inset-0 z-[60] cursor-default bg-black/25 backdrop-blur-[1px]"
+		class="bg-overlay/25 fixed inset-0 z-[60] cursor-default backdrop-blur-[1px]"
 		aria-label="Close row details"
 		onclick={onClose}
 		transition:fade={{ duration: 120 }}
@@ -191,7 +192,7 @@
 							aria-label={`Copy ${field.name}`}
 						>
 							{#if copiedField === field.name}
-								<Check class="h-3 w-3 text-emerald-500" />
+								<Check class="text-success h-3 w-3" />
 							{:else}
 								<Copy class="h-3 w-3" />
 							{/if}
@@ -232,7 +233,7 @@
 				onclick={() => copyText(JSON.stringify(row, null, 2), '__row__')}
 			>
 				{#if copiedField === '__row__'}
-					<Check class="h-3.5 w-3.5 text-emerald-500" />
+					<Check class="text-success h-3.5 w-3.5" />
 					Copied
 				{:else}
 					<FileJson2 class="h-3.5 w-3.5" />

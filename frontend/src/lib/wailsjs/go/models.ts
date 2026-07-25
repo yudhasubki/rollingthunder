@@ -860,8 +860,9 @@ export namespace database {
 
 	export class Config {
 	    name: string;
-	    color: string;
+	    environment: string;
 	    driver: string;
+	    color?: string;
 	    host: string;
 	    port: string;
 	    user: string;
@@ -889,8 +890,9 @@ export namespace database {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
-	        this.color = source["color"];
+	        this.environment = source["environment"];
 	        this.driver = source["driver"];
+	        this.color = source["color"];
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.user = source["user"];
@@ -2466,7 +2468,7 @@ export namespace db {
 	    driver: string;
 	    database: string;
 	    host: string;
-	    color: string;
+	    environment: string;
 	    sshTunnel: boolean;
 	    isActive: boolean;
 	    health: database.ConnectionHealth;
@@ -2483,7 +2485,7 @@ export namespace db {
 	        this.driver = source["driver"];
 	        this.database = source["database"];
 	        this.host = source["host"];
-	        this.color = source["color"];
+	        this.environment = source["environment"];
 	        this.sshTunnel = source["sshTunnel"];
 	        this.isActive = source["isActive"];
 	        this.health = this.convertValues(source["health"], database.ConnectionHealth);

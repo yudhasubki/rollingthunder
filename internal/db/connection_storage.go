@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	connectionStorageVersion      = 3
+	connectionStorageVersion      = 4
 	sshPasswordCredentialSuffix   = ":ssh-password"
 	sshPassphraseCredentialSuffix = ":ssh-key-passphrase"
 )
@@ -38,15 +39,23 @@ type connectionStorageEnvelope struct {
 // ConnectionStorage manages versioned, non-secret saved connection metadata.
 type ConnectionStorage struct {
 	FilePath string
+	initErr  error
 }
 
 func NewConnectionStorage() *ConnectionStorage {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		configDir = "."
+		return &ConnectionStorage{
+			initErr: fmt.Errorf("resolve user configuration directory: %w", err),
+		}
 	}
-	appDir := filepath.Join(configDir, "RollingThunder")
-	_ = os.MkdirAll(appDir, 0o700)
+	appDir := filepath.Join(configDir, application.SettingsDirectoryName)
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		return &ConnectionStorage{
+			FilePath: filepath.Join(appDir, "connections.json"),
+			initErr:  fmt.Errorf("create connection settings directory: %w", err),
+		}
+	}
 
 	return &ConnectionStorage{
 		FilePath: filepath.Join(appDir, "connections.json"),
@@ -54,6 +63,9 @@ func NewConnectionStorage() *ConnectionStorage {
 }
 
 func (cs *ConnectionStorage) Load() ([]SavedConnection, bool, error) {
+	if cs.initErr != nil {
+		return nil, false, cs.initErr
+	}
 	data, err := os.ReadFile(cs.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -91,10 +103,11 @@ func (cs *ConnectionStorage) Load() ([]SavedConnection, bool, error) {
 	if err := os.Chmod(filepath.Dir(cs.FilePath), 0o700); err != nil {
 		return nil, false, fmt.Errorf("secure connection settings directory: %w", err)
 	}
-	return envelope.Connections, false, nil
+	return envelope.Connections, envelope.Version < connectionStorageVersion, nil
 }
 
 func scrubSavedConnection(connection SavedConnection) SavedConnection {
+	connection.Config = database.NormalizeConfigMetadata(connection.Config)
 	connection.Config.Password = ""
 	connection.Config.SSHPassword = ""
 	connection.Config.SSHKeyPassphrase = ""
@@ -125,6 +138,9 @@ func (s *Service) migratePlaintextSecret(
 // Save writes an atomic 0600 versioned envelope. Even callers that
 // accidentally pass a password cannot persist it in plaintext.
 func (cs *ConnectionStorage) Save(connections []SavedConnection) error {
+	if cs.initErr != nil {
+		return cs.initErr
+	}
 	clean := make([]SavedConnection, len(connections))
 	for index, connection := range connections {
 		clean[index] = scrubSavedConnection(connection)
@@ -181,6 +197,12 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 	needsRewrite := legacyFormat
 	for index := range connections {
 		connection := &connections[index]
+		normalizedConfig := database.NormalizeConfigMetadata(connection.Config)
+		if connection.Config.Environment != normalizedConfig.Environment ||
+			connection.Config.Color != normalizedConfig.Color {
+			connection.Config = normalizedConfig
+			needsRewrite = true
+		}
 		passwordMigrated, err := s.migratePlaintextSecret(
 			connection.Config.Password,
 			connection.ID,
@@ -367,7 +389,17 @@ func (s *Service) SaveConnection(
 		)
 	}
 	if config.Driver == "" {
-		config.Driver = "postgres"
+		config.Driver = database.DriverPostgres
+	}
+	config = database.NormalizeConfigMetadata(config)
+	if err := config.ValidateSafety(); err != nil {
+		return serviceErrorWithCode[SavedConnection](
+			400,
+			errorCodeInvalidRequest,
+			"Invalid connection profile",
+			err.Error(),
+			"Review the connection settings and try again.",
+		)
 	}
 	password := config.Password
 	sshPassword := config.SSHPassword
@@ -434,7 +466,17 @@ func (s *Service) UpdateConnection(
 		)
 	}
 	if config.Driver == "" {
-		config.Driver = "postgres"
+		config.Driver = database.DriverPostgres
+	}
+	config = database.NormalizeConfigMetadata(config)
+	if err := config.ValidateSafety(); err != nil {
+		return serviceErrorWithCode[SavedConnection](
+			400,
+			errorCodeInvalidRequest,
+			"Invalid connection profile",
+			err.Error(),
+			"Review the connection settings and try again.",
+		)
 	}
 	index := -1
 	for candidateIndex := range connections {

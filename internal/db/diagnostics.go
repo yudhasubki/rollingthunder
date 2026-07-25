@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"rollingthunder/internal/diagnostics"
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/response"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -56,8 +57,8 @@ func (s *Service) ExportDiagnostics() response.BaseResponse[diagnostics.ExportRe
 		)
 	}
 	path, err := s.saveDialog(s.ctx, wailsruntime.SaveDialogOptions{
-		Title:                "Export Rolling Thunder diagnostics",
-		DefaultFilename:      "rollingthunder-diagnostics.zip",
+		Title:                "Export " + application.Name + " diagnostics",
+		DefaultFilename:      application.Identifier + "-diagnostics.zip",
 		CanCreateDirectories: true,
 		Filters: []wailsruntime.FileFilter{
 			{

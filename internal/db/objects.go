@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 )
-
-const objectMetadataTimeout = 20 * time.Second
 
 func (s *Service) GetCapabilities(
 	connectionID string,

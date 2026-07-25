@@ -81,7 +81,7 @@
 	<div class="fixed inset-0 z-[110] flex justify-end overflow-hidden">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/20"
+			class="bg-overlay/20 absolute inset-0 cursor-default"
 			onclick={onClose}
 			aria-label="Close saved queries"
 		></button>

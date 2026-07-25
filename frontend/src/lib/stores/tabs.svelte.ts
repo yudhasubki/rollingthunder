@@ -1,4 +1,5 @@
 import type { Tab } from '$lib/models/Tab';
+import { UI_RUNTIME } from '$lib/config/application';
 import type { database } from '$lib/wailsjs/go/models';
 import { clearTabState } from '$lib/stores/staged.svelte';
 import {
@@ -58,7 +59,7 @@ function persistWorkspace(connectionId: string, immediate = false): void {
 	if (immediate) {
 		save();
 	} else {
-		persistTimers.set(key, globalThis.setTimeout(save, 180));
+		persistTimers.set(key, globalThis.setTimeout(save, UI_RUNTIME.persistenceDebounceMs));
 	}
 }
 

@@ -3,10 +3,10 @@ package db
 import (
 	"errors"
 
+	"rollingthunder/pkg/application"
+
 	"github.com/zalando/go-keyring"
 )
-
-const credentialServiceName = "RollingThunder.DatabaseProfiles"
 
 var ErrCredentialNotFound = errors.New("credential not found")
 
@@ -23,11 +23,11 @@ func newOperatingSystemCredentialStore() CredentialStore {
 }
 
 func (operatingSystemCredentialStore) Set(profileID string, password string) error {
-	return keyring.Set(credentialServiceName, profileID, password)
+	return keyring.Set(application.CredentialServiceName, profileID, password)
 }
 
 func (operatingSystemCredentialStore) Get(profileID string) (string, error) {
-	password, err := keyring.Get(credentialServiceName, profileID)
+	password, err := keyring.Get(application.CredentialServiceName, profileID)
 	if errors.Is(err, keyring.ErrNotFound) {
 		return "", ErrCredentialNotFound
 	}
@@ -35,7 +35,7 @@ func (operatingSystemCredentialStore) Get(profileID string) (string, error) {
 }
 
 func (operatingSystemCredentialStore) Delete(profileID string) error {
-	err := keyring.Delete(credentialServiceName, profileID)
+	err := keyring.Delete(application.CredentialServiceName, profileID)
 	if errors.Is(err, keyring.ErrNotFound) {
 		return ErrCredentialNotFound
 	}

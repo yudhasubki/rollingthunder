@@ -26,7 +26,7 @@ type Connection struct {
 	Tunnel       connectionTunnel `json:"-"`
 	EndpointHost string           `json:"-"`
 	EndpointPort string           `json:"-"`
-	Color        string           `json:"color"`
+	Environment  string           `json:"environment"`
 	ConnectedAt  time.Time        `json:"connectedAt"`
 	mu           sync.RWMutex
 	healthMu     sync.RWMutex
@@ -53,16 +53,16 @@ func (connection *Connection) effectiveConfig() database.Config {
 
 // ConnectionInfo is the public info about a connection (without driver)
 type ConnectionInfo struct {
-	ID        string                    `json:"id"`
-	ProfileID string                    `json:"profileId,omitempty"`
-	Name      string                    `json:"name"`
-	Driver    string                    `json:"driver"`
-	Database  string                    `json:"database"`
-	Host      string                    `json:"host"`
-	Color     string                    `json:"color"`
-	SSHTunnel bool                      `json:"sshTunnel"`
-	IsActive  bool                      `json:"isActive"`
-	Health    database.ConnectionHealth `json:"health"`
+	ID          string                    `json:"id"`
+	ProfileID   string                    `json:"profileId,omitempty"`
+	Name        string                    `json:"name"`
+	Driver      string                    `json:"driver"`
+	Database    string                    `json:"database"`
+	Host        string                    `json:"host"`
+	Environment string                    `json:"environment"`
+	SSHTunnel   bool                      `json:"sshTunnel"`
+	IsActive    bool                      `json:"isActive"`
+	Health      database.ConnectionHealth `json:"health"`
 }
 
 type Service struct {
@@ -111,7 +111,10 @@ func NewService() *Service {
 func NewServiceWithDiagnostics(
 	diagnosticManager *diagnostics.Manager,
 ) *Service {
-	return NewServiceWithDiagnosticsAndVersion(diagnosticManager, "0.0.1")
+	return NewServiceWithDiagnosticsAndVersion(
+		diagnosticManager,
+		defaultServiceVersion,
+	)
 }
 
 func NewServiceWithDiagnosticsAndVersion(
@@ -142,8 +145,8 @@ func NewServiceWithDiagnosticsAndVersion(
 		transactions:       make(map[string]*transactionSession),
 		connectionStorage:  NewConnectionStorage(),
 		credentialStore:    newOperatingSystemCredentialStore(),
-		healthInterval:     20 * time.Second,
-		healthTimeout:      5 * time.Second,
+		healthInterval:     defaultHealthMonitorInterval,
+		healthTimeout:      defaultHealthCheckTimeout,
 		diagnostics:        diagnosticManager,
 		updateChecker:      updater.NewChecker(currentVersion),
 	}
@@ -199,14 +202,24 @@ func (s *Service) driverFor(connectionID string) (database.Driver, func(), error
 }
 
 func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectResponse] {
+	req.Config = database.NormalizeConfigMetadata(req.Config)
 	driverName := req.Driver
 	if driverName == "" {
 		driverName = req.Config.Driver
 	}
 	if driverName == "" {
-		driverName = "postgres"
+		driverName = database.DriverPostgres
 	}
 	req.Config.Driver = driverName
+	if err := req.Config.ValidateSafety(); err != nil {
+		return serviceErrorWithCode[ConnectResponse](
+			400,
+			errorCodeInvalidRequest,
+			"Invalid connection settings",
+			err.Error(),
+			"Review the connection profile and try again.",
+		)
+	}
 
 	attempt, err := s.startConnectionAttempt(req.AttemptID)
 	if err != nil {
@@ -279,7 +292,7 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 		Tunnel:       tunnel,
 		EndpointHost: effectiveConfig.Host,
 		EndpointPort: effectiveConfig.Port,
-		Color:        req.Config.Color,
+		Environment:  req.Config.Environment,
 		ConnectedAt:  connectedAt,
 		health: database.ConnectionHealth{
 			ConnectionID: connID,
@@ -619,16 +632,16 @@ func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo]
 		conn.mu.RLock()
 		snapshot := connectionSnapshot{
 			info: ConnectionInfo{
-				ID:        conn.ID,
-				ProfileID: conn.ProfileID,
-				Name:      conn.Name,
-				Driver:    conn.Config.Driver,
-				Database:  conn.Config.Db,
-				Host:      conn.Config.Host,
-				Color:     conn.Color,
-				SSHTunnel: conn.Config.SSHEnabled,
-				IsActive:  conn.ID == activeID,
-				Health:    conn.healthSnapshot(),
+				ID:          conn.ID,
+				ProfileID:   conn.ProfileID,
+				Name:        conn.Name,
+				Driver:      conn.Config.Driver,
+				Database:    conn.Config.Db,
+				Host:        conn.Config.Host,
+				Environment: conn.Environment,
+				SSHTunnel:   conn.Config.SSHEnabled,
+				IsActive:    conn.ID == activeID,
+				Health:      conn.healthSnapshot(),
 			},
 			connectedAt: conn.ConnectedAt,
 		}

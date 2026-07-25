@@ -27,6 +27,7 @@
 	import { BACKEND_RESTART_MESSAGE, hasBackendMethod } from '$lib/wails/backendCompatibility';
 	import { addConsoleLog, updateStatus } from '$lib/stores/status.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
+	import { UI_RUNTIME } from '$lib/config/application';
 
 	let connectionId = $state('');
 	let capabilities = $state<database.BackupCapabilities | null>(null);
@@ -100,7 +101,7 @@
 			}
 		}
 		void refreshProgress();
-		const timer = globalThis.setInterval(refreshProgress, 1000);
+		const timer = globalThis.setInterval(refreshProgress, UI_RUNTIME.maintenanceProgressPollMs);
 		return () => globalThis.clearInterval(timer);
 	});
 
@@ -335,7 +336,7 @@
 	<div class="min-h-0 flex-1 overflow-y-auto p-4">
 		{#if error}
 			<div
-				class="mb-4 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[8px] text-red-600 dark:text-red-400"
+				class="border-danger-border bg-danger-soft text-danger mb-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-[8px]"
 				role="alert"
 			>
 				<CircleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -344,7 +345,7 @@
 		{/if}
 		{#if message}
 			<div
-				class="mb-4 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[8px] text-emerald-700 dark:text-emerald-300"
+				class="border-success-border bg-success-soft text-success mb-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-[8px]"
 				role="status"
 			>
 				<Check class="h-3.5 w-3.5" />
@@ -402,8 +403,8 @@
 							</div>
 
 							{#if backupResult}
-								<div class="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-									<div class="flex items-center gap-2 text-[8px] font-bold text-emerald-600">
+								<div class="border-success-border bg-success-soft mt-3 rounded-lg border p-3">
+									<div class="text-success flex items-center gap-2 text-[8px] font-bold">
 										<FileCheck2 class="h-3.5 w-3.5" />
 										Backup complete
 									</div>
@@ -452,7 +453,7 @@
 				<section class="flex min-h-[360px] flex-col rounded-xl border">
 					<header class="flex items-center gap-3 border-b p-4">
 						<span
-							class="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600"
+							class="bg-warning-soft text-warning flex h-9 w-9 items-center justify-center rounded-lg"
 						>
 							<RotateCcw class="h-4 w-4" />
 						</span>
@@ -495,9 +496,9 @@
 								</div>
 							</div>
 						{:else}
-							<div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+							<div class="border-warning-border bg-warning-soft rounded-lg border p-3">
 								<div class="flex items-start gap-2">
-									<ShieldAlert class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+									<ShieldAlert class="text-warning mt-0.5 h-4 w-4 shrink-0" />
 									<div class="min-w-0">
 										<p class="truncate text-[9px] font-bold">{restorePreview.file}</p>
 										<p class="text-muted-foreground mt-0.5 text-[7px]">
@@ -511,7 +512,7 @@
 							<ul class="mt-3 space-y-1.5">
 								{#each restorePreview.warnings as warning}
 									<li class="text-muted-foreground flex gap-2 text-[7px] leading-relaxed">
-										<span class="mt-1 h-1 w-1 shrink-0 rounded-full bg-amber-500"></span>
+										<span class="bg-warning mt-1 h-1 w-1 shrink-0 rounded-full"></span>
 										{warning}
 									</li>
 								{/each}
@@ -545,7 +546,7 @@
 								{:else}
 									<button
 										type="button"
-										class="flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-red-600 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-35"
+										class="bg-danger text-on-solid flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg text-[9px] font-bold disabled:cursor-not-allowed disabled:opacity-35"
 										onclick={applyRestore}
 										disabled={!canRestore}
 									>

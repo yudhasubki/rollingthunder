@@ -1,6 +1,7 @@
 import { CancelConnectionAttempt } from '$lib/wailsjs/go/db/Service';
+import { TIME, UI_RUNTIME } from '$lib/config/application';
 
-export const CONNECTION_TIMEOUT_SECONDS = 15;
+export const CONNECTION_TIMEOUT_SECONDS = UI_RUNTIME.connectionTimeoutSeconds;
 
 export function createConnectionAttemptID(): string {
 	return crypto.randomUUID();
@@ -11,8 +12,8 @@ export function startConnectionElapsedTimer(onElapsed: (seconds: number) => void
 	onElapsed(0);
 
 	const timer = globalThis.setInterval(() => {
-		onElapsed(Math.floor((Date.now() - startedAt) / 1000));
-	}, 250);
+		onElapsed(Math.floor((Date.now() - startedAt) / TIME.millisecondsPerSecond));
+	}, UI_RUNTIME.elapsedTimerTickMs);
 
 	return () => globalThis.clearInterval(timer);
 }

@@ -4,8 +4,9 @@ import {
 	type SqlFormatSettings,
 	type SqlLintSettings
 } from '$lib/sql/tooling';
+import { APPLICATION_STORAGE } from '../config/application.ts';
 
-const STORAGE_KEY = 'rollingthunder.query-tooling';
+const STORAGE_KEY = APPLICATION_STORAGE.queryTooling;
 
 let hydrated = false;
 const state = $state<{

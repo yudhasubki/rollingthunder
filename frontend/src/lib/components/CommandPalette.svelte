@@ -132,7 +132,7 @@
 	<div class="fixed inset-0 z-[140] flex items-start justify-center p-4 pt-[12vh]">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={onClose}
 			aria-label="Close command palette"
 		></button>

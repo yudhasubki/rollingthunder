@@ -39,7 +39,8 @@
 - Keep passwords in macOS Keychain, Windows Credential Manager, or Linux Secret Service instead of
   profile JSON.
 - Keep multiple database sessions open and switch between them.
-- Identify environments with profile colors.
+- Classify profiles as Unclassified, Development, Staging, or Production. Colors are derived from
+  that operational meaning instead of being arbitrary profile decoration.
 - Configure PostgreSQL or MySQL/MariaDB TLS modes and client certificates.
 - Route PostgreSQL and MySQL/MariaDB through an SSH tunnel using an SSH agent, private key, or
   password. Host keys must match a known-hosts entry or an explicitly pinned SHA256 fingerprint.
@@ -92,7 +93,8 @@
 - Create and restore SQLite online backups without an external process.
 - Create PostgreSQL custom-format backups with `pg_dump` and restore them with `pg_restore`.
 - Create and restore MySQL/MariaDB SQL backups with their native client tools. Database and SSH
-  secrets are never placed in process arguments.
+  secrets are never placed in process arguments; PostgreSQL maintenance uses a temporary `0600`
+  password file instead of exposing the password in the child-process environment.
 - Preview every restore, verify the selected file has not changed, explicitly confirm the target,
   and cancel long-running external maintenance jobs.
 - Inspect PostgreSQL roles or MySQL/MariaDB users, review grants, and preview create/alter/drop,
@@ -154,6 +156,10 @@
 ### Release readiness
 
 - Versioned, atomic, permission-restricted saved-profile and diagnostics settings.
+- Centralized runtime defaults and semantic UI tokens, with regression tests that reject literal
+  component colors and raw framework palette classes.
+- Backend validation for ports, TLS/SSH modes, control characters, and oversized connection
+  metadata before values reach a driver or maintenance command.
 - Fail-safe migration of legacy plaintext profile passwords into the OS credential store.
 - Local-only, opt-in frontend diagnostics with redaction, rotation, explicit export, and deletion.
 - Minimal local crash reports without automatic upload.
@@ -200,6 +206,9 @@ Other important limitations include:
   intentionally fails closed when they are absent.
 - Automated accessibility contracts cover common regressions, but every stable release still
   requires the manual assistive-technology matrix.
+
+Maintainer guardrails for runtime policy, trust boundaries, and semantic colors live in
+[AGENTS.md](AGENTS.md).
 
 ## Tech stack
 

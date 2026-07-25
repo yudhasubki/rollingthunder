@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -75,15 +76,15 @@ func quotePostgresConfigValue(value string) string {
 func buildPostgresPoolConfig(config Config) (*pgxpool.Config, error) {
 	sslMode := strings.TrimSpace(config.SSLMode)
 	if sslMode == "" {
-		sslMode = "disable"
+		sslMode = database.DefaultSSLMode
 	}
 	host := strings.TrimSpace(config.Host)
 	if host == "" {
-		host = "localhost"
+		host = database.DefaultHost
 	}
 	port := strings.TrimSpace(config.Port)
 	if port == "" {
-		port = "5432"
+		port = database.DefaultPostgresPort
 	}
 
 	setting := func(name string, value string) string {
@@ -91,7 +92,7 @@ func buildPostgresPoolConfig(config Config) (*pgxpool.Config, error) {
 	}
 	dsn := []string{
 		setting("dbname", config.Db),
-		setting("application_name", "Rolling Thunder"),
+		setting("application_name", application.DatabaseClientName),
 		setting("sslmode", sslMode),
 		setting("host", host),
 		setting("port", port),

@@ -14,6 +14,11 @@
 	} from '$lib/connection/attempt';
 	import { createServiceError } from '$lib/errors/service';
 	import {
+		APPLICATION,
+		CONNECTION_DEFAULTS,
+		connectionEnvironmentOption
+	} from '$lib/config/application';
+	import {
 		BACKEND_RESTART_MESSAGE,
 		hasBackendMethod,
 		isBackendVersionMismatch
@@ -54,7 +59,7 @@
 		searchQuery.trim()
 			? profiles.filter((profile) => {
 					const config = profile.config;
-					return `${config.name} ${config.driver || 'postgres'} ${config.host} ${config.db} ${config.user}`
+					return `${config.name} ${config.driver || CONNECTION_DEFAULTS.provider} ${config.environment || ''} ${config.host} ${config.db} ${config.user}`
 						.toLowerCase()
 						.includes(searchQuery.trim().toLowerCase());
 				})
@@ -99,19 +104,21 @@
 			(connection) =>
 				connection.profileId === profile.id ||
 				(connection.name === profile.config.name &&
-					connection.driver === (profile.config.driver || 'postgres') &&
+					connection.driver === (profile.config.driver || CONNECTION_DEFAULTS.provider) &&
 					connection.host === profile.config.host &&
 					connection.database === profile.config.db)
 		);
 	}
 
 	function profileEndpoint(profile: db.SavedConnection): string {
-		if ((profile.config.driver || 'postgres') === 'sqlite') return profile.config.db;
+		if ((profile.config.driver || CONNECTION_DEFAULTS.provider) === 'sqlite') {
+			return profile.config.db;
+		}
 		return `${profile.config.host}:${profile.config.port} / ${profile.config.db}`;
 	}
 
 	function providerName(profile: db.SavedConnection): string {
-		switch (profile.config.driver || 'postgres') {
+		switch (profile.config.driver || CONNECTION_DEFAULTS.provider) {
 			case 'mysql':
 			case 'mariadb':
 				return 'MySQL / MariaDB';
@@ -123,12 +130,12 @@
 	}
 
 	function profileSecurity(profile: db.SavedConnection): string {
-		if ((profile.config.driver || 'postgres') === 'sqlite') {
+		if ((profile.config.driver || CONNECTION_DEFAULTS.provider) === 'sqlite') {
 			return 'Local file · WAL · foreign keys on';
 		}
 		return `${profile.config.user || 'No username'} · ${
 			profile.hasPassword ? 'Password secured by OS' : 'No stored password'
-		} · TLS ${profile.config.sslMode || 'disable'}`;
+		} · TLS ${profile.config.sslMode || CONNECTION_DEFAULTS.sslMode}`;
 	}
 
 	async function connectProfile(profile: db.SavedConnection) {
@@ -204,7 +211,7 @@
 </script>
 
 <svelte:head>
-	<title>Rolling Thunder · Connections</title>
+	<title>{APPLICATION.name} · Connections</title>
 </svelte:head>
 
 <div class="rt-connection-shell grid h-screen grid-cols-[minmax(400px,0.9fr)_minmax(560px,1.1fr)]">
@@ -225,8 +232,8 @@
 		{/if}
 
 		<div class="relative my-auto max-w-[430px] py-10">
-			<img src="/logo.png" alt="Rolling Thunder" class="rt-brand-logo h-24 w-24" />
-			<div class="mt-5 text-[14px] font-bold tracking-[-0.02em]">Rolling Thunder</div>
+			<img src="/logo.png" alt={APPLICATION.name} class="rt-brand-logo h-24 w-24" />
+			<div class="mt-5 text-[14px] font-bold tracking-[-0.02em]">{APPLICATION.name}</div>
 			<p class="text-primary mt-7 text-[9px] font-bold tracking-[0.15em] uppercase">
 				One focused workspace
 			</p>
@@ -339,7 +346,7 @@
 			{#if message}
 				<div
 					class="mt-3 flex shrink-0 items-center gap-2 text-[9px] {messageLevel === 'error'
-						? 'text-red-500'
+						? 'text-danger'
 						: 'text-muted-foreground'}"
 				>
 					{#if connectingId}
@@ -395,6 +402,7 @@
 				{:else}
 					<div class="space-y-2">
 						{#each filteredProfiles as profile (profile.id)}
+							{@const environment = connectionEnvironmentOption(profile.config.environment)}
 							<article
 								class="group flex min-h-[78px] items-center gap-3 rounded-lg border px-3.5 py-3 transition-colors hover:bg-[var(--surface-hover)]"
 							>
@@ -409,10 +417,8 @@
 											{profile.config.name || 'Unnamed profile'}
 										</h3>
 										{#if isConnected(profile)}
-											<span
-												class="flex items-center gap-1 text-[8px] font-semibold text-emerald-500"
-											>
-												<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+											<span class="text-success flex items-center gap-1 text-[8px] font-semibold">
+												<span class="bg-success h-1.5 w-1.5 rounded-full"></span>
 												Connected
 											</span>
 										{/if}
@@ -420,6 +426,13 @@
 											class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[7px] font-bold tracking-wide uppercase"
 										>
 											{providerName(profile)}
+										</span>
+										<span
+											class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[7px] font-semibold {environment.toneClass}"
+											title={environment.description}
+										>
+											<span class="h-1.5 w-1.5 rounded-full {environment.dotClass}"></span>
+											{environment.label}
 										</span>
 									</div>
 									<p class="text-muted-foreground mt-1 truncate font-mono text-[8px]">
@@ -444,7 +457,7 @@
 										type="button"
 										class="rt-toolbar-button h-8 gap-1.5 px-3 text-[9px] font-bold {connectingId ===
 										profile.id
-											? 'border-red-500/25 bg-red-500/8 text-red-500 hover:bg-red-500/15'
+											? 'border-danger-border bg-danger-soft text-danger hover:bg-danger-soft'
 											: 'border-border'}"
 										onclick={() =>
 											connectingId === profile.id

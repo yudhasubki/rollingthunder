@@ -1,5 +1,6 @@
 import { CancelExport, GetExportProgress } from '$lib/wailsjs/go/db/Service';
 import { database } from '$lib/wailsjs/go/models';
+import { UI_RUNTIME } from '$lib/config/application';
 
 export function createInitialExportProgress(
 	jobId: string,
@@ -19,7 +20,7 @@ export function createInitialExportProgress(
 export function startExportProgressPolling(
 	jobId: string,
 	onProgress: (progress: database.ExportProgress) => void,
-	intervalMilliseconds = 150
+	intervalMilliseconds = UI_RUNTIME.exportProgressPollMs
 ): () => void {
 	let stopped = false;
 	let requestInFlight = false;

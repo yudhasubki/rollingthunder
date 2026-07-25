@@ -98,7 +98,7 @@ func TestSavedConnectionStoresPasswordOutsideProfileFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "super-secret-value") ||
-		!strings.Contains(string(data), `"version": 3`) {
+		!strings.Contains(string(data), `"version": 4`) {
 		t.Fatalf("profile file = %s", data)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -331,7 +331,7 @@ func TestLegacyPlaintextPasswordMigratesBeforeProfileRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(migrated), "legacy-password") ||
-		!strings.Contains(string(migrated), `"version": 3`) {
+		!strings.Contains(string(migrated), `"version": 4`) {
 		t.Fatalf("migrated profile file = %s", migrated)
 	}
 }
@@ -355,7 +355,7 @@ func TestLegacyProfileWithoutPasswordStillMigratesToVersionedEnvelope(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(migrated), `"version": 3`) {
+	if !strings.Contains(string(migrated), `"version": 4`) {
 		t.Fatalf("legacy profile was not versioned: %s", migrated)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -413,6 +413,40 @@ func TestLegacyMigrationDoesNotErasePasswordWhenCredentialStoreFails(t *testing.
 	}
 	if !strings.Contains(string(unchanged), "keep-me") {
 		t.Fatalf("failed migration erased legacy password: %s", unchanged)
+	}
+}
+
+func TestVersionThreeProfileMigratesToSemanticEnvironment(t *testing.T) {
+	service, _ := credentialTestService(t)
+	legacy := `{"version":3,"connections":[{"id":"legacy-color","config":{"name":"Legacy","driver":"postgres","color":"#ff00ff","environment":"custom"}}]}`
+	if err := os.WriteFile(
+		service.connectionStorage.FilePath,
+		[]byte(legacy),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := service.GetSavedConnections()
+	if len(loaded.Errors) > 0 || len(loaded.Data) != 1 {
+		t.Fatalf("GetSavedConnections() = %+v", loaded)
+	}
+	config := loaded.Data[0].Config
+	if config.Environment != database.ConnectionEnvironmentUnclassified {
+		t.Fatalf("environment = %q", config.Environment)
+	}
+	if config.Color != "" {
+		t.Fatalf("legacy color was exposed: %q", config.Color)
+	}
+	migrated, err := os.ReadFile(service.connectionStorage.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(migrated)
+	if !strings.Contains(text, `"version": 4`) ||
+		!strings.Contains(text, `"environment": "unclassified"`) ||
+		strings.Contains(text, "#ff00ff") {
+		t.Fatalf("migrated profile file = %s", migrated)
 	}
 }
 

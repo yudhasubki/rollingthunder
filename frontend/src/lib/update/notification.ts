@@ -1,4 +1,6 @@
-export const UPDATE_SNOOZE_STORAGE_KEY = 'rollingthunder:update-snooze';
+import { APPLICATION_STORAGE } from '../config/application.ts';
+
+export const UPDATE_SNOOZE_STORAGE_KEY = APPLICATION_STORAGE.updateSnooze;
 export const UPDATE_REMINDER_DELAY_MS = 24 * 60 * 60 * 1000;
 export const UPDATE_DOWNLOAD_DELAY_MS = 7 * UPDATE_REMINDER_DELAY_MS;
 

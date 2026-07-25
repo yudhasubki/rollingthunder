@@ -431,7 +431,7 @@
 
 	{#if error}
 		<div
-			class="m-4 mb-0 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[8px] text-red-600 dark:text-red-400"
+			class="border-danger-border bg-danger-soft text-danger m-4 mb-0 flex items-start gap-2 rounded-lg border px-3 py-2 text-[8px]"
 		>
 			<CircleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 			{error}
@@ -483,10 +483,7 @@
 							onclick={() => selectPrincipal(principal)}
 						>
 							<span
-								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md {principal.kind ===
-								'role'
-									? 'bg-violet-500/10 text-violet-600'
-									: 'bg-sky-500/10 text-sky-600'}"
+								class="bg-muted text-muted-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
 							>
 								{#if principal.kind === 'role'}
 									<UsersRound class="h-3.5 w-3.5" />
@@ -501,7 +498,7 @@
 								</span>
 							</span>
 							{#if principal.locked}
-								<LockKeyhole class="h-3 w-3 text-amber-500" />
+								<LockKeyhole class="text-warning h-3 w-3" />
 							{/if}
 							<ChevronRight class="text-muted-foreground h-3 w-3" />
 						</button>
@@ -565,7 +562,7 @@
 					<div class="min-h-0 flex-1 overflow-y-auto p-4">
 						<div class="mb-4 flex flex-wrap gap-1.5">
 							{#if selectedPrincipal.superuser}
-								<span class="rounded-full bg-red-500/10 px-2 py-1 text-[7px] font-bold text-red-600"
+								<span class="bg-danger-soft text-danger rounded-full px-2 py-1 text-[7px] font-bold"
 									>SUPERUSER</span
 								>
 							{/if}
@@ -650,7 +647,7 @@
 </div>
 
 {#if editorOpen}
-	<div class="absolute inset-0 z-20 flex justify-end bg-black/25 backdrop-blur-[1px]">
+	<div class="bg-overlay/25 absolute inset-0 z-20 flex justify-end backdrop-blur-[1px]">
 		<button
 			type="button"
 			class="absolute inset-0 cursor-default"
@@ -667,7 +664,7 @@
 					{#if editorKind === 'account'}
 						<UserRound class="h-4 w-4" />
 					{:else if editorKind === 'drop'}
-						<ShieldAlert class="h-4 w-4 text-red-500" />
+						<ShieldAlert class="text-danger h-4 w-4" />
 					{:else}
 						<KeyRound class="h-4 w-4" />
 					{/if}
@@ -692,7 +689,7 @@
 			<div class="min-h-0 flex-1 overflow-y-auto p-4">
 				{#if editorError}
 					<div
-						class="mb-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[8px] text-red-600 dark:text-red-400"
+						class="border-danger-border bg-danger-soft text-danger mb-3 rounded-lg border px-3 py-2 text-[8px]"
 					>
 						{editorError}
 					</div>
@@ -752,8 +749,8 @@
 					</div>
 
 					{#if editorKind === 'drop'}
-						<div class="mt-4 rounded-xl border border-red-500/25 bg-red-500/5 p-3">
-							<p class="text-[8px] font-bold text-red-600">
+						<div class="border-danger-border bg-danger-soft mt-4 rounded-xl border p-3">
+							<p class="text-danger text-[8px] font-bold">
 								This removes the account and its grants.
 							</p>
 							<p class="text-muted-foreground mt-1 text-[7px]">
@@ -920,14 +917,14 @@
 						<div class="flex items-center justify-between border-b px-3 py-2">
 							<span class="text-[8px] font-bold">Reviewed SQL</span>
 							{#if changePreview.destructive}
-								<span class="text-[7px] font-bold text-red-500">DESTRUCTIVE</span>
+								<span class="text-danger text-[7px] font-bold">DESTRUCTIVE</span>
 							{/if}
 						</div>
 						<pre
-							class="overflow-x-auto bg-[#111827] p-3 font-mono text-[8px] leading-relaxed whitespace-pre-wrap text-slate-200">{changePreview.sql}</pre>
+							class="rt-code-surface overflow-x-auto p-3 font-mono text-[8px] leading-relaxed whitespace-pre-wrap">{changePreview.sql}</pre>
 					</div>
 					{#each changePreview.warnings as warning}
-						<p class="mt-2 text-[7px] leading-relaxed text-amber-700 dark:text-amber-300">
+						<p class="text-warning mt-2 text-[7px] leading-relaxed">
 							{warning}
 						</p>
 					{/each}

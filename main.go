@@ -10,6 +10,7 @@ import (
 
 	"rollingthunder/internal/db"
 	"rollingthunder/internal/diagnostics"
+	"rollingthunder/pkg/application"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -63,7 +64,7 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "⚡ Rolling Thunder",
+		Title:  "⚡ " + application.Name,
 		Width:  1024,
 		Height: 768,
 		AssetServer: &assetserver.Options{

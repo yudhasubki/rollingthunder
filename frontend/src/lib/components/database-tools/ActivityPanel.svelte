@@ -25,6 +25,7 @@
 	import { BACKEND_RESTART_MESSAGE, hasBackendMethod } from '$lib/wails/backendCompatibility';
 	import { addConsoleLog, updateStatus } from '$lib/stores/status.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
+	import { APPLICATION } from '$lib/config/application';
 
 	let connectionId = $state('');
 	let activity = $state<database.DatabaseActivity | null>(null);
@@ -274,7 +275,7 @@
 
 	{#if error}
 		<div
-			class="m-4 mb-0 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[8px] text-red-600 dark:text-red-400"
+			class="border-danger-border bg-danger-soft text-danger m-4 mb-0 flex items-start gap-2 rounded-lg border px-3 py-2 text-[8px]"
 		>
 			<CircleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 			{error}
@@ -312,12 +313,12 @@
 				<button
 					type="button"
 					class="rounded-xl border p-3 text-left {stateFilter === 'active'
-						? 'border-emerald-500/30 bg-emerald-500/5'
+						? 'border-info-border bg-info-soft'
 						: 'hover:bg-[var(--surface-hover)]'}"
 					onclick={() => (stateFilter = 'active')}
 				>
 					<div class="flex items-center justify-between">
-						<Zap class="h-4 w-4 text-emerald-500" />
+						<Zap class="text-info h-4 w-4" />
 						<span class="text-[16px] font-bold">{activeCount}</span>
 					</div>
 					<p class="text-muted-foreground mt-2 text-[8px]">Active</p>
@@ -325,12 +326,12 @@
 				<button
 					type="button"
 					class="rounded-xl border p-3 text-left {stateFilter === 'waiting'
-						? 'border-amber-500/30 bg-amber-500/5'
+						? 'border-warning-border bg-warning-soft'
 						: 'hover:bg-[var(--surface-hover)]'}"
 					onclick={() => (stateFilter = 'waiting')}
 				>
 					<div class="flex items-center justify-between">
-						<LockKeyhole class="h-4 w-4 text-amber-500" />
+						<LockKeyhole class="text-warning h-4 w-4" />
 						<span class="text-[16px] font-bold">{waitingCount}</span>
 					</div>
 					<p class="text-muted-foreground mt-2 text-[8px]">Waiting / blocked</p>
@@ -392,7 +393,7 @@
 							<span class="flex items-center gap-1.5 font-mono text-[8px] font-bold">
 								{session.id}
 								{#if session.isCurrent}
-									<span class="h-1.5 w-1.5 rounded-full bg-sky-500" title="Rolling Thunder"></span>
+									<span class="bg-info h-1.5 w-1.5 rounded-full" title={APPLICATION.name}></span>
 								{/if}
 							</span>
 							<span class="min-w-0">
@@ -404,9 +405,9 @@
 							<span
 								class="w-fit rounded-full px-2 py-1 text-[7px] font-bold {sessionState(session) ===
 								'waiting'
-									? 'bg-amber-500/10 text-amber-600'
+									? 'bg-warning-soft text-warning'
 									: sessionState(session) === 'active'
-										? 'bg-emerald-500/10 text-emerald-600'
+										? 'bg-info-soft text-info'
 										: 'bg-muted text-muted-foreground'}"
 							>
 								{sessionState(session)}
@@ -428,7 +429,7 @@
 	{/if}
 
 	{#if selectedSession}
-		<div class="absolute inset-0 z-20 flex justify-end bg-black/25 backdrop-blur-[1px]">
+		<div class="bg-overlay/25 absolute inset-0 z-20 flex justify-end backdrop-blur-[1px]">
 			<button
 				type="button"
 				class="absolute inset-0 cursor-default"
@@ -441,7 +442,7 @@
 				<header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
 					<span
 						class="flex h-8 w-8 items-center justify-center rounded-lg {selectedSession.waiting
-							? 'bg-amber-500/10 text-amber-600'
+							? 'bg-warning-soft text-warning'
 							: 'bg-primary/10 text-primary'}"
 					>
 						<Activity class="h-4 w-4" />
@@ -464,9 +465,9 @@
 				<div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
 					{#if selectedSession.isCurrent}
 						<div
-							class="rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[8px] text-sky-700 dark:text-sky-300"
+							class="border-info-border bg-info-soft text-info rounded-lg border px-3 py-2 text-[8px]"
 						>
-							This session belongs to Rolling Thunder. Stop its query from the query tab.
+							This session belongs to {APPLICATION.name}. Stop its query from the query tab.
 						</div>
 					{/if}
 					<div class="grid grid-cols-2 gap-2">
@@ -481,8 +482,8 @@
 					</div>
 
 					{#if selectedSession.waitEvent}
-						<div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-							<div class="flex items-center gap-2 text-[8px] font-bold text-amber-600">
+						<div class="border-warning-border bg-warning-soft rounded-lg border p-3">
+							<div class="text-warning flex items-center gap-2 text-[8px] font-bold">
 								<LockKeyhole class="h-3.5 w-3.5" />
 								{selectedSession.waitEvent}
 							</div>
@@ -502,12 +503,12 @@
 							>
 						</div>
 						<pre
-							class="max-h-64 overflow-auto bg-[#111827] p-3 font-mono text-[8px] leading-relaxed whitespace-pre-wrap text-slate-200">{selectedSession.query ||
+							class="rt-code-surface max-h-64 overflow-auto p-3 font-mono text-[8px] leading-relaxed whitespace-pre-wrap">{selectedSession.query ||
 								'-- No statement text is available for this session.'}</pre>
 					</section>
 
 					{#if action === 'cancel'}
-						<div class="rounded-xl border border-amber-500/25 p-3">
+						<div class="border-warning-border rounded-xl border p-3">
 							<p class="text-[8px] font-bold">Cancel the current statement?</p>
 							<p class="text-muted-foreground mt-1 text-[7px] leading-relaxed">
 								The connection stays open. Its transaction may become aborted depending on the
@@ -519,8 +520,8 @@
 							</label>
 						</div>
 					{:else if action === 'terminate'}
-						<div class="rounded-xl border border-red-500/25 bg-red-500/5 p-3">
-							<p class="text-[8px] font-bold text-red-600">Terminate the entire connection?</p>
+						<div class="border-danger-border bg-danger-soft rounded-xl border p-3">
+							<p class="text-danger text-[8px] font-bold">Terminate the entire connection?</p>
 							<p class="text-muted-foreground mt-1 text-[7px] leading-relaxed">
 								Any open transaction will roll back and the client will be disconnected.
 							</p>
@@ -553,10 +554,10 @@
 							</button>
 							<button
 								type="button"
-								class="h-9 flex-1 cursor-pointer rounded-md text-[8px] font-bold text-white {action ===
+								class="text-on-solid h-9 flex-1 cursor-pointer rounded-md text-[8px] font-bold {action ===
 								'terminate'
-									? 'bg-red-600'
-									: 'bg-amber-600'} disabled:cursor-not-allowed disabled:opacity-35"
+									? 'bg-danger'
+									: 'bg-warning'} disabled:cursor-not-allowed disabled:opacity-35"
 								onclick={stopSession}
 								disabled={actionRunning ||
 									(action === 'cancel'
@@ -580,7 +581,7 @@
 							</button>
 							<button
 								type="button"
-								class="h-9 flex-1 cursor-pointer rounded-md border border-red-500/30 text-[8px] font-bold text-red-600 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-35"
+								class="border-danger-border text-danger hover:bg-danger-soft h-9 flex-1 cursor-pointer rounded-md border text-[8px] font-bold disabled:cursor-not-allowed disabled:opacity-35"
 								onclick={() => (action = 'terminate')}
 								disabled={selectedSession.isCurrent}
 							>

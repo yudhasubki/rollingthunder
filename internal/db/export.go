@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 
@@ -90,7 +91,7 @@ func exportFileConfiguration(format database.ExportFormat) (exportFileConfig, er
 	case database.ExportFormatCSV:
 		return exportFileConfig{
 			title:           "Export CSV",
-			defaultFilename: "rollingthunder-export.csv",
+			defaultFilename: application.Identifier + "-export.csv",
 			extension:       ".csv",
 			filter: wailsruntime.FileFilter{
 				DisplayName: "CSV files (*.csv)",
@@ -100,7 +101,7 @@ func exportFileConfiguration(format database.ExportFormat) (exportFileConfig, er
 	case database.ExportFormatJSON:
 		return exportFileConfig{
 			title:           "Export JSON",
-			defaultFilename: "rollingthunder-export.json",
+			defaultFilename: application.Identifier + "-export.json",
 			extension:       ".json",
 			filter: wailsruntime.FileFilter{
 				DisplayName: "JSON files (*.json)",
@@ -110,7 +111,7 @@ func exportFileConfiguration(format database.ExportFormat) (exportFileConfig, er
 	case database.ExportFormatSQL:
 		return exportFileConfig{
 			title:           "Export SQL",
-			defaultFilename: "rollingthunder-export.sql",
+			defaultFilename: application.Identifier + "-export.sql",
 			extension:       ".sql",
 			filter: wailsruntime.FileFilter{
 				DisplayName: "SQL files (*.sql)",
@@ -170,7 +171,10 @@ func replaceExportFile(tempPath string, targetPath string) error {
 		return fmt.Errorf("export destination is not a regular file")
 	}
 
-	backupFile, err := os.CreateTemp(filepath.Dir(targetPath), ".rollingthunder-backup-*")
+	backupFile, err := os.CreateTemp(
+		filepath.Dir(targetPath),
+		"."+application.Identifier+"-backup-*",
+	)
 	if err != nil {
 		return fmt.Errorf("prepare existing export backup: %w", err)
 	}
@@ -328,7 +332,10 @@ func (s *Service) writeExport(
 	}
 	job.status.Store(exportStatusRunning)
 
-	tempFile, err := os.CreateTemp(filepath.Dir(path), ".rollingthunder-export-*")
+	tempFile, err := os.CreateTemp(
+		filepath.Dir(path),
+		"."+application.Identifier+"-export-*",
+	)
 	if err != nil {
 		return database.ExportResult{}, fmt.Errorf("create export file: %w", err)
 	}

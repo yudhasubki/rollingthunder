@@ -16,7 +16,7 @@ export interface ConnectionInfo {
 	database: string;
 	host: string;
 	profileId?: string;
-	color: string;
+	environment: string;
 	sshTunnel: boolean;
 	isActive: boolean;
 	health?: database.ConnectionHealth;

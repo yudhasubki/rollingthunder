@@ -443,10 +443,10 @@
 				</span>
 				{#if stagedChangeCount > 0}
 					<span
-						class="inline-flex h-6 items-center gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/10 px-2 text-[8px] font-semibold text-amber-700 dark:text-amber-300"
+						class="border-warning-border bg-warning-soft text-warning inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[8px] font-semibold"
 						title={`${stagedChanges.data.added.length} inserts · ${stagedChanges.data.updated.length} updates · ${stagedChanges.data.deleted.length} deletes`}
 					>
-						<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+						<span class="bg-warning h-1.5 w-1.5 rounded-full"></span>
 						{stagedChangeCount} staged
 					</span>
 				{/if}

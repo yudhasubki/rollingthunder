@@ -105,3 +105,60 @@ func TestPostgresMaintenancePreservesTLSNameThroughTunnel(t *testing.T) {
 		t.Fatalf("PGHOSTADDR missing from maintenance environment")
 	}
 }
+
+func TestPostgresMaintenanceUsesPrivatePasswordFile(t *testing.T) {
+	t.Setenv("PGPASSWORD", "inherited-secret")
+	environment, cleanup, err := postgresCommandEnvironment(database.Config{
+		Host:          "127.0.0.1",
+		Port:          "41001",
+		Db:            "rolling",
+		User:          "operator",
+		Password:      `pa:ss\word`,
+		TLSServerName: "database.internal",
+	})
+	if err != nil {
+		t.Fatalf("create PostgreSQL environment: %v", err)
+	}
+	var passwordFile string
+	for _, value := range environment {
+		if strings.HasPrefix(value, "PGPASSWORD=") {
+			t.Fatalf("password leaked into child environment")
+		}
+		if strings.HasPrefix(value, "PGPASSFILE=") {
+			passwordFile = strings.TrimPrefix(value, "PGPASSFILE=")
+		}
+	}
+	if passwordFile == "" {
+		t.Fatal("PGPASSFILE missing from child environment")
+	}
+	info, err := os.Stat(passwordFile)
+	if err != nil {
+		t.Fatalf("stat password file: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("password-file permissions = %o", info.Mode().Perm())
+	}
+	content, err := os.ReadFile(passwordFile)
+	if err != nil {
+		t.Fatalf("read password file: %v", err)
+	}
+	if got, want := string(content), "database.internal:41001:rolling:operator:pa\\:ss\\\\word\n"; got != want {
+		t.Fatalf("password-file content = %q, want %q", got, want)
+	}
+	cleanup()
+	if _, err := os.Stat(passwordFile); !os.IsNotExist(err) {
+		t.Fatalf("password file still exists after cleanup: %v", err)
+	}
+}
+
+func TestPostgresPasswordFileRejectsLineBreaks(t *testing.T) {
+	_, cleanup, err := postgresCommandEnvironment(database.Config{
+		Password: "line one\nline two",
+	})
+	if cleanup != nil {
+		cleanup()
+	}
+	if err == nil {
+		t.Fatal("expected password-file line break validation")
+	}
+}

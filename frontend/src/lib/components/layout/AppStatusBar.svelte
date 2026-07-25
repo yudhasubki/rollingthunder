@@ -2,7 +2,7 @@
 	import { getSegments, getLevel, getDatabaseInfo } from '$lib/stores/status.svelte';
 	import { getStagedChanges, hasChanges } from '$lib/stores/staged.svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
-	import { CircleCheck, CircleAlert, CircleX, Database } from 'lucide-svelte';
+	import { CircleCheck, CircleAlert, CircleX, Database, Info } from 'lucide-svelte';
 
 	const segments = $derived(getSegments());
 	const level = $derived(getLevel());
@@ -11,7 +11,13 @@
 	const staged = $derived(tabsStore.activeTabId ? getStagedChanges(tabsStore.activeTabId) : null);
 
 	const statusColor = $derived(
-		level === 'error' ? 'text-destructive' : level === 'warn' ? 'text-yellow-500' : 'text-green-500'
+		level === 'error'
+			? 'text-danger'
+			: level === 'warn'
+				? 'text-warning'
+				: level === 'success'
+					? 'text-success'
+					: 'text-info'
 	);
 
 	const changeCount = $derived(
@@ -32,8 +38,10 @@
 			<CircleX class="h-3 w-3 {statusColor}" />
 		{:else if level === 'warn'}
 			<CircleAlert class="h-3 w-3 {statusColor}" />
-		{:else}
+		{:else if level === 'success'}
 			<CircleCheck class="h-3 w-3 {statusColor}" />
+		{:else}
+			<Info class="h-3 w-3 {statusColor}" />
 		{/if}
 		<span class="text-muted-foreground">
 			{#if segments.length > 0}
@@ -46,7 +54,7 @@
 
 	<div class="text-muted-foreground flex items-center gap-3">
 		{#if changes}
-			<span class="bg-primary/10 text-primary rounded px-1.5 py-0.5 font-semibold">
+			<span class="bg-warning-soft text-warning rounded px-1.5 py-0.5 font-semibold">
 				{changeCount} pending changes
 			</span>
 		{/if}

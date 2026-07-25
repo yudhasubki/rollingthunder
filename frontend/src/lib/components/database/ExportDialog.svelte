@@ -154,7 +154,7 @@
 {#if open}
 	<button
 		type="button"
-		class="fixed inset-0 z-[80] cursor-default bg-black/45 backdrop-blur-[1px]"
+		class="bg-overlay/45 fixed inset-0 z-[80] cursor-default backdrop-blur-[1px]"
 		onclick={close}
 		aria-label="Close export dialog"
 	></button>
@@ -358,7 +358,7 @@
 					</div>
 					<div class="rounded-lg bg-[var(--surface-sunken)] px-3 py-2.5">
 						{#if truncated}
-							<div class="flex items-start gap-2 text-[9px] text-amber-700 dark:text-amber-300">
+							<div class="text-warning flex items-start gap-2 text-[9px]">
 								<TriangleAlert class="mt-0.5 h-3 w-3 shrink-0" />
 								<span>
 									The interactive result was capped. This export contains only the rows currently
@@ -503,7 +503,7 @@
 
 						{#if engine.toLowerCase().includes('mysql') || engine.toLowerCase().includes('maria')}
 							<label
-								class="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-blue-500/20 bg-blue-500/5 px-2.5 py-2"
+								class="border-info-border bg-info-soft mt-3 flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2"
 							>
 								<input
 									type="checkbox"

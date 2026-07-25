@@ -9,8 +9,6 @@ import (
 	"rollingthunder/pkg/response"
 )
 
-const activityTimeout = 10 * time.Second
-
 func (s *Service) activityContext() (context.Context, context.CancelFunc) {
 	parent := s.ctx
 	if parent == nil {

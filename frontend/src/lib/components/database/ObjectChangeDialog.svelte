@@ -477,7 +477,7 @@
 	<div class="fixed inset-0 z-[130] flex items-center justify-center p-6">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/50 backdrop-blur-[2px]"
+			class="bg-overlay/50 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={closeDialog}
 			aria-label="Close structural change dialog"
 		></button>
@@ -491,7 +491,7 @@
 			<header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
 				<span
 					class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg {preview?.destructive
-						? 'bg-red-500/10 text-red-500'
+						? 'bg-danger-soft text-danger'
 						: 'bg-primary/10 text-primary'}"
 				>
 					{#if preview?.destructive}
@@ -511,7 +511,7 @@
 				<div class="text-muted-foreground flex items-center gap-1.5 text-[8px] font-bold uppercase">
 					<span
 						class="flex h-5 w-5 items-center justify-center rounded-full {preview
-							? 'bg-emerald-500/15 text-emerald-500'
+							? 'bg-success-soft text-success'
 							: 'bg-primary text-primary-foreground'}">1</span
 					>
 					<span>Configure</span>
@@ -537,11 +537,11 @@
 			<div class="min-h-0 flex-1 overflow-auto bg-[var(--surface-sunken)] p-4">
 				{#if error}
 					<div
-						class="mb-3 flex items-start gap-2.5 rounded-lg border border-red-500/25 bg-red-500/5 p-3"
+						class="border-danger-border bg-danger-soft mb-3 flex items-start gap-2.5 rounded-lg border p-3"
 					>
-						<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+						<AlertTriangle class="text-danger mt-0.5 h-4 w-4 shrink-0" />
 						<div>
-							<p class="text-[10px] font-semibold text-red-600 dark:text-red-400">{error}</p>
+							<p class="text-danger text-[10px] font-semibold">{error}</p>
 							{#if errorHint}
 								<p class="text-muted-foreground mt-1 text-[9px]">{errorHint}</p>
 							{/if}
@@ -572,10 +572,8 @@
 						</div>
 
 						{#if (preview.warnings || []).length > 0}
-							<div class="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
-								<div
-									class="flex items-center gap-2 text-[9px] font-bold text-amber-700 dark:text-amber-300"
-								>
+							<div class="border-warning-border bg-warning-soft rounded-lg border p-3">
+								<div class="text-warning flex items-center gap-2 text-[9px] font-bold">
 									<AlertTriangle class="h-3.5 w-3.5" />
 									Review impact
 								</div>
@@ -605,7 +603,7 @@
 
 						{#if preview.destructive}
 							<label
-								class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/5 p-3"
+								class="border-danger-border bg-danger-soft flex cursor-pointer items-start gap-2.5 rounded-lg border p-3"
 							>
 								<input
 									type="checkbox"
@@ -613,7 +611,7 @@
 									bind:checked={destructiveConfirmed}
 								/>
 								<span>
-									<span class="block text-[10px] font-bold text-red-600 dark:text-red-400">
+									<span class="text-danger block text-[10px] font-bold">
 										I understand this structural change is destructive.
 									</span>
 									<span class="text-muted-foreground mt-0.5 block text-[8px]">
@@ -637,9 +635,11 @@
 								/>
 							</section>
 						{:else if intent === 'drop'}
-							<section class="rounded-xl border border-red-500/20 bg-[var(--surface-raised)] p-4">
+							<section
+								class="border-danger-border rounded-xl border bg-[var(--surface-raised)] p-4"
+							>
 								<div class="flex items-start gap-3">
-									<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+									<AlertTriangle class="text-danger mt-0.5 h-4 w-4 shrink-0" />
 									<div>
 										<h3 class="text-[10px] font-bold">Permanent object removal</h3>
 										<p class="text-muted-foreground mt-1 text-[9px] leading-relaxed">
@@ -900,9 +900,11 @@
 								{/if}
 							</section>
 						{:else if intent === 'drop-column'}
-							<section class="rounded-xl border border-red-500/20 bg-[var(--surface-raised)] p-4">
+							<section
+								class="border-danger-border rounded-xl border bg-[var(--surface-raised)] p-4"
+							>
 								<div class="flex items-start gap-3">
-									<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+									<AlertTriangle class="text-danger mt-0.5 h-4 w-4 shrink-0" />
 									<div class="min-w-0 flex-1">
 										<h3 class="text-[10px] font-bold">Permanent column removal</h3>
 										<p class="text-muted-foreground mt-1 text-[9px] leading-relaxed">
@@ -1024,7 +1026,7 @@
 
 			<footer class="flex shrink-0 items-center justify-between gap-3 border-t p-4">
 				<div class="text-muted-foreground flex min-w-0 items-start gap-2 text-[8px]">
-					<ShieldCheck class="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+					<ShieldCheck class="text-success mt-0.5 h-3.5 w-3.5 shrink-0" />
 					<span>
 						The backend regenerates and fingerprints this SQL. A changed payload must be reviewed
 						again.
@@ -1044,7 +1046,7 @@
 						<button
 							type="button"
 							class="{preview.destructive
-								? 'bg-red-600 text-white hover:bg-red-700'
+								? 'bg-danger text-on-solid hover:bg-danger/90'
 								: 'rt-primary-button'} inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[9px] font-bold disabled:pointer-events-none disabled:opacity-45"
 							onclick={applyChange}
 							disabled={applying || (preview.destructive && !destructiveConfirmed)}

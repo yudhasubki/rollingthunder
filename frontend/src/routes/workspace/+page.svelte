@@ -76,6 +76,7 @@
 	import { commandDefinitions, matchesShortcut, type CommandID } from '$lib/commands/shortcuts';
 	import { shortcutStore } from '$lib/stores/shortcuts.svelte';
 	import { focusTrap } from '$lib/actions/focusTrap';
+	import { APPLICATION, APPLICATION_EVENTS } from '$lib/config/application';
 
 	const tabs = $derived(tabsStore.tabs);
 	const allTabs = $derived(tabsStore.allTabs);
@@ -318,7 +319,7 @@
 			return;
 		}
 		window.dispatchEvent(
-			new CustomEvent('rollingthunder-query-command', {
+			new CustomEvent(APPLICATION_EVENTS.queryCommand, {
 				detail: { tabId: activeTab.id, command }
 			})
 		);
@@ -667,7 +668,7 @@
 							>
 								{#if activeTab?.kind === 'table' && activeStagedCount > 0}
 									<span
-										class="mr-1 inline-flex h-6 items-center rounded-md bg-amber-500/10 px-2 text-[8px] font-semibold text-amber-700 dark:text-amber-300"
+										class="bg-warning-soft text-warning mr-1 inline-flex h-6 items-center rounded-md px-2 text-[8px] font-semibold"
 										title={`${activeStagedChanges?.data.added.length ?? 0} inserts · ${activeStagedChanges?.data.updated.length ?? 0} updates · ${activeStagedChanges?.data.deleted.length ?? 0} deletes`}
 									>
 										{activeStagedCount} pending
@@ -727,7 +728,7 @@
 							<div class="relative max-w-sm px-8 text-center">
 								<img
 									src="/logo.png"
-									alt="Rolling Thunder"
+									alt={APPLICATION.name}
 									class="rt-brand-logo mx-auto mb-5 h-14 w-14 rounded-2xl"
 								/>
 								<h2 class="text-base font-bold tracking-[-0.01em]">Your workspace is ready</h2>
@@ -756,7 +757,7 @@
 					<div class="relative max-w-sm px-8 text-center">
 						<img
 							src="/logo.png"
-							alt="Rolling Thunder"
+							alt={APPLICATION.name}
 							class="rt-brand-logo mx-auto mb-5 h-14 w-14 rounded-2xl"
 						/>
 						<h2 class="text-base font-bold tracking-[-0.01em]">Your workspace is ready</h2>
@@ -802,12 +803,12 @@
 				{#if consoleLogs.length > 0}
 					<span
 						class="h-1.5 w-1.5 rounded-full {latestConsoleLog?.level === 'error'
-							? 'bg-red-500'
+							? 'bg-danger'
 							: latestConsoleLog?.level === 'warn'
-								? 'bg-amber-500'
+								? 'bg-warning'
 								: latestConsoleLog?.level === 'success'
-									? 'bg-emerald-500'
-									: 'bg-sky-500'}"
+									? 'bg-success'
+									: 'bg-info'}"
 					></span>
 				{/if}
 				{#if !showConsole && latestConsoleLog}
@@ -827,13 +828,13 @@
 			</button>
 
 			{#if consoleErrorCount > 0}
-				<span class="flex items-center gap-1 text-[9px] font-semibold text-red-500">
+				<span class="text-danger flex items-center gap-1 text-[9px] font-semibold">
 					<CircleX class="h-3 w-3" />
 					{consoleErrorCount}
 				</span>
 			{/if}
 			{#if consoleWarningCount > 0}
-				<span class="flex items-center gap-1 text-[9px] font-semibold text-amber-500">
+				<span class="text-warning flex items-center gap-1 text-[9px] font-semibold">
 					<CircleAlert class="h-3 w-3" />
 					{consoleWarningCount}
 				</span>
@@ -890,12 +891,12 @@
 							<span
 								class="flex items-center gap-1.5 font-sans text-[8px] font-bold uppercase {log.level ===
 								'error'
-									? 'text-red-500'
+									? 'text-danger'
 									: log.level === 'warn'
-										? 'text-amber-500'
+										? 'text-warning'
 										: log.level === 'success'
-											? 'text-emerald-500'
-											: 'text-sky-500'}"
+											? 'text-success'
+											: 'text-info'}"
 							>
 								{#if log.level === 'error'}
 									<CircleX class="h-3 w-3" />
@@ -924,7 +925,7 @@
 	<div class="fixed inset-0 z-[100] flex items-center justify-center p-6">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={() => closeReview()}
 			aria-label="Close change review"
 		></button>
@@ -937,7 +938,7 @@
 		>
 			<header class="flex shrink-0 items-start gap-3 border-b p-4">
 				<span
-					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-300"
+					class="bg-warning-soft text-warning flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
 				>
 					<ShieldCheck class="h-4 w-4" />
 				</span>
@@ -970,9 +971,7 @@
 
 			<div class="grid shrink-0 grid-cols-3 divide-x border-b bg-[var(--surface-sunken)]">
 				<div class="flex h-14 items-center gap-2.5 px-4">
-					<span
-						class="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-500"
-					>
+					<span class="bg-info-soft text-info flex h-7 w-7 items-center justify-center rounded-md">
 						<Plus class="h-3.5 w-3.5" />
 					</span>
 					<div>
@@ -984,7 +983,7 @@
 				</div>
 				<div class="flex h-14 items-center gap-2.5 px-4">
 					<span
-						class="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/10 text-amber-500"
+						class="bg-warning-soft text-warning flex h-7 w-7 items-center justify-center rounded-md"
 					>
 						<Pencil class="h-3.5 w-3.5" />
 					</span>
@@ -997,7 +996,7 @@
 				</div>
 				<div class="flex h-14 items-center gap-2.5 px-4">
 					<span
-						class="flex h-7 w-7 items-center justify-center rounded-md bg-red-500/10 text-red-500"
+						class="bg-danger-soft text-danger flex h-7 w-7 items-center justify-center rounded-md"
 					>
 						<Trash2 class="h-3.5 w-3.5" />
 					</span>
@@ -1019,7 +1018,7 @@
 				{:else}
 					{#if reviewError}
 						<div
-							class="mb-3 flex items-start gap-2.5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-600 dark:text-red-400"
+							class="border-danger-border bg-danger-soft text-danger mb-3 flex items-start gap-2.5 rounded-lg border p-3"
 						>
 							<TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
 							<div class="min-w-0">
@@ -1035,7 +1034,7 @@
 						{#if reviewChanges.data.added.length > 0}
 							<section>
 								<div class="mb-1.5 flex items-center gap-2">
-									<Plus class="h-3 w-3 text-emerald-500" />
+									<Plus class="text-info h-3 w-3" />
 									<h3 class="text-[10px] font-bold">Rows to insert</h3>
 								</div>
 								<div class="space-y-1.5">
@@ -1065,7 +1064,7 @@
 						{#if reviewChanges.data.updated.length > 0}
 							<section>
 								<div class="mb-1.5 flex items-center gap-2">
-									<Pencil class="h-3 w-3 text-amber-500" />
+									<Pencil class="text-warning h-3 w-3" />
 									<h3 class="text-[10px] font-bold">Rows to update</h3>
 								</div>
 								<div class="space-y-1.5">
@@ -1104,18 +1103,18 @@
 						{#if reviewChanges.data.deleted.length > 0}
 							<section>
 								<div class="mb-1.5 flex items-center gap-2">
-									<Trash2 class="h-3 w-3 text-red-500" />
+									<Trash2 class="text-danger h-3 w-3" />
 									<h3 class="text-[10px] font-bold">Rows to delete permanently</h3>
 								</div>
 								<div class="space-y-1.5">
 									{#each reviewChanges.data.deleted.slice(0, 5) as row, index}
 										<div
-											class="flex items-center justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2"
+											class="border-danger-border bg-danger-soft flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
 										>
 											<span class="truncate text-[9px] font-semibold">
 												{describeRow(row, reviewPrimaryKeys, index)}
 											</span>
-											<span class="shrink-0 text-[8px] font-semibold text-red-500"
+											<span class="text-danger shrink-0 text-[8px] font-semibold"
 												>Permanent delete</span
 											>
 										</div>
@@ -1134,7 +1133,7 @@
 
 			<footer class="flex shrink-0 items-center justify-between gap-4 border-t p-4">
 				<div class="flex min-w-0 items-start gap-2">
-					<ShieldCheck class="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+					<ShieldCheck class="text-success mt-0.5 h-3.5 w-3.5 shrink-0" />
 					<p class="text-muted-foreground text-[8px] leading-relaxed">
 						All {reviewChangeCount} changes run in one database transaction. If any row fails, the complete
 						set is rolled back.
@@ -1152,7 +1151,7 @@
 					<button
 						type="button"
 						class="{reviewChanges.data.deleted.length > 0
-							? 'bg-red-600 text-white hover:bg-red-700'
+							? 'bg-danger text-on-solid hover:bg-danger/90'
 							: 'rt-primary-button'} inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[10px] font-bold disabled:pointer-events-none disabled:opacity-50"
 						onclick={confirmApplyChanges}
 						disabled={reviewLoading ||
@@ -1178,7 +1177,7 @@
 	<div class="fixed inset-0 z-[110] flex items-center justify-center p-6">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={() => (discardTarget = null)}
 			aria-label="Keep staged changes"
 		></button>
@@ -1191,7 +1190,7 @@
 		>
 			<div class="flex items-start gap-3">
 				<span
-					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-300"
+					class="bg-warning-soft text-warning flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
 				>
 					<TriangleAlert class="h-4 w-4" />
 				</span>
@@ -1230,7 +1229,7 @@
 				</button>
 				<button
 					type="button"
-					class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md bg-red-600 px-3 text-[10px] font-bold text-white transition-colors hover:bg-red-700"
+					class="bg-danger text-on-solid hover:bg-danger/90 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[10px] font-bold transition-colors"
 					onclick={confirmDiscardChanges}
 				>
 					<Trash2 class="h-3 w-3" />

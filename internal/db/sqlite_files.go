@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/response"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -66,7 +67,7 @@ func (s *Service) ChooseSQLiteDatabaseFile(
 	if create {
 		path, err = s.sqliteSaveDialog(s.ctx, wailsruntime.SaveDialogOptions{
 			Title:                "Create SQLite database",
-			DefaultFilename:      "rollingthunder.sqlite3",
+			DefaultFilename:      application.Identifier + ".sqlite3",
 			Filters:              sqliteFileFilters,
 			CanCreateDirectories: true,
 		})

@@ -79,7 +79,7 @@
 	<div class="fixed inset-0 z-[120] flex items-center justify-center p-6">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[1px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[1px]"
 			onclick={() => !busy && onClose()}
 			aria-label="Close query variables"
 		></button>
@@ -174,7 +174,7 @@
 				{/each}
 				{#if error}
 					<div
-						class="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[9px] text-red-600 dark:text-red-400"
+						class="border-danger-border bg-danger-soft text-danger rounded-lg border px-3 py-2 text-[9px]"
 					>
 						{error}
 					</div>

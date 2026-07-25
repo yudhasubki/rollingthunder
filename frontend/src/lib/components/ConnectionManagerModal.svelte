@@ -24,6 +24,18 @@
 	import { updateStatus } from '$lib/stores/status.svelte';
 	import { focusTrap } from '$lib/actions/focusTrap';
 	import {
+		APPLICATION,
+		CONNECTION_DEFAULTS,
+		CONNECTION_ENVIRONMENTS,
+		DATABASE_PROVIDERS,
+		SSH_AUTH_OPTIONS,
+		SSL_OPTIONS,
+		connectionEnvironmentOption,
+		normalizeConnectionEnvironment,
+		type ConnectionEnvironment,
+		type ProviderId
+	} from '$lib/config/application';
+	import {
 		AlertCircle,
 		ArrowLeft,
 		Check,
@@ -63,53 +75,13 @@
 		startNew = false
 	}: Props = $props();
 
-	type ProviderId = 'postgres' | 'mysql' | 'sqlite';
-
-	const profileColors = ['#ef5b50', '#f59e0b', '#22c55e', '#0ea5e9', '#6366f1', '#a855f7'];
-	const providers: Array<{
-		id: ProviderId;
-		name: string;
-		description: string;
-		defaultPort: string;
-		available: boolean;
-		mark: string;
-	}> = [
-		{
-			id: 'postgres',
-			name: 'PostgreSQL',
-			description: 'Schemas, relations, indexes, and SQL tools.',
-			defaultPort: '5432',
-			available: true,
-			mark: 'PG'
-		},
-		{
-			id: 'mysql',
-			name: 'MySQL',
-			description: 'MySQL and compatible server connections.',
-			defaultPort: '3306',
-			available: true,
-			mark: 'MY'
-		},
-		{
-			id: 'sqlite',
-			name: 'SQLite',
-			description: 'Open a local SQLite database file.',
-			defaultPort: '',
-			available: true,
-			mark: 'SQ'
-		}
-	];
-	const sslOptions = [
-		{ value: 'disable', label: 'Disable' },
-		{ value: 'require', label: 'Require' },
-		{ value: 'verify-ca', label: 'Verify CA' },
-		{ value: 'verify-full', label: 'Verify full' }
-	];
-	const sshAuthOptions = [
-		{ value: 'agent', label: 'SSH agent' },
-		{ value: 'private-key', label: 'Private key' },
-		{ value: 'password', label: 'Password' }
-	];
+	const providers = DATABASE_PROVIDERS;
+	const sslOptions = SSL_OPTIONS.map((option) => ({ ...option }));
+	const sshAuthOptions = SSH_AUTH_OPTIONS.map((option) => ({ ...option }));
+	const environmentOptions = CONNECTION_ENVIRONMENTS.map(({ value, label }) => ({
+		value,
+		label
+	}));
 
 	let profiles = $state<db.SavedConnection[]>([]);
 	let searchQuery = $state('');
@@ -125,7 +97,7 @@
 	let sshExpanded = $state(false);
 	let sshEnabled = $state(false);
 	let sshHost = $state('');
-	let sshPort = $state('22');
+	let sshPort = $state(CONNECTION_DEFAULTS.sshPort);
 	let sshUser = $state('');
 	let sshAuthMode = $state('agent');
 	let sshPrivateKeyPath = $state('');
@@ -144,13 +116,15 @@
 	let stopConnectionElapsedTimer: (() => void) | null = null;
 
 	let connectionName = $state('');
-	let connectionColor = $state('#ef5b50');
-	let host = $state('127.0.0.1');
-	let port = $state('5432');
+	let connectionEnvironment = $state<ConnectionEnvironment>(CONNECTION_DEFAULTS.environment);
+	let host = $state(CONNECTION_DEFAULTS.host);
+	let port = $state(
+		DATABASE_PROVIDERS.find((item) => item.id === CONNECTION_DEFAULTS.provider)?.defaultPort ?? ''
+	);
 	let username = $state('');
 	let password = $state('');
 	let databaseName = $state('');
-	let sslMode = $state('disable');
+	let sslMode = $state(CONNECTION_DEFAULTS.sslMode);
 	let sslRootCert = $state('');
 	let sslCert = $state('');
 	let sslKey = $state('');
@@ -160,7 +134,7 @@
 		searchQuery.trim()
 			? profiles.filter((profile) => {
 					const config = profile.config;
-					return `${config.name} ${config.driver || 'postgres'} ${config.host} ${config.db}`
+					return `${config.name} ${config.driver || CONNECTION_DEFAULTS.provider} ${config.host} ${config.db}`
 						.toLowerCase()
 						.includes(searchQuery.trim().toLowerCase());
 				})
@@ -173,6 +147,7 @@
 			: `${host || 'host'}:${port || 'port'} / ${databaseName || 'database'}`
 	);
 	const selectedProvider = $derived(providers.find((item) => item.id === provider) ?? null);
+	const selectedEnvironment = $derived(connectionEnvironmentOption(connectionEnvironment));
 
 	$effect(() => {
 		if (open && !loadedForOpen) {
@@ -242,28 +217,30 @@
 		const config = profile.config;
 		editingId = profile.id;
 		connectionName = config.name || '';
-		connectionColor = config.color || '#ef5b50';
-		const profileProvider = (config.driver as ProviderId) || 'postgres';
-		host = profileProvider === 'sqlite' ? '' : config.host || '127.0.0.1';
+		connectionEnvironment = normalizeConnectionEnvironment(config.environment);
+		const profileProvider = (config.driver as ProviderId) || CONNECTION_DEFAULTS.provider;
+		host = profileProvider === 'sqlite' ? '' : config.host || CONNECTION_DEFAULTS.host;
 		port =
 			profileProvider === 'sqlite'
 				? ''
 				: config.port ||
 					providers.find((item) => item.id === profileProvider)?.defaultPort ||
-					'5432';
+					DATABASE_PROVIDERS.find((item) => item.id === CONNECTION_DEFAULTS.provider)
+						?.defaultPort ||
+					'';
 		username = config.user || '';
 		password = '';
 		hasStoredPassword = Boolean(profile.hasPassword);
 		clearPasswordConfirm = false;
 		databaseName = config.db || '';
-		sslMode = config.sslMode || 'disable';
+		sslMode = config.sslMode || CONNECTION_DEFAULTS.sslMode;
 		sslRootCert = config.sslRootCert || '';
 		sslCert = config.sslCert || '';
 		sslKey = config.sslKey || '';
 		sshEnabled = Boolean(config.sshEnabled);
 		sshExpanded = Boolean(config.sshEnabled);
 		sshHost = config.sshHost || '';
-		sshPort = config.sshPort || '22';
+		sshPort = config.sshPort || CONNECTION_DEFAULTS.sshPort;
 		sshUser = config.sshUser || '';
 		sshAuthMode = config.sshAuthMode || 'agent';
 		sshPrivateKeyPath = config.sshPrivateKeyPath || '';
@@ -283,22 +260,24 @@
 	function newProfile() {
 		editingId = null;
 		connectionName = '';
-		connectionColor = '#ef5b50';
-		host = '127.0.0.1';
-		port = '5432';
+		connectionEnvironment = CONNECTION_DEFAULTS.environment;
+		host = CONNECTION_DEFAULTS.host;
+		port =
+			DATABASE_PROVIDERS.find((item) => item.id === CONNECTION_DEFAULTS.provider)?.defaultPort ??
+			'';
 		username = '';
 		password = '';
 		hasStoredPassword = false;
 		clearPasswordConfirm = false;
 		databaseName = '';
-		sslMode = 'disable';
+		sslMode = CONNECTION_DEFAULTS.sslMode;
 		sslRootCert = '';
 		sslCert = '';
 		sslKey = '';
 		sshExpanded = false;
 		sshEnabled = false;
 		sshHost = '';
-		sshPort = '22';
+		sshPort = CONNECTION_DEFAULTS.sshPort;
 		sshUser = '';
 		sshAuthMode = 'agent';
 		sshPrivateKeyPath = '';
@@ -321,7 +300,7 @@
 			(connection) =>
 				connection.profileId === profile.id ||
 				(connection.name === profile.config.name &&
-					connection.driver === (profile.config.driver || 'postgres') &&
+					connection.driver === (profile.config.driver || CONNECTION_DEFAULTS.provider) &&
 					connection.host === profile.config.host &&
 					connection.database === profile.config.db)
 		);
@@ -331,20 +310,20 @@
 		const sqlite = provider === 'sqlite';
 		return new database.Config({
 			name: connectionName.trim(),
-			color: connectionColor,
-			driver: provider || 'postgres',
+			environment: connectionEnvironment,
+			driver: provider || CONNECTION_DEFAULTS.provider,
 			host: sqlite ? '' : host.trim(),
 			port: sqlite ? '' : port.trim(),
 			user: sqlite ? '' : username.trim(),
 			password: sqlite ? '' : password,
 			db: databaseName.trim(),
-			sslMode: sqlite ? 'disable' : sslMode,
+			sslMode: sqlite ? CONNECTION_DEFAULTS.sslMode : sslMode,
 			sslRootCert: sqlite ? '' : sslRootCert.trim(),
 			sslCert: sqlite ? '' : sslCert.trim(),
 			sslKey: sqlite ? '' : sslKey.trim(),
 			sshEnabled: !sqlite && sshEnabled,
 			sshHost: !sqlite && sshEnabled ? sshHost.trim() : '',
-			sshPort: !sqlite && sshEnabled ? sshPort.trim() || '22' : '',
+			sshPort: !sqlite && sshEnabled ? sshPort.trim() || CONNECTION_DEFAULTS.sshPort : '',
 			sshUser: !sqlite && sshEnabled ? sshUser.trim() : '',
 			sshAuthMode: !sqlite && sshEnabled ? sshAuthMode : '',
 			sshPrivateKeyPath:
@@ -407,18 +386,18 @@
 			port = '';
 			username = '';
 			password = '';
-			sslMode = 'disable';
+			sslMode = CONNECTION_DEFAULTS.sslMode;
 			sshEnabled = false;
 			sshExpanded = false;
 		} else {
-			host ||= '127.0.0.1';
+			host ||= CONNECTION_DEFAULTS.host;
 		}
 		message = '';
 	}
 
 	function profileEndpoint(profile: db.SavedConnection): string {
 		const config = profile.config;
-		if ((config.driver || 'postgres') === 'sqlite') return config.db;
+		if ((config.driver || CONNECTION_DEFAULTS.provider) === 'sqlite') return config.db;
 		return `${config.host}:${config.port}/${config.db}`;
 	}
 
@@ -495,7 +474,7 @@
 				? await ConnectWithProfile(editingId, config, attemptID)
 				: await Connect(
 						new db.ConnectRequest({
-							driver: provider || 'postgres',
+							driver: provider || CONNECTION_DEFAULTS.provider,
 							config,
 							attemptId: attemptID
 						})
@@ -628,7 +607,7 @@
 	<div class="fixed inset-0 z-[100] flex items-center justify-center p-6">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			aria-label="Close connection manager"
 			onclick={closeModal}
 		></button>
@@ -711,8 +690,12 @@
 							<div class="space-y-0.5">
 								{#each filteredProfiles as profile (profile.id)}
 									{@const profileProvider =
-										providers.find((item) => item.id === (profile.config.driver || 'postgres')) ??
-										providers[0]}
+										providers.find(
+											(item) => item.id === (profile.config.driver || CONNECTION_DEFAULTS.provider)
+										) ?? providers[0]}
+									{@const profileEnvironment = connectionEnvironmentOption(
+										profile.config.environment
+									)}
 									<button
 										type="button"
 										class="group relative flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors {editingId ===
@@ -738,10 +721,12 @@
 												{profileEndpoint(profile)}
 											</span>
 										</span>
+										<span
+											class="h-1.5 w-1.5 shrink-0 rounded-full {profileEnvironment.dotClass}"
+											title={profileEnvironment.label}
+										></span>
 										{#if isConnected(profile)}
-											<span
-												class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
-												title="Connected"
+											<span class="bg-success h-1.5 w-1.5 shrink-0 rounded-full" title="Connected"
 											></span>
 										{/if}
 									</button>
@@ -806,9 +791,9 @@
 							<div
 								class="mb-4 flex items-center gap-2 rounded-md border px-3 py-2 text-[9px] font-semibold {messageLevel ===
 								'error'
-									? 'border-red-500/25 bg-red-500/8 text-red-500'
+									? 'border-danger-border bg-danger-soft text-danger'
 									: messageLevel === 'success'
-										? 'border-emerald-500/25 bg-emerald-500/8 text-emerald-600'
+										? 'border-success-border bg-success-soft text-success'
 										: 'text-muted-foreground bg-[var(--surface-sunken)]'}"
 							>
 								{#if action}
@@ -876,35 +861,32 @@
 							</div>
 						{:else}
 							<div class="grid grid-cols-2 gap-x-4 gap-y-4">
-								<div class="col-span-2 grid grid-cols-[minmax(0,1fr)_180px] gap-4">
+								<div class="col-span-2 grid grid-cols-[minmax(0,1fr)_220px] gap-4">
 									<div>
 										<label for="modal-connection-name">Profile name</label>
 										<input
 											id="modal-connection-name"
 											bind:value={connectionName}
-											placeholder="Production database"
+											placeholder="Analytics workspace"
 											disabled={action !== null}
 										/>
 									</div>
 									<div>
-										<span class="text-muted-foreground mb-2 block text-[10px] font-bold">
-											Profile color
-										</span>
-										<div class="flex h-9 items-center gap-2">
-											{#each profileColors as color}
-												<button
-													type="button"
-													class="h-4 w-4 rounded-full transition-transform hover:scale-110 {connectionColor ===
-													color
-														? 'ring-foreground ring-1 ring-offset-2'
-														: ''}"
-													style="background-color: {color}"
-													onclick={() => (connectionColor = color)}
-													disabled={action !== null}
-													aria-label="Set profile color to {color}"
-												></button>
-											{/each}
-										</div>
+										<label for="modal-environment">Environment</label>
+										<FilterCombobox
+											id="modal-environment"
+											options={environmentOptions}
+											value={connectionEnvironment}
+											onChange={(value) =>
+												(connectionEnvironment = normalizeConnectionEnvironment(value))}
+											searchable={false}
+											disabled={action !== null}
+											triggerClass="h-9 px-3 text-xs"
+										/>
+										<p class="text-muted-foreground mt-1 flex items-center gap-1.5 text-[7px]">
+											<span class="h-1.5 w-1.5 rounded-full {selectedEnvironment.dotClass}"></span>
+											{selectedEnvironment.description}
+										</p>
 									</div>
 								</div>
 
@@ -964,7 +946,7 @@
 										<input
 											id="modal-host"
 											bind:value={host}
-											placeholder="127.0.0.1"
+											placeholder={CONNECTION_DEFAULTS.host}
 											disabled={action !== null}
 										/>
 									</div>
@@ -983,7 +965,7 @@
 											<input
 												id="modal-database"
 												bind:value={databaseName}
-												placeholder={provider === 'mysql' ? 'app' : 'postgres'}
+												placeholder={selectedProvider.defaultDatabase}
 												disabled={action !== null}
 											/>
 										</div>
@@ -998,7 +980,7 @@
 										<input
 											id="modal-username"
 											bind:value={username}
-											placeholder={provider === 'mysql' ? 'root' : 'postgres'}
+											placeholder={selectedProvider.defaultUser}
 											disabled={action !== null}
 										/>
 									</div>
@@ -1107,7 +1089,7 @@
 													<span class="block text-[10px] font-bold">SSH tunnel</span>
 													<span class="text-muted-foreground mt-0.5 block text-[8px]">
 														{sshEnabled
-															? `Via ${sshHost || 'SSH host'}:${sshPort || '22'}`
+															? `Via ${sshHost || 'SSH host'}:${sshPort || CONNECTION_DEFAULTS.sshPort}`
 															: 'Optional secure forwarding through a bastion host'}
 													</span>
 												</span>
@@ -1120,7 +1102,7 @@
 											<button
 												type="button"
 												class="mr-3 inline-flex h-7 min-w-12 items-center justify-center rounded-full border px-2.5 text-[8px] font-bold transition-colors {sshEnabled
-													? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
+													? 'border-success-border bg-success-soft text-success'
 													: 'text-muted-foreground bg-[var(--surface-raised)]'}"
 												onclick={() => {
 													sshEnabled = !sshEnabled;
@@ -1150,7 +1132,7 @@
 														<input
 															id="modal-ssh-port"
 															bind:value={sshPort}
-															placeholder="22"
+															placeholder={CONNECTION_DEFAULTS.sshPort}
 															disabled={action !== null || !sshEnabled}
 														/>
 													</div>
@@ -1269,10 +1251,10 @@
 													</div>
 												{:else}
 													<div
-														class="col-span-2 rounded-md border border-emerald-500/20 bg-emerald-500/8 px-3 py-2 text-[8px] leading-relaxed text-emerald-700 dark:text-emerald-400"
+														class="border-success-border bg-success-soft text-success col-span-2 rounded-md border px-3 py-2 text-[8px] leading-relaxed"
 													>
-														Rolling Thunder uses the agent exposed by <code>SSH_AUTH_SOCK</code>. No
-														private key or SSH password is copied into the profile.
+														{APPLICATION.name} uses the agent exposed by <code>SSH_AUTH_SOCK</code>.
+														No private key or SSH password is copied into the profile.
 													</div>
 												{/if}
 
@@ -1298,7 +1280,7 @@
 												<div
 													class="col-span-2 flex items-start gap-2 rounded-md border px-3 py-2.5"
 												>
-													<ShieldCheck class="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+													<ShieldCheck class="text-success mt-0.5 h-3.5 w-3.5 shrink-0" />
 													<div class="min-w-0 flex-1">
 														<p class="text-[8px] font-bold">Strict host verification</p>
 														<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
@@ -1321,7 +1303,8 @@
 												</div>
 												<p class="text-muted-foreground col-span-2 text-[8px] leading-relaxed">
 													The database host above is resolved from the SSH server. Use
-													<code>127.0.0.1</code> when the database only listens on that server.
+													<code>{CONNECTION_DEFAULTS.host}</code> when the database only listens on that
+													server.
 												</p>
 											</div>
 										{/if}
@@ -1337,8 +1320,8 @@
 								<button
 									type="button"
 									class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-semibold {deleteConfirm
-										? 'bg-red-500 text-white'
-										: 'text-muted-foreground hover:bg-red-500/10 hover:text-red-500'}"
+										? 'bg-danger text-on-solid'
+										: 'text-muted-foreground hover:bg-danger-soft hover:text-danger'}"
 									onclick={deleteProfile}
 									disabled={action !== null}
 								>
@@ -1369,7 +1352,7 @@
 								{#if action === 'connect'}
 									<button
 										type="button"
-										class="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/8 px-3 text-[10px] font-bold text-red-500 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+										class="border-danger-border bg-danger-soft text-danger hover:bg-danger-soft inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-[10px] font-bold transition-colors disabled:opacity-50"
 										onclick={cancelConnection}
 										disabled={cancellingConnection}
 									>

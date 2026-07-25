@@ -13,6 +13,7 @@
 		displayVersion,
 		isUpdateSnoozed
 	} from '$lib/update/notification';
+	import { APPLICATION } from '$lib/config/application';
 
 	interface UpdateInfo {
 		currentVersion: string;
@@ -52,7 +53,7 @@
 			update = {
 				currentVersion: result.currentVersion || '',
 				latestVersion: result.latestVersion,
-				name: result.name || `Rolling Thunder ${displayVersion(result.latestVersion)}`,
+				name: result.name || `${APPLICATION.name} ${displayVersion(result.latestVersion)}`,
 				releaseNotes: result.releaseNotes || '',
 				releaseUrl: result.releaseUrl,
 				publishedAt: result.publishedAt || ''
@@ -119,7 +120,7 @@
 	<div class="fixed inset-0 z-[170] flex items-center justify-center p-5">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={() => snooze()}
 			aria-label="Remind me about this update tomorrow"
 		></button>
@@ -158,7 +159,7 @@
 							id="update-dialog-description"
 							class="text-muted-foreground mt-1 text-[9px] leading-relaxed"
 						>
-							A newer Rolling Thunder build is ready on GitHub Releases.
+							A newer {APPLICATION.name} build is ready on GitHub Releases.
 						</p>
 					</div>
 					<button

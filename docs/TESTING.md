@@ -100,10 +100,15 @@ Use a disposable saved profile:
 5. Use the two-step removal actions for database and SSH credentials. Reopen the profile and confirm
    it requests the removed secret without affecting the other credential.
 6. Test old version-1/version-2 profile fixtures on a disposable OS account/keychain. Migration to
-   version 3 must rewrite metadata only after the keychain accepts every plaintext secret.
+   version 4 must rewrite metadata only after the keychain accepts every plaintext secret.
 
 Automated tests cover restrictive file modes, plaintext absence, fail-safe legacy migration,
 backend-only secret resolution, and credential removal.
+
+For PostgreSQL maintenance, also confirm the child environment contains `PGPASSFILE` but not
+`PGPASSWORD`, the password file mode is `0600`, and the file no longer exists after completion.
+Frontend tests also enforce the semantic color contract recorded in the repository
+[agent guide](../AGENTS.md).
 
 ## Manual application matrix
 

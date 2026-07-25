@@ -14,8 +14,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const defaultConnectionTimeout = 15 * time.Second
-
 type ConnectRequest struct {
 	Driver    string          `json:"driver"`
 	Config    database.Config `json:"config"`

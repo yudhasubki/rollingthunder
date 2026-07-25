@@ -24,6 +24,7 @@
 	import { createServiceError } from '$lib/errors/service';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import { UI_RUNTIME } from '$lib/config/application';
 	import ObjectChangeDialog from '$lib/components/database/ObjectChangeDialog.svelte';
 	import type { StructuralChangeIntent } from '$lib/database/changeTemplates';
 
@@ -138,7 +139,7 @@
 			updateStatus('Copied to clipboard', 'success');
 			window.setTimeout(() => {
 				if (copied === key) copied = '';
-			}, 1600);
+			}, UI_RUNTIME.copyFeedbackMs);
 		} catch (copyError: any) {
 			updateStatus(copyError?.message || 'Could not copy to clipboard', 'error');
 		}
@@ -230,7 +231,7 @@
 				onclick={() => copyText(detail?.object.reference.name || reference.name, 'name')}
 				title="Copy object name"
 			>
-				{#if copied === 'name'}<Check class="h-3 w-3 text-emerald-500" />{:else}<Copy
+				{#if copied === 'name'}<Check class="text-success h-3 w-3" />{:else}<Copy
 						class="h-3 w-3"
 					/>{/if}
 				Name
@@ -241,7 +242,7 @@
 				onclick={() => copyText(qualifiedName, 'qualified')}
 				title="Copy qualified name"
 			>
-				{#if copied === 'qualified'}<Check class="h-3 w-3 text-emerald-500" />{:else}<Copy
+				{#if copied === 'qualified'}<Check class="text-success h-3 w-3" />{:else}<Copy
 						class="h-3 w-3"
 					/>{/if}
 				Qualified
@@ -335,7 +336,7 @@
 								<div class="bg-border my-1 h-px"></div>
 								<button
 									type="button"
-									class="flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left text-red-600 hover:bg-red-500/10 dark:text-red-400"
+									class="text-danger hover:bg-danger-soft flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left"
 									onclick={() => openChange('drop')}
 								>
 									<Trash2 class="mt-0.5 h-3.5 w-3.5" />
@@ -408,11 +409,11 @@
 				<p class="mt-1 text-[9px]">Loading definition and relationships</p>
 			</div>
 		{:else if error}
-			<div class="mx-auto mt-8 max-w-lg rounded-xl border border-red-500/25 bg-red-500/5 p-4">
+			<div class="border-danger-border bg-danger-soft mx-auto mt-8 max-w-lg rounded-xl border p-4">
 				<div class="flex items-start gap-3">
-					<AlertCircle class="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+					<AlertCircle class="text-danger mt-0.5 h-4 w-4 shrink-0" />
 					<div>
-						<h2 class="text-[11px] font-bold text-red-600 dark:text-red-400">{error}</h2>
+						<h2 class="text-danger text-[11px] font-bold">{error}</h2>
 						{#if errorHint}
 							<p class="text-muted-foreground mt-1 text-[9px] leading-relaxed">{errorHint}</p>
 						{/if}
@@ -446,7 +447,7 @@
 								onclick={() => copyText(detail?.definition || '', 'definition')}
 								disabled={!detail.definition}
 							>
-								{#if copied === 'definition'}<Check class="h-3 w-3 text-emerald-500" />{:else}<Copy
+								{#if copied === 'definition'}<Check class="text-success h-3 w-3" />{:else}<Copy
 										class="h-3 w-3"
 									/>{/if}
 								Copy SQL
@@ -480,7 +481,7 @@
 					<section class="overflow-hidden rounded-xl border bg-[var(--surface-raised)]">
 						<header class="flex h-10 items-center justify-between border-b px-3">
 							<div class="flex items-center gap-2">
-								<GitBranch class="h-3.5 w-3.5 text-sky-500" />
+								<GitBranch class="text-muted-foreground h-3.5 w-3.5" />
 								<h2 class="text-[10px] font-bold">Uses</h2>
 							</div>
 							<span class="text-muted-foreground text-[9px]">{dependencies.length}</span>
@@ -523,7 +524,7 @@
 					<section class="overflow-hidden rounded-xl border bg-[var(--surface-raised)]">
 						<header class="flex h-10 items-center justify-between border-b px-3">
 							<div class="flex items-center gap-2">
-								<GitBranch class="h-3.5 w-3.5 rotate-180 text-amber-500" />
+								<GitBranch class="text-muted-foreground h-3.5 w-3.5 rotate-180" />
 								<h2 class="text-[10px] font-bold">Used by</h2>
 							</div>
 							<span class="text-muted-foreground text-[9px]">{dependents.length}</span>
@@ -602,7 +603,7 @@
 						<section class="overflow-hidden rounded-xl border bg-[var(--surface-raised)]">
 							<header class="flex h-10 items-center justify-between border-b px-3">
 								<div class="flex items-center gap-2">
-									<Columns3 class="h-3.5 w-3.5 text-violet-500" />
+									<Columns3 class="text-muted-foreground h-3.5 w-3.5" />
 									<h2 class="text-[10px] font-bold">Columns</h2>
 								</div>
 								<span class="text-muted-foreground text-[9px]">{columns.length}</span>
@@ -619,13 +620,13 @@
 										<div class="flex justify-end gap-1">
 											{#if column.is_primary}
 												<span
-													class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[7px] font-bold text-amber-600 dark:text-amber-300"
+													class="bg-muted text-foreground rounded px-1.5 py-0.5 text-[7px] font-bold"
 													>PK</span
 												>
 											{/if}
 											{#if column.foreign_table}
 												<span
-													class="rounded bg-sky-500/10 px-1.5 py-0.5 text-[7px] font-bold text-sky-600 dark:text-sky-300"
+													class="bg-info-soft text-info rounded px-1.5 py-0.5 text-[7px] font-bold"
 													>FK</span
 												>
 											{/if}

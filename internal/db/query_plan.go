@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"rollingthunder/pkg/database"
 	"rollingthunder/pkg/response"
 )
-
-const explainQueryTimeout = 30 * time.Second
 
 func (s *Service) ExplainQuery(
 	request database.QueryRequest,

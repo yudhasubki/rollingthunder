@@ -109,7 +109,7 @@ func (s *Service) checkConnectionHealth(
 	}
 	timeout := s.healthTimeout
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = defaultHealthCheckTimeout
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
@@ -434,7 +434,7 @@ func (s *Service) Shutdown(_ context.Context) {
 	if s.healthDone != nil {
 		select {
 		case <-s.healthDone:
-		case <-time.After(2 * time.Second):
+		case <-time.After(healthMonitorShutdownTimeout):
 		}
 	}
 	s.mu.RLock()

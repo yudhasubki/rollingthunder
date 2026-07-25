@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"rollingthunder/pkg/application"
 	"rollingthunder/pkg/database"
 )
 
@@ -73,7 +74,7 @@ func (p *Postgres) GetDatabaseActivity(
 			xact_start AS transaction_started,
 			query_start AS query_started,
 			backend_start AS started_at,
-			(pid = pg_backend_pid() OR application_name = 'Rolling Thunder') AS is_current
+			(pid = pg_backend_pid() OR application_name = $1) AS is_current
 		FROM pg_catalog.pg_stat_activity
 		WHERE backend_type = 'client backend'
 		ORDER BY
@@ -81,7 +82,12 @@ func (p *Postgres) GetDatabaseActivity(
 			query_start NULLS LAST,
 			pid`
 	var rows []postgresActivityRow
-	if err := p.conn.SelectContext(ctx, &rows, query); err != nil {
+	if err := p.conn.SelectContext(
+		ctx,
+		&rows,
+		query,
+		application.DatabaseClientName,
+	); err != nil {
 		return database.DatabaseActivity{}, err
 	}
 	sessions := make([]database.DatabaseSession, 0, len(rows))
@@ -133,9 +139,10 @@ func (p *Postgres) CancelDatabaseSession(
 	if err := p.conn.GetContext(
 		ctx,
 		&protected,
-		`SELECT pid = pg_backend_pid() OR application_name = 'Rolling Thunder'
+		`SELECT pid = pg_backend_pid() OR application_name = $2
 		 FROM pg_catalog.pg_stat_activity WHERE pid = $1`,
 		id,
+		application.DatabaseClientName,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("PostgreSQL session %d no longer exists", id)

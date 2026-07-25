@@ -38,7 +38,7 @@
 	<div class="fixed inset-0 z-[140] flex items-center justify-center p-5">
 		<button
 			type="button"
-			class="absolute inset-0 cursor-default bg-black/50 backdrop-blur-[2px]"
+			class="bg-overlay/50 absolute inset-0 cursor-default backdrop-blur-[2px]"
 			onclick={onClose}
 			aria-label="Close database tools"
 		></button>

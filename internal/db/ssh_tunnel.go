@@ -20,8 +20,6 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-const defaultSSHPort = "22"
-
 type connectionTunnel interface {
 	LocalHost() string
 	LocalPort() string
@@ -50,7 +48,7 @@ type sshDatabaseTunnel struct {
 func (tunnel *sshDatabaseTunnel) LocalHost() string {
 	host, _, err := net.SplitHostPort(tunnel.listener.Addr().String())
 	if err != nil {
-		return "127.0.0.1"
+		return database.DefaultHost
 	}
 	return host
 }
@@ -306,7 +304,7 @@ func validateSSHConfig(config database.Config) error {
 	if !config.SSHEnabled {
 		return fmt.Errorf("SSH tunnel is not enabled")
 	}
-	if config.Driver == "sqlite" {
+	if config.Driver == database.DriverSQLite {
 		return fmt.Errorf("SQLite connections cannot use an SSH tunnel")
 	}
 	if strings.TrimSpace(config.SSHHost) == "" {
@@ -331,7 +329,7 @@ func newSSHTunnel(
 	}
 	sshPort := strings.TrimSpace(config.SSHPort)
 	if sshPort == "" {
-		sshPort = defaultSSHPort
+		sshPort = database.DefaultSSHPort
 	}
 	sshAddress := net.JoinHostPort(strings.TrimSpace(config.SSHHost), sshPort)
 	target := net.JoinHostPort(
@@ -390,7 +388,10 @@ func newSSHTunnel(
 	}
 	_ = rawConnection.SetDeadline(time.Time{})
 	client := ssh.NewClient(clientConnection, channels, requests)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen(
+		"tcp",
+		net.JoinHostPort(database.DefaultHost, "0"),
+	)
 	if err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("open local SSH forwarding socket: %w", err)

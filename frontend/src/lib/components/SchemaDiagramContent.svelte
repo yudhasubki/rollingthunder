@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { GetCollections, GetCollectionStructures } from '$lib/wailsjs/go/db/Service';
 	import { database } from '$lib/wailsjs/go/models';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
@@ -208,7 +208,8 @@
 				`Schema diagram ready: ${tables.length} tables, ${relations.length} relationships in ${duration}ms`,
 				'success'
 			);
-			setTimeout(fitDiagram, 0);
+			await tick();
+			fitDiagram();
 		} catch (error: any) {
 			errorMessage = error?.message || 'Failed to load schema diagram';
 			updateStatus(errorMessage, 'error');
@@ -430,7 +431,7 @@
 									<div class="flex h-[25px] items-center gap-2 border-b px-3 last:border-b-0">
 										<span class="flex h-4 w-4 shrink-0 items-center justify-center">
 											{#if column.is_primary}
-												<KeyRound class="h-3 w-3 text-amber-500" />
+												<KeyRound class="text-foreground h-3 w-3" />
 											{:else if getForeignRelation(column, schema)}
 												<Link2 class="text-primary h-3 w-3" />
 											{:else}
