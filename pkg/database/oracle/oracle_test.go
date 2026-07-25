@@ -130,6 +130,25 @@ func TestOracleColumnMetadataReadsVirtualFlagFromTabCols(t *testing.T) {
 	}
 }
 
+func TestOracleDatabaseVersionHasPermissionSafeFallback(t *testing.T) {
+	if len(oracleDatabaseVersionQueries) < 3 {
+		t.Fatalf("version queries = %v", oracleDatabaseVersionQueries)
+	}
+	fallback := strings.ToUpper(
+		oracleDatabaseVersionQueries[len(oracleDatabaseVersionQueries)-1],
+	)
+	if !strings.Contains(fallback, "DBMS_DB_VERSION.VERSION") ||
+		!strings.Contains(fallback, "FROM DUAL") {
+		t.Fatalf("permission-safe version fallback = %q", fallback)
+	}
+	for _, query := range oracleDatabaseVersionQueries[:2] {
+		normalized := strings.ToUpper(query)
+		if !strings.Contains(normalized, "MAX(") {
+			t.Fatalf("catalog version query can return no rows: %q", query)
+		}
+	}
+}
+
 func TestOracleLiveConformance(t *testing.T) {
 	host := os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_HOST")
 	if host == "" {

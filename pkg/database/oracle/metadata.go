@@ -472,31 +472,55 @@ func oracleIndexColumn(
 	return "(expression)"
 }
 
+var oracleDatabaseVersionQueries = []string{
+	`SELECT MAX(version_full)
+	 FROM product_component_version
+	 WHERE UPPER(product) LIKE '%ORACLE%DATABASE%'`,
+	`SELECT MAX(version)
+	 FROM product_component_version
+	 WHERE UPPER(product) LIKE '%ORACLE%DATABASE%'`,
+	`SELECT TO_CHAR(DBMS_DB_VERSION.VERSION) || '.' ||
+		TO_CHAR(DBMS_DB_VERSION.RELEASE)
+	 FROM dual`,
+}
+
+func (o *Oracle) databaseVersion() (string, error) {
+	var lastErr error
+	for _, query := range oracleDatabaseVersionQueries {
+		var version sql.NullString
+		if err := o.conn.QueryRow(query).Scan(&version); err != nil {
+			lastErr = err
+			continue
+		}
+		if value := strings.TrimSpace(version.String); version.Valid && value != "" {
+			return value, nil
+		}
+	}
+	if lastErr != nil {
+		return "", fmt.Errorf("read Oracle Database version: %w", lastErr)
+	}
+	return "", fmt.Errorf("Oracle Database returned no version metadata")
+}
+
 func (o *Oracle) GetDatabaseInfo() (database.Info, error) {
 	if err := o.ensureConnected(); err != nil {
 		return database.Info{}, err
 	}
-	var (
-		version      string
-		databaseName string
-	)
-	if err := o.conn.QueryRow(`
-		SELECT version_full
-		FROM product_component_version
-		WHERE product LIKE 'Oracle Database%'
-		FETCH FIRST 1 ROW ONLY`).Scan(&version); err != nil {
-		if fallbackErr := o.conn.QueryRow(`
-			SELECT version
-			FROM product_component_version
-			WHERE product LIKE 'Oracle Database%'
-			FETCH FIRST 1 ROW ONLY`).Scan(&version); fallbackErr != nil {
-			return database.Info{}, fallbackErr
-		}
+	version, err := o.databaseVersion()
+	if err != nil {
+		return database.Info{}, err
 	}
+	var databaseName string
 	if err := o.conn.QueryRow(
-		"SELECT SYS_CONTEXT('USERENV', 'DB_NAME') FROM dual",
+		`SELECT COALESCE(
+			NULLIF(SYS_CONTEXT('USERENV', 'CON_NAME'), 'CDB$ROOT'),
+			SYS_CONTEXT('USERENV', 'DB_NAME')
+		) FROM dual`,
 	).Scan(&databaseName); err != nil {
 		return database.Info{}, err
+	}
+	if strings.TrimSpace(databaseName) == "" {
+		databaseName = strings.TrimSpace(o.cfg.Db)
 	}
 	return database.Info{
 		Engine:   "Oracle Database",
