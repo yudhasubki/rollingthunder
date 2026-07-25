@@ -4,9 +4,14 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to rebuild and upload; leave blank for a preview
+        required: false
+        type: string
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || github.ref }}
+  group: release-${{ github.event.release.tag_name || inputs.release_tag || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -16,9 +21,10 @@ env:
   GO_VERSION_FILE: go.mod
   NODE_VERSION: "22"
   WAILS_VERSION: v2.10.1
-  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
-  PACKAGE_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.{0}', github.run_number) }}
-  ARTIFACT_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('manual-{0}', github.run_number) }}
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || '' }}
+  SOURCE_REF: ${{ github.event.release.tag_name || inputs.release_tag || github.ref }}
+  PACKAGE_VERSION: ${{ github.event.release.tag_name || inputs.release_tag || format('0.0.{0}', github.run_number) }}
+  ARTIFACT_VERSION: ${{ github.event.release.tag_name || inputs.release_tag || format('manual-{0}', github.run_number) }}
 
 jobs:
   validate:
@@ -28,6 +34,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -43,12 +51,18 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Validate release tag
-        if: github.event_name == 'release'
+        if: env.RELEASE_TAG != ''
         run: |
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Release tags must use semantic versioning, for example v1.2.3"
             exit 1
           fi
+
+      - name: Verify manual release target
+        if: github.event_name == 'workflow_dispatch' && env.RELEASE_TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
 
       - name: Test backend
         run: go test ./...
@@ -95,6 +109,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -152,6 +168,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -230,6 +248,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -328,8 +348,8 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      - name: Upload assets to published GitHub release
-        if: github.event_name == 'release'
+      - name: Upload assets to target GitHub release
+        if: env.RELEASE_TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"

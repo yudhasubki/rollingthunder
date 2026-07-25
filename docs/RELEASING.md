@@ -2,8 +2,9 @@
 
 Publishing a GitHub Release starts the native Rolling Thunder build matrix and uploads the resulting
 packages to that same release. Tests remain mandatory, while Windows and Linux signing is optional.
-macOS artifacts are intentionally unsigned. Manual workflow runs produce preview artifacts without
-publishing or modifying a GitHub Release.
+macOS artifacts are intentionally unsigned. Manual workflow runs produce preview artifacts when the
+optional release-tag input is left blank, or rebuild and upload assets to an existing release when
+the input is provided.
 
 ## Automated workflows
 
@@ -51,9 +52,9 @@ certificates, private keys, passwords, or decoded temporary files.
 
 ## Preview a release
 
-Open **Actions → Release → Run workflow**, select the intended branch, and run it manually. The
-workflow performs the complete validation and native build matrix, then exposes a
-`rollingthunder-release` workflow artifact. It does not create or modify a GitHub Release.
+Open **Actions → Release → Run workflow**, select the intended branch, leave **release_tag** blank,
+and run it manually. The workflow performs the complete validation and native build matrix, then
+exposes a `rollingthunder-release` workflow artifact. It does not create or modify a GitHub Release.
 
 Use preview artifacts for cross-platform smoke testing before publishing a version tag.
 
@@ -71,9 +72,15 @@ Use preview artifacts for cross-platform smoke testing before publishing a versi
 8. Download the uploaded files and verify them on clean target machines before announcing the
    release.
 
-The release workflow listens only for the `published` event. Editing release notes does not start a
-new build. Re-running the original workflow run replaces its assets with `--clobber` and does not
-move or recreate the tag.
+Editing release notes does not start a new build. Re-running the original workflow run is suitable
+for transient failures because it keeps the original workflow SHA and ref.
+
+## Retry an existing release
+
+After committing a workflow fix to the default branch, open **Actions → Release → Run workflow**,
+select the branch containing the fix, enter the existing tag in **release_tag**, and run it. The
+workflow validates that the release exists, checks out the exact tag, rebuilds every native package,
+and replaces same-named assets using `--clobber` without moving or recreating the tag.
 
 ## Verify artifacts
 
