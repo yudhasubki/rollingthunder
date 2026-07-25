@@ -33,7 +33,7 @@ func (s *SQLite) Capabilities() database.Capabilities {
 		ManageTriggers:      true,
 		TriggerToggle:       false,
 		ManageIndexes:       true,
-		AlterTableStructure: false,
+		AlterTableStructure: true,
 		ExplainPlans:        true,
 		Transactions:        true,
 		TransactionalDDL:    true,
@@ -43,6 +43,9 @@ func (s *SQLite) Capabilities() database.Capabilities {
 		AttachedDatabases:   true,
 		GeneratedColumns:    true,
 		Upsert:              true,
+		ManageSecurity:      false,
+		ActivityMonitor:     false,
+		SSHConnections:      false,
 	}
 }
 

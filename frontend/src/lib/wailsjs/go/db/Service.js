@@ -6,8 +6,24 @@ export function ApplyDatabaseObjectChange(arg1, arg2) {
   return window['go']['db']['Service']['ApplyDatabaseObjectChange'](arg1, arg2);
 }
 
+export function ApplyDatabaseRestore(arg1) {
+  return window['go']['db']['Service']['ApplyDatabaseRestore'](arg1);
+}
+
+export function ApplySchemaMigration(arg1) {
+  return window['go']['db']['Service']['ApplySchemaMigration'](arg1);
+}
+
+export function ApplySecurityChange(arg1, arg2) {
+  return window['go']['db']['Service']['ApplySecurityChange'](arg1, arg2);
+}
+
 export function ApplyTableChanges(arg1, arg2) {
   return window['go']['db']['Service']['ApplyTableChanges'](arg1, arg2);
+}
+
+export function BackupDatabase(arg1) {
+  return window['go']['db']['Service']['BackupDatabase'](arg1);
 }
 
 export function BeginTransaction(arg1, arg2) {
@@ -18,8 +34,16 @@ export function CancelConnectionAttempt(arg1) {
   return window['go']['db']['Service']['CancelConnectionAttempt'](arg1);
 }
 
+export function CancelDatabaseSession(arg1) {
+  return window['go']['db']['Service']['CancelDatabaseSession'](arg1);
+}
+
 export function CancelExport(arg1) {
   return window['go']['db']['Service']['CancelExport'](arg1);
+}
+
+export function CancelMaintenance(arg1) {
+  return window['go']['db']['Service']['CancelMaintenance'](arg1);
 }
 
 export function CancelQuery(arg1) {
@@ -38,12 +62,20 @@ export function ChooseImportFile() {
   return window['go']['db']['Service']['ChooseImportFile']();
 }
 
+export function ChooseRestoreFile(arg1) {
+  return window['go']['db']['Service']['ChooseRestoreFile'](arg1);
+}
+
 export function ChooseSQLiteDatabaseFile(arg1) {
   return window['go']['db']['Service']['ChooseSQLiteDatabaseFile'](arg1);
 }
 
 export function ClearConnectionPassword(arg1) {
   return window['go']['db']['Service']['ClearConnectionPassword'](arg1);
+}
+
+export function ClearConnectionSSHCredentials(arg1) {
+  return window['go']['db']['Service']['ClearConnectionSSHCredentials'](arg1);
 }
 
 export function ClearDiagnostics() {
@@ -114,6 +146,10 @@ export function GetActiveConnections() {
   return window['go']['db']['Service']['GetActiveConnections']();
 }
 
+export function GetBackupCapabilities(arg1) {
+  return window['go']['db']['Service']['GetBackupCapabilities'](arg1);
+}
+
 export function GetCapabilities(arg1) {
   return window['go']['db']['Service']['GetCapabilities'](arg1);
 }
@@ -142,6 +178,10 @@ export function GetDataTypes(arg1) {
   return window['go']['db']['Service']['GetDataTypes'](arg1);
 }
 
+export function GetDatabaseActivity(arg1) {
+  return window['go']['db']['Service']['GetDatabaseActivity'](arg1);
+}
+
 export function GetDatabaseInfo(arg1) {
   return window['go']['db']['Service']['GetDatabaseInfo'](arg1);
 }
@@ -166,12 +206,20 @@ export function GetIndices(arg1, arg2) {
   return window['go']['db']['Service']['GetIndices'](arg1, arg2);
 }
 
+export function GetMaintenanceProgress(arg1) {
+  return window['go']['db']['Service']['GetMaintenanceProgress'](arg1);
+}
+
 export function GetSavedConnections() {
   return window['go']['db']['Service']['GetSavedConnections']();
 }
 
 export function GetSchemas(arg1) {
   return window['go']['db']['Service']['GetSchemas'](arg1);
+}
+
+export function GetSecurityOverview(arg1, arg2, arg3) {
+  return window['go']['db']['Service']['GetSecurityOverview'](arg1, arg2, arg3);
 }
 
 export function GetTableDDL(arg1, arg2) {
@@ -192,6 +240,18 @@ export function InspectImportFile(arg1) {
 
 export function PreviewDatabaseObjectChange(arg1, arg2) {
   return window['go']['db']['Service']['PreviewDatabaseObjectChange'](arg1, arg2);
+}
+
+export function PreviewDatabaseRestore(arg1) {
+  return window['go']['db']['Service']['PreviewDatabaseRestore'](arg1);
+}
+
+export function PreviewSchemaMigration(arg1) {
+  return window['go']['db']['Service']['PreviewSchemaMigration'](arg1);
+}
+
+export function PreviewSecurityChange(arg1, arg2) {
+  return window['go']['db']['Service']['PreviewSecurityChange'](arg1, arg2);
 }
 
 export function ReconnectConnection(arg1, arg2) {

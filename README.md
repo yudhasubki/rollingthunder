@@ -41,6 +41,10 @@
 - Keep multiple database sessions open and switch between them.
 - Identify environments with profile colors.
 - Configure PostgreSQL or MySQL/MariaDB TLS modes and client certificates.
+- Route PostgreSQL and MySQL/MariaDB through an SSH tunnel using an SSH agent, private key, or
+  password. Host keys must match a known-hosts entry or an explicitly pinned SHA256 fingerprint.
+- Keep SSH passwords and private-key passphrases in the operating-system credential store alongside
+  database passwords; profile JSON contains only non-secret SSH settings.
 - Open or create SQLite database files through the native file picker.
 - Open connection management as a modal without leaving the workspace.
 - Select the database provider before filling in provider-specific settings.
@@ -63,8 +67,8 @@
 - Copy individual field values or the complete row as formatted JSON.
 - Stage row inserts, updates, and deletes before applying them.
 - Create, truncate, and drop tables with confirmation.
-- Preview and apply reviewed changes for views, routines, triggers, indexes, columns, and constraints
-  according to each engine's capabilities.
+- Add, alter, rename, and drop table columns; manage indexes and constraints through reviewed SQL
+  previews according to each engine's capabilities.
 - Keep table, query, diagram, and create-table tabs open together.
 - Restore each saved profile's own query workspace without mixing tabs between active connections.
 
@@ -79,6 +83,22 @@
 <p align="center">
   <sub>Map tables and follow foreign-key relationships in the interactive schema diagram.</sub>
 </p>
+
+### Database tools
+
+- Compare two active connections of the same engine, review table/column/index drift, and apply a
+  fingerprinted schema-sync plan. Destructive changes remain opt-in and unsupported constraint
+  drift is called out for manual review.
+- Create and restore SQLite online backups without an external process.
+- Create PostgreSQL custom-format backups with `pg_dump` and restore them with `pg_restore`.
+- Create and restore MySQL/MariaDB SQL backups with their native client tools. Database and SSH
+  secrets are never placed in process arguments.
+- Preview every restore, verify the selected file has not changed, explicitly confirm the target,
+  and cancel long-running external maintenance jobs.
+- Inspect PostgreSQL roles or MySQL/MariaDB users, review grants, and preview create/alter/drop,
+  grant/revoke, and role-membership changes before applying them.
+- Monitor active PostgreSQL and MySQL/MariaDB sessions, waits, blockers, duration, and current SQL;
+  cancel a statement or terminate a session through an explicit confirmation flow.
 
 ### Data export
 
@@ -141,17 +161,18 @@
   browser-based download action.
 - Keyboard focus traps, skip navigation, live status announcements, and reduced-motion support.
 - Headless end-to-end coverage for connect, edit, export, truncate, and drop workflows.
-- Live integration matrices for PostgreSQL 14–18, MySQL 8.0/8.4 LTS, and MariaDB 10.11/11.4 LTS.
+- Live integration matrices for PostgreSQL 14–18, MySQL 8.4/9.7 LTS with legacy 8.0
+  compatibility, and MariaDB 10.11/11.4/11.8/12.3 LTS.
 - Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
   attestations. macOS packaging does not require an Apple Developer account.
 
 ## Database support
 
-| Engine          | Connect/query | Object explorer                             | Completion | CI integration      |
-| --------------- | ------------- | ------------------------------------------- | ---------- | ------------------- |
-| PostgreSQL      | Available     | Full capability-based explorer              | Available  | 14–18               |
-| MySQL / MariaDB | Available     | Databases, tables, views, routines/triggers | Available  | 8.0/8.4; 10.11/11.4 |
-| SQLite          | Available     | Attached DBs, tables, views, triggers       | Available  | Always              |
+| Engine          | Connect/query | Object explorer                             | Maintenance / admin                     | CI integration                    |
+| --------------- | ------------- | ------------------------------------------- | --------------------------------------- | --------------------------------- |
+| PostgreSQL      | Available     | Full capability-based explorer              | Sync, backup, roles/grants, activity    | 14-18                             |
+| MySQL / MariaDB | Available     | Databases, tables, views, routines/triggers | Sync, backup, users/grants, activity    | 8.4/9.7 + legacy 8.0; 10.11-12.3 |
+| SQLite          | Available     | Attached DBs, tables, views, triggers       | Sync and built-in online backup/restore | Bundled engine                    |
 
 ## Known gaps
 
@@ -162,6 +183,15 @@ reliable target table.
 
 Other important limitations include:
 
+- PostgreSQL backup/restore requires compatible `pg_dump` and `pg_restore` executables in `PATH`.
+  MySQL/MariaDB backup/restore similarly requires `mysqldump`/`mariadb-dump` and
+  `mysql`/`mariadb`.
+- Role/user management and the activity monitor are server features and are not exposed for
+  SQLite.
+- Schema sync currently automates table, column, and index changes. Complex constraint drift is
+  reported for manual review instead of generating unsafe SQL.
+- SSH host verification is deliberately strict. Rolling Thunder does not silently trust a host on
+  first use; add it to `known_hosts` or pin the SHA256 host-key fingerprint.
 - Linux desktop packages currently target WebKitGTK 4.1 and require compatible GTK/WebKit runtime
   libraries from the distribution.
 - macOS release archives are not code-signed or notarized, so Gatekeeper can require approval on the
@@ -203,6 +233,7 @@ first-launch guidance.
 - Node.js and npm
 - Wails 2 CLI
 - A supported database server, or a local SQLite database file
+- Optional native database client tools for PostgreSQL/MySQL/MariaDB backup and restore
 
 ### Development
 
@@ -252,9 +283,9 @@ the full manual release matrix.
 
 ## Roadmap
 
-Milestones 1–5 cover reliable data workflows, the complete object explorer, multi-engine drivers,
-power-user query tooling, and release readiness. See [ROADMAP.md](ROADMAP.md) for acceptance
-criteria and shipped scope.
+Milestones 1-6 cover reliable data workflows, the complete object explorer, multi-engine drivers,
+power-user query tooling, release readiness, and reviewed administration/portability workflows.
+See [ROADMAP.md](ROADMAP.md) for acceptance criteria and shipped scope.
 
 ## Contributing
 

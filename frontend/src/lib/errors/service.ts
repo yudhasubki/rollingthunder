@@ -15,7 +15,7 @@ export function createServiceError(
 ): ServiceException {
 	const detail = error?.detail?.trim() || fallback;
 	const hint = error?.hint?.trim() || '';
-	const message = `${error?.code ? `[${error.code}] ` : ''}${detail}${hint ? ` — ${hint}` : ''}`;
+	const message = `${error?.code ? `[${error.code}] ` : ''}${detail}${hint ? ` - ${hint}` : ''}`;
 	const exception = new Error(message) as ServiceException;
 	exception.code = error?.code;
 	exception.hint = hint || undefined;

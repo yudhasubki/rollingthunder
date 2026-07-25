@@ -48,6 +48,9 @@ func (p *Postgres) Capabilities() database.Capabilities {
 		SQLInsertExport:     true,
 		GeneratedColumns:    true,
 		Upsert:              true,
+		ManageSecurity:      true,
+		ActivityMonitor:     true,
+		SSHConnections:      true,
 	}
 }
 

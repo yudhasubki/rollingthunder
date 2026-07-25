@@ -334,6 +334,53 @@ func (m *MySQL) buildMySQLColumnChange(
 	return statements, nil
 }
 
+func buildMySQLAddColumn(
+	change database.AddColumnChange,
+) (string, error) {
+	column := change.Column
+	if err := validateMySQLFragment(column.Type, "column data type"); err != nil {
+		return "", err
+	}
+	if err := validateMySQLFragment(column.Default, "column default"); err != nil {
+		return "", err
+	}
+	statement := fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN %s %s",
+		quoteMySQLQualifiedIdentifier(change.Table.Schema, change.Table.Name),
+		quoteMySQLIdentifier(strings.TrimSpace(column.Name)),
+		strings.TrimSpace(column.Type),
+	)
+	if column.Nullable {
+		statement += " NULL"
+	} else {
+		statement += " NOT NULL"
+	}
+	if strings.TrimSpace(column.Default) != "" {
+		statement += " DEFAULT " + strings.TrimSpace(column.Default)
+	}
+	if column.Unique {
+		statement += " UNIQUE"
+	}
+	if column.PrimaryKey {
+		statement += " PRIMARY KEY"
+	}
+	switch {
+	case change.First:
+		statement += " FIRST"
+	case strings.TrimSpace(change.After) != "":
+		statement += " AFTER " + quoteMySQLIdentifier(strings.TrimSpace(change.After))
+	}
+	return statement + ";", nil
+}
+
+func buildMySQLDropColumn(change database.DropColumnChange) string {
+	return fmt.Sprintf(
+		"ALTER TABLE %s DROP COLUMN %s;",
+		quoteMySQLQualifiedIdentifier(change.Table.Schema, change.Table.Name),
+		quoteMySQLIdentifier(strings.TrimSpace(change.Name)),
+	)
+}
+
 func validateMySQLConstraintDefinition(value string) error {
 	value = strings.TrimSpace(value)
 	if err := validateMySQLFragment(value, "constraint definition"); err != nil {
@@ -592,6 +639,34 @@ func (m *MySQL) BuildObjectChange(
 			},
 		}, nil
 
+	case database.ObjectChangeAddColumn:
+		request.AddColumn.Table.Schema = m.defaultDatabase(
+			request.AddColumn.Table.Schema,
+		)
+		statement, err := buildMySQLAddColumn(*request.AddColumn)
+		if err != nil {
+			return database.ObjectChangePlan{}, err
+		}
+		return database.ObjectChangePlan{
+			Summary: fmt.Sprintf(
+				"Add column %s to %s",
+				request.AddColumn.Column.Name,
+				request.AddColumn.Table.Name,
+			),
+			Statements:    []string{statement},
+			Transactional: false,
+			Warnings: []string{
+				"Adding a column can rebuild and lock the table.",
+				"MySQL DDL auto-commits and cannot be rolled back by Rolling Thunder.",
+			},
+			Refresh: []database.ObjectReference{
+				mysqlRefreshReference(
+					database.ObjectKindTable,
+					request.AddColumn.Table,
+				),
+			},
+		}, nil
+
 	case database.ObjectChangeAlterColumn:
 		request.Column.Table.Schema = m.defaultDatabase(request.Column.Table.Schema)
 		statements, err := m.buildMySQLColumnChange(*request.Column)
@@ -612,6 +687,33 @@ func (m *MySQL) BuildObjectChange(
 			},
 			Refresh: []database.ObjectReference{
 				mysqlRefreshReference(database.ObjectKindTable, request.Column.Table),
+			},
+		}, nil
+
+	case database.ObjectChangeDropColumn:
+		request.DropColumn.Table.Schema = m.defaultDatabase(
+			request.DropColumn.Table.Schema,
+		)
+		return database.ObjectChangePlan{
+			Summary: fmt.Sprintf(
+				"Drop column %s from %s",
+				request.DropColumn.Name,
+				request.DropColumn.Table.Name,
+			),
+			Statements: []string{
+				buildMySQLDropColumn(*request.DropColumn),
+			},
+			Destructive:   true,
+			Transactional: false,
+			Warnings: []string{
+				"Dropping a column permanently removes its data.",
+				"MySQL DDL auto-commits and cannot be rolled back by Rolling Thunder.",
+			},
+			Refresh: []database.ObjectReference{
+				mysqlRefreshReference(
+					database.ObjectKindTable,
+					request.DropColumn.Table,
+				),
 			},
 		}, nil
 

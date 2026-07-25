@@ -138,6 +138,33 @@ func TestMySQLObjectChangePlansAreNonTransactional(t *testing.T) {
 	}
 }
 
+func TestMySQLAddAndDropColumnBuilders(t *testing.T) {
+	add, err := buildMySQLAddColumn(database.AddColumnChange{
+		Table: database.Table{Schema: "app", Name: "orders"},
+		Column: database.ColumnDefinition{
+			Name:     "status",
+			Type:     "varchar(32)",
+			Nullable: false,
+			Default:  "'pending'",
+		},
+		After: "id",
+	})
+	if err != nil {
+		t.Fatalf("buildMySQLAddColumn() error = %v", err)
+	}
+	want := "ALTER TABLE `app`.`orders` ADD COLUMN `status` varchar(32) NOT NULL DEFAULT 'pending' AFTER `id`;"
+	if add != want {
+		t.Fatalf("add column SQL = %q, want %q", add, want)
+	}
+	drop := buildMySQLDropColumn(database.DropColumnChange{
+		Table: database.Table{Schema: "app", Name: "orders"},
+		Name:  "status",
+	})
+	if drop != "ALTER TABLE `app`.`orders` DROP COLUMN `status`;" {
+		t.Fatalf("drop column SQL = %q", drop)
+	}
+}
+
 func TestMySQLTLSModes(t *testing.T) {
 	tlsConfig, err := buildMySQLTLSConfig(Config{SSLMode: "require"}, "db.example")
 	if err != nil {
@@ -157,6 +184,24 @@ func TestMySQLTLSModes(t *testing.T) {
 		"db.example",
 	); err == nil {
 		t.Fatal("disable accepted a client certificate")
+	}
+}
+
+func TestMySQLTLSServerNameSurvivesLocalTunnelEndpoint(t *testing.T) {
+	config, err := buildMySQLDriverConfig(Config{
+		Host:          "127.0.0.1",
+		Port:          "41001",
+		SSLMode:       "require",
+		TLSServerName: "database.internal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Addr != "127.0.0.1:41001" {
+		t.Fatalf("dial endpoint = %q", config.Addr)
+	}
+	if config.TLS == nil || config.TLS.ServerName != "database.internal" {
+		t.Fatalf("TLS config = %#v", config.TLS)
 	}
 }
 

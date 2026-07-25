@@ -18,7 +18,9 @@ const (
 	ObjectChangeEnable         ObjectChangeAction = "enable"
 	ObjectChangeDisable        ObjectChangeAction = "disable"
 	ObjectChangeCreateIndex    ObjectChangeAction = "create_index"
+	ObjectChangeAddColumn      ObjectChangeAction = "add_column"
 	ObjectChangeAlterColumn    ObjectChangeAction = "alter_column"
+	ObjectChangeDropColumn     ObjectChangeAction = "drop_column"
 	ObjectChangeAddConstraint  ObjectChangeAction = "add_constraint"
 	ObjectChangeDropConstraint ObjectChangeAction = "drop_constraint"
 )
@@ -32,7 +34,9 @@ func (action ObjectChangeAction) Valid() bool {
 		ObjectChangeEnable,
 		ObjectChangeDisable,
 		ObjectChangeCreateIndex,
+		ObjectChangeAddColumn,
 		ObjectChangeAlterColumn,
+		ObjectChangeDropColumn,
 		ObjectChangeAddConstraint,
 		ObjectChangeDropConstraint:
 		return true
@@ -61,6 +65,18 @@ type ColumnChange struct {
 	DropDefault bool    `json:"dropDefault,omitempty"`
 }
 
+type AddColumnChange struct {
+	Table  Table            `json:"table"`
+	Column ColumnDefinition `json:"column"`
+	First  bool             `json:"first,omitempty"`
+	After  string           `json:"after,omitempty"`
+}
+
+type DropColumnChange struct {
+	Table Table  `json:"table"`
+	Name  string `json:"name"`
+}
+
 type ConstraintChange struct {
 	Table      Table  `json:"table"`
 	Name       string `json:"name"`
@@ -74,7 +90,9 @@ type ObjectChangeRequest struct {
 	Definition string             `json:"definition,omitempty"`
 	Cascade    bool               `json:"cascade,omitempty"`
 	Index      *IndexChange       `json:"index,omitempty"`
+	AddColumn  *AddColumnChange   `json:"addColumn,omitempty"`
 	Column     *ColumnChange      `json:"column,omitempty"`
+	DropColumn *DropColumnChange  `json:"dropColumn,omitempty"`
 	Constraint *ConstraintChange  `json:"constraint,omitempty"`
 }
 
@@ -116,6 +134,35 @@ func (request ObjectChangeRequest) Validate() error {
 		}
 		if request.Column.Default != nil && request.Column.DropDefault {
 			return fmt.Errorf("set default and drop default cannot be combined")
+		}
+		return nil
+
+	case ObjectChangeAddColumn:
+		if request.AddColumn == nil {
+			return fmt.Errorf("new column details are required")
+		}
+		if strings.TrimSpace(request.AddColumn.Table.Name) == "" {
+			return fmt.Errorf("column table is required")
+		}
+		if strings.TrimSpace(request.AddColumn.Column.Name) == "" {
+			return fmt.Errorf("column name is required")
+		}
+		if strings.TrimSpace(request.AddColumn.Column.Type) == "" {
+			return fmt.Errorf("column data type is required")
+		}
+		if request.AddColumn.First &&
+			strings.TrimSpace(request.AddColumn.After) != "" {
+			return fmt.Errorf("a column cannot be positioned both first and after another column")
+		}
+		return nil
+
+	case ObjectChangeDropColumn:
+		if request.DropColumn == nil {
+			return fmt.Errorf("column removal details are required")
+		}
+		if strings.TrimSpace(request.DropColumn.Table.Name) == "" ||
+			strings.TrimSpace(request.DropColumn.Name) == "" {
+			return fmt.Errorf("table and column names are required")
 		}
 		return nil
 

@@ -20,27 +20,29 @@ func NewDriver(ctx context.Context, driver string, cfg database.Config) (databas
 	switch driver {
 	case "postgres":
 		return postgres.NewPostgres(ctx, postgres.Config{
-			Host:        cfg.Host,
-			Port:        cfg.Port,
-			User:        cfg.User,
-			Password:    cfg.Password,
-			Db:          cfg.Db,
-			SSLMode:     cfg.SSLMode,
-			SSLRootCert: cfg.SSLRootCert,
-			SSLCert:     cfg.SSLCert,
-			SSLKey:      cfg.SSLKey,
+			Host:          cfg.Host,
+			Port:          cfg.Port,
+			User:          cfg.User,
+			Password:      cfg.Password,
+			Db:            cfg.Db,
+			SSLMode:       cfg.SSLMode,
+			SSLRootCert:   cfg.SSLRootCert,
+			SSLCert:       cfg.SSLCert,
+			SSLKey:        cfg.SSLKey,
+			TLSServerName: cfg.TLSServerName,
 		}), nil
 	case "mysql", "mariadb":
 		return mysql.NewMySQL(ctx, mysql.Config{
-			Host:        cfg.Host,
-			Port:        cfg.Port,
-			User:        cfg.User,
-			Password:    cfg.Password,
-			Db:          cfg.Db,
-			SSLMode:     cfg.SSLMode,
-			SSLRootCert: cfg.SSLRootCert,
-			SSLCert:     cfg.SSLCert,
-			SSLKey:      cfg.SSLKey,
+			Host:          cfg.Host,
+			Port:          cfg.Port,
+			User:          cfg.User,
+			Password:      cfg.Password,
+			Db:            cfg.Db,
+			SSLMode:       cfg.SSLMode,
+			SSLRootCert:   cfg.SSLRootCert,
+			SSLCert:       cfg.SSLCert,
+			SSLKey:        cfg.SSLKey,
+			TLSServerName: cfg.TLSServerName,
 		}), nil
 	case "sqlite":
 		return sqlitedriver.NewSQLite(ctx, sqlitedriver.Config{

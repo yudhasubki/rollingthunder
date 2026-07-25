@@ -25,6 +25,7 @@ test('blocking application dialogs use the shared focus trap', async () => {
 	const dialogs = [
 		'src/lib/components/CommandPalette.svelte',
 		'src/lib/components/ConnectionManagerModal.svelte',
+		'src/lib/components/DatabaseToolsDialog.svelte',
 		'src/lib/components/DiagnosticsDialog.svelte',
 		'src/lib/components/database/ExportDialog.svelte',
 		'src/lib/components/database/ImportDataDialog.svelte',
@@ -48,4 +49,19 @@ test('global styles preserve visible focus and reduced-motion preferences', asyn
 	assert.match(styles, /:focus-visible/);
 	assert.match(styles, /prefers-reduced-motion:\s*reduce/);
 	assert.match(styles, /\.rt-skip-link/);
+});
+
+test('database tools use the portal-backed application dropdown', async () => {
+	const panels = [
+		'src/lib/components/database-tools/SchemaMigrationPanel.svelte',
+		'src/lib/components/database-tools/BackupRestorePanel.svelte',
+		'src/lib/components/database-tools/SecurityPanel.svelte',
+		'src/lib/components/database-tools/ActivityPanel.svelte'
+	];
+
+	for (const path of panels) {
+		const content = await source(path);
+		assert.doesNotMatch(content, /<select(?:\s|>)/, `${path} must not use a native select`);
+		assert.match(content, /FilterCombobox/, `${path} must use the shared dropdown`);
+	}
 });

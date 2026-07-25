@@ -146,6 +146,71 @@ func TestReconnectAtomicallySwapsVerifiedDriver(t *testing.T) {
 	}
 }
 
+func TestReconnectAtomicallySwapsSSHTunnel(t *testing.T) {
+	service := NewService()
+	service.Start(context.Background())
+	oldDriver := newHealthTestDriver("old")
+	oldTunnel := &fakeConnectionTunnel{host: "127.0.0.1", port: "42001"}
+	replacement := newHealthTestDriver("replacement")
+	replacementTunnel := &fakeConnectionTunnel{
+		host: "127.0.0.1",
+		port: "42002",
+	}
+	service.connections["connection"] = &Connection{
+		ID:           "connection",
+		Driver:       oldDriver,
+		Tunnel:       oldTunnel,
+		EndpointHost: oldTunnel.host,
+		EndpointPort: oldTunnel.port,
+		Config: database.Config{
+			Driver:     "postgres",
+			Host:       "database.internal",
+			Port:       "5432",
+			SSHEnabled: true,
+			SSHHost:    "bastion.example",
+			SSHUser:    "deploy",
+		},
+	}
+	service.newTunnel = func(
+		context.Context,
+		database.Config,
+	) (connectionTunnel, error) {
+		return replacementTunnel, nil
+	}
+	var received database.Config
+	service.newDriver = func(
+		_ context.Context,
+		_ string,
+		config database.Config,
+	) (database.Driver, error) {
+		received = config
+		return replacement, nil
+	}
+
+	result := service.ReconnectConnection("connection", "ssh-reconnect")
+	if len(result.Errors) > 0 ||
+		result.Data.State != database.ConnectionHealthHealthy {
+		t.Fatalf("ReconnectConnection() = %+v", result)
+	}
+	connection := service.connections["connection"]
+	if connection.Driver != replacement ||
+		connection.Tunnel != replacementTunnel ||
+		connection.EndpointPort != replacementTunnel.port {
+		t.Fatalf("replacement connection = %+v", connection)
+	}
+	if received.Host != replacementTunnel.host ||
+		received.Port != replacementTunnel.port {
+		t.Fatalf("replacement driver endpoint = %s:%s", received.Host, received.Port)
+	}
+	if !oldTunnel.closed.Load() || replacementTunnel.closed.Load() {
+		t.Fatalf(
+			"tunnels old=%t replacement=%t",
+			oldTunnel.closed.Load(),
+			replacementTunnel.closed.Load(),
+		)
+	}
+}
+
 func TestReconnectResolvesLatestSavedCredential(t *testing.T) {
 	service, credentials := credentialTestService(t)
 	saved := service.SaveConnection(database.Config{

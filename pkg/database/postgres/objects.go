@@ -421,7 +421,8 @@ func (p *Postgres) resolveObject(
 }
 
 func quotePostgresLiteral(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	return "E'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 func postgresViewDefinition(

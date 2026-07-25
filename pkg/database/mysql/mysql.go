@@ -24,15 +24,16 @@ import (
 )
 
 type Config struct {
-	Host        string
-	Port        string
-	User        string
-	Password    string
-	Db          string
-	SSLMode     string
-	SSLRootCert string
-	SSLCert     string
-	SSLKey      string
+	Host          string
+	Port          string
+	User          string
+	Password      string
+	Db            string
+	SSLMode       string
+	SSLRootCert   string
+	SSLCert       string
+	SSLKey        string
+	TLSServerName string
 }
 
 type MySQL struct {
@@ -109,6 +110,7 @@ func buildMySQLDriverConfig(cfg Config) (*mysqldriver.Config, error) {
 	driverConfig.Addr = net.JoinHostPort(host, port)
 	driverConfig.DBName = strings.TrimSpace(cfg.Db)
 	driverConfig.ParseTime = true
+	driverConfig.ConnectionAttributes = "program_name:Rolling Thunder"
 	driverConfig.Loc = time.UTC
 	driverConfig.Timeout = 15 * time.Second
 	driverConfig.ReadTimeout = 0
@@ -122,7 +124,11 @@ func buildMySQLDriverConfig(cfg Config) (*mysqldriver.Config, error) {
 		return nil, fmt.Errorf("configure MySQL connection charset: %w", err)
 	}
 
-	tlsConfig, err := buildMySQLTLSConfig(cfg, host)
+	tlsServerName := strings.TrimSpace(cfg.TLSServerName)
+	if tlsServerName == "" {
+		tlsServerName = host
+	}
+	tlsConfig, err := buildMySQLTLSConfig(cfg, tlsServerName)
 	if err != nil {
 		return nil, err
 	}

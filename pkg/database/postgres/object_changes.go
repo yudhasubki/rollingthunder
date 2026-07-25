@@ -458,6 +458,58 @@ func buildPostgresColumnChange(
 	return statements, nil
 }
 
+func buildPostgresAddColumn(
+	change database.AddColumnChange,
+) (string, error) {
+	if change.First || strings.TrimSpace(change.After) != "" {
+		return "", fmt.Errorf(
+			"PostgreSQL does not support changing physical column order without rebuilding the table",
+		)
+	}
+	column := change.Column
+	if err := validatePostgresFragment(column.Type, "column data type"); err != nil {
+		return "", err
+	}
+	if err := validatePostgresFragment(column.Default, "column default"); err != nil {
+		return "", err
+	}
+	statement := fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN %s %s",
+		quotePostgresQualifiedIdentifier(change.Table.Schema, change.Table.Name),
+		quotePostgresIdentifier(strings.TrimSpace(column.Name)),
+		strings.TrimSpace(column.Type),
+	)
+	if strings.TrimSpace(column.Default) != "" {
+		statement += " DEFAULT " + strings.TrimSpace(column.Default)
+	}
+	if !column.Nullable {
+		statement += " NOT NULL"
+	}
+	if column.Unique {
+		statement += " UNIQUE"
+	}
+	if column.PrimaryKey {
+		statement += " PRIMARY KEY"
+	}
+	return statement + ";", nil
+}
+
+func buildPostgresDropColumn(
+	change database.DropColumnChange,
+	cascade bool,
+) string {
+	suffix := ""
+	if cascade {
+		suffix = " CASCADE"
+	}
+	return fmt.Sprintf(
+		"ALTER TABLE %s DROP COLUMN %s%s;",
+		quotePostgresQualifiedIdentifier(change.Table.Schema, change.Table.Name),
+		quotePostgresIdentifier(strings.TrimSpace(change.Name)),
+		suffix,
+	)
+}
+
 func buildPostgresConstraintChange(
 	action database.ObjectChangeAction,
 	change database.ConstraintChange,
@@ -599,6 +651,30 @@ func (p *Postgres) BuildObjectChange(
 			},
 		}, nil
 
+	case database.ObjectChangeAddColumn:
+		statement, err := buildPostgresAddColumn(*request.AddColumn)
+		if err != nil {
+			return database.ObjectChangePlan{}, err
+		}
+		return database.ObjectChangePlan{
+			Summary: fmt.Sprintf(
+				"Add column %s to %s",
+				request.AddColumn.Column.Name,
+				request.AddColumn.Table.Name,
+			),
+			Statements:    []string{statement},
+			Transactional: true,
+			Warnings: []string{
+				"Adding a required column can scan or rewrite existing rows when a default is provided.",
+			},
+			Refresh: []database.ObjectReference{
+				postgresRefreshReference(
+					database.ObjectKindTable,
+					request.AddColumn.Table,
+				),
+			},
+		}, nil
+
 	case database.ObjectChangeAlterColumn:
 		statements, err := buildPostgresColumnChange(*request.Column)
 		if err != nil {
@@ -617,6 +693,35 @@ func (p *Postgres) BuildObjectChange(
 			},
 			Refresh: []database.ObjectReference{
 				postgresRefreshReference(database.ObjectKindTable, request.Column.Table),
+			},
+		}, nil
+
+	case database.ObjectChangeDropColumn:
+		statement := buildPostgresDropColumn(*request.DropColumn, request.Cascade)
+		warnings := []string{
+			"Dropping a column permanently removes its data.",
+		}
+		if request.Cascade {
+			warnings = append(
+				warnings,
+				"CASCADE also removes dependent constraints, indexes, or objects.",
+			)
+		}
+		return database.ObjectChangePlan{
+			Summary: fmt.Sprintf(
+				"Drop column %s from %s",
+				request.DropColumn.Name,
+				request.DropColumn.Table.Name,
+			),
+			Statements:    []string{statement},
+			Destructive:   true,
+			Transactional: true,
+			Warnings:      warnings,
+			Refresh: []database.ObjectReference{
+				postgresRefreshReference(
+					database.ObjectKindTable,
+					request.DropColumn.Table,
+				),
 			},
 		}, nil
 

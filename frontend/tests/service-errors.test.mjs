@@ -16,7 +16,7 @@ test('formats a stable service error code with its actionable hint', () => {
 	assert.equal(error.code, 'CONNECTION_REFUSED');
 	assert.equal(
 		error.message,
-		'[CONNECTION_REFUSED] The database refused the connection. — Check that PostgreSQL is running.'
+		'[CONNECTION_REFUSED] The database refused the connection. - Check that PostgreSQL is running.'
 	);
 });
 

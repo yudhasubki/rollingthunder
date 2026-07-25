@@ -13,7 +13,8 @@
 		Search,
 		HeartPulse,
 		RefreshCw,
-		ShieldCheck
+		ShieldCheck,
+		ArchiveRestore
 	} from 'lucide-svelte';
 	import { createDropdownMenu, melt } from '@melt-ui/svelte';
 	import { onMount } from 'svelte';
@@ -112,6 +113,10 @@
 
 	function openDiagnostics() {
 		window.dispatchEvent(new CustomEvent('open-diagnostics'));
+	}
+
+	function openDatabaseTools() {
+		window.dispatchEvent(new CustomEvent('open-database-tools'));
 	}
 
 	function connectionEndpoint(connection: NonNullable<typeof connectionStore.activeConnection>) {
@@ -369,6 +374,30 @@
 									aria-hidden="true"
 								/>
 							</button>
+							<button
+								type="button"
+								class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--surface-hover)]"
+								onclick={() => {
+									connOpen.set(false);
+									openDatabaseTools();
+								}}
+							>
+								<span
+									class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-[var(--surface-sunken)]"
+								>
+									<ArchiveRestore class="text-muted-foreground h-3.5 w-3.5" />
+								</span>
+								<span class="min-w-0">
+									<span class="block text-[11px] font-bold">Database tools</span>
+									<span class="text-muted-foreground mt-0.5 block text-[9px]"
+										>Schema sync, backup, security, and activity</span
+									>
+								</span>
+								<ChevronDown
+									class="text-muted-foreground ml-auto h-3 w-3 -rotate-90"
+									aria-hidden="true"
+								/>
+							</button>
 						</div>
 					</div>
 				{/if}
@@ -377,6 +406,16 @@
 	</div>
 
 	<div class="flex shrink-0 items-center gap-1">
+		<button
+			type="button"
+			class="rt-toolbar-button hidden h-8 cursor-pointer gap-2 px-2.5 text-[10px] font-semibold lg:inline-flex"
+			onclick={openDatabaseTools}
+			disabled={!connectionStore.activeConnection}
+			title="Schema migration, backup, security, and activity"
+		>
+			<ArchiveRestore class="h-3.5 w-3.5" />
+			<span>Database tools</span>
+		</button>
 		<button
 			type="button"
 			class="rt-toolbar-button hidden h-8 cursor-pointer gap-2 px-2.5 text-[10px] font-semibold md:inline-flex"

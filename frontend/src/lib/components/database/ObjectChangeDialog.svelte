@@ -69,6 +69,14 @@
 	let indexUnique = $state(false);
 	let indexMethod = $state('btree');
 	let indexWhere = $state('');
+	let addColumnName = $state('');
+	let addColumnType = $state('text');
+	let addColumnNullable = $state(true);
+	let addColumnDefault = $state('');
+	let addColumnUnique = $state(false);
+	let addColumnPrimary = $state(false);
+	let addColumnPosition = $state<'end' | 'first' | 'after'>('end');
+	let addColumnAfter = $state('');
 	let selectedColumn = $state('');
 	let columnNewName = $state('');
 	let columnDataType = $state('');
@@ -110,6 +118,11 @@
 		{ value: 'set', label: 'Set default' },
 		{ value: 'drop', label: 'Drop default' }
 	];
+	const columnPositionOptions = [
+		{ value: 'end', label: 'At the end' },
+		{ value: 'first', label: 'First column' },
+		{ value: 'after', label: 'After a column' }
+	];
 
 	$effect(() => {
 		if (!open || !intent) return;
@@ -144,6 +157,14 @@
 		indexUnique = false;
 		indexMethod = capabilities?.engine === 'sqlite' ? '' : 'btree';
 		indexWhere = '';
+		addColumnName = 'new_column';
+		addColumnType = capabilities?.engine === 'postgres' ? 'text' : 'TEXT';
+		addColumnNullable = true;
+		addColumnDefault = '';
+		addColumnUnique = false;
+		addColumnPrimary = false;
+		addColumnPosition = 'end';
+		addColumnAfter = columns.at(-1)?.name || '';
 		selectedColumn = columns[0]?.name || '';
 		columnNewName = '';
 		columnDataType = '';
@@ -280,6 +301,27 @@
 						where: indexWhere.trim()
 					})
 				});
+			case 'add-column':
+				return new database.ObjectChangeRequest({
+					action: 'add_column',
+					reference: objectReference,
+					addColumn: new database.AddColumnChange({
+						table: currentTable(),
+						column: new database.ColumnDefinition({
+							name: addColumnName.trim(),
+							type: addColumnType.trim(),
+							nullable: addColumnNullable,
+							default: addColumnDefault.trim(),
+							primaryKey: addColumnPrimary,
+							unique: addColumnUnique
+						}),
+						first: capabilities?.engine === 'mysql' && addColumnPosition === 'first',
+						after:
+							capabilities?.engine === 'mysql' && addColumnPosition === 'after'
+								? addColumnAfter
+								: ''
+					})
+				});
 			case 'alter-column': {
 				const nullable = nullableMode === 'keep' ? undefined : nullableMode === 'nullable';
 				const columnDefaultValue = defaultMode === 'set' ? columnDefault.trim() : undefined;
@@ -298,6 +340,16 @@
 					})
 				});
 			}
+			case 'drop-column':
+				return new database.ObjectChangeRequest({
+					action: 'drop_column',
+					reference: objectReference,
+					cascade,
+					dropColumn: new database.DropColumnChange({
+						table: currentTable(),
+						name: selectedColumn
+					})
+				});
 			case 'add-constraint':
 				return new database.ObjectChangeRequest({
 					action: 'add_constraint',
@@ -411,6 +463,12 @@
 	function selectDefaultMode(value: string) {
 		if (value === 'keep' || value === 'set' || value === 'drop') {
 			defaultMode = value;
+		}
+	}
+
+	function selectAddColumnPosition(value: string) {
+		if (value === 'end' || value === 'first' || value === 'after') {
+			addColumnPosition = value;
 		}
 	}
 </script>
@@ -662,6 +720,98 @@
 									/>
 								</label>
 							</section>
+						{:else if intent === 'add-column'}
+							<section
+								class="grid gap-3 rounded-xl border bg-[var(--surface-raised)] p-4 sm:grid-cols-2"
+							>
+								<label>
+									<span class="text-[9px] font-bold">Column name</span>
+									<input
+										class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
+										bind:value={addColumnName}
+										placeholder="new_column"
+									/>
+								</label>
+								<label>
+									<span class="text-[9px] font-bold">Data type</span>
+									<input
+										class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
+										bind:value={addColumnType}
+										placeholder="text"
+									/>
+								</label>
+								<label class="sm:col-span-2">
+									<span class="text-[9px] font-bold"
+										>Default expression
+										<span class="text-muted-foreground">(optional)</span></span
+									>
+									<input
+										class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
+										bind:value={addColumnDefault}
+										placeholder={addColumnNullable ? 'NULL' : "'pending'"}
+									/>
+								</label>
+								{#if capabilities?.engine === 'mysql'}
+									<div>
+										<label class="text-[9px] font-bold" for="add-column-position">Position</label>
+										<FilterCombobox
+											id="add-column-position"
+											class="mt-1.5"
+											options={columnPositionOptions}
+											value={addColumnPosition}
+											onChange={selectAddColumnPosition}
+											searchable={false}
+											triggerClass="h-9 px-3 text-[10px]"
+										/>
+									</div>
+									{#if addColumnPosition === 'after'}
+										<div>
+											<label class="text-[9px] font-bold" for="add-column-after">After column</label
+											>
+											<FilterCombobox
+												id="add-column-after"
+												class="mt-1.5"
+												options={columnOptions}
+												value={addColumnAfter}
+												onChange={(value) => (addColumnAfter = value)}
+												placeholder="Select a column"
+												searchPlaceholder="Search columns…"
+												triggerClass="h-9 px-3 text-[10px] font-mono"
+											/>
+										</div>
+									{/if}
+								{/if}
+								<div class="flex flex-wrap gap-4 border-t pt-3 sm:col-span-2">
+									<label class="flex cursor-pointer items-center gap-2 text-[9px] font-semibold">
+										<input type="checkbox" class="h-3.5 w-3.5" bind:checked={addColumnNullable} />
+										Nullable
+									</label>
+									<label class="flex cursor-pointer items-center gap-2 text-[9px] font-semibold">
+										<input
+											type="checkbox"
+											class="h-3.5 w-3.5"
+											bind:checked={addColumnUnique}
+											disabled={capabilities?.engine === 'sqlite'}
+										/>
+										Unique
+									</label>
+									<label class="flex cursor-pointer items-center gap-2 text-[9px] font-semibold">
+										<input
+											type="checkbox"
+											class="h-3.5 w-3.5"
+											bind:checked={addColumnPrimary}
+											disabled={capabilities?.engine === 'sqlite'}
+										/>
+										Primary key
+									</label>
+								</div>
+								{#if capabilities?.engine === 'sqlite'}
+									<p class="text-muted-foreground text-[8px] leading-relaxed sm:col-span-2">
+										SQLite appends columns. A required column needs a non-NULL default; primary and
+										unique constraints must be created separately.
+									</p>
+								{/if}
+							</section>
 						{:else if intent === 'alter-column'}
 							<section
 								class="grid gap-3 rounded-xl border bg-[var(--surface-raised)] p-4 sm:grid-cols-2"
@@ -748,6 +898,37 @@
 										/>
 									</label>
 								{/if}
+							</section>
+						{:else if intent === 'drop-column'}
+							<section class="rounded-xl border border-red-500/20 bg-[var(--surface-raised)] p-4">
+								<div class="flex items-start gap-3">
+									<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+									<div class="min-w-0 flex-1">
+										<h3 class="text-[10px] font-bold">Permanent column removal</h3>
+										<p class="text-muted-foreground mt-1 text-[9px] leading-relaxed">
+											All values stored in this column will be permanently removed.
+										</p>
+										<div class="mt-3">
+											<label class="text-[9px] font-bold" for="drop-column-source">Column</label>
+											<FilterCombobox
+												id="drop-column-source"
+												class="mt-1.5"
+												options={columnOptions}
+												value={selectedColumn}
+												onChange={selectColumn}
+												placeholder="Select a column"
+												searchPlaceholder="Search columns…"
+												triggerClass="h-9 px-3 text-[10px] font-mono"
+											/>
+										</div>
+										{#if capabilities?.engine === 'postgres'}
+											<label class="mt-3 flex cursor-pointer items-center gap-2 text-[9px]">
+												<input type="checkbox" class="h-3.5 w-3.5" bind:checked={cascade} />
+												Also drop dependent objects with CASCADE
+											</label>
+										{/if}
+									</div>
+								</div>
 							</section>
 						{:else if intent === 'add-constraint' || intent === 'drop-constraint'}
 							<section class="space-y-3 rounded-xl border bg-[var(--surface-raised)] p-4">

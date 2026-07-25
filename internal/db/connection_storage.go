@@ -14,14 +14,20 @@ import (
 	"github.com/google/uuid"
 )
 
-const connectionStorageVersion = 2
+const (
+	connectionStorageVersion      = 3
+	sshPasswordCredentialSuffix   = ":ssh-password"
+	sshPassphraseCredentialSuffix = ":ssh-key-passphrase"
+)
 
 // SavedConnection contains non-secret profile metadata. Passwords are stored
 // under the profile ID in the operating system credential store.
 type SavedConnection struct {
-	ID          string          `json:"id"`
-	Config      database.Config `json:"config"`
-	HasPassword bool            `json:"hasPassword"`
+	ID                  string          `json:"id"`
+	Config              database.Config `json:"config"`
+	HasPassword         bool            `json:"hasPassword"`
+	HasSSHPassword      bool            `json:"hasSshPassword"`
+	HasSSHKeyPassphrase bool            `json:"hasSshKeyPassphrase"`
 }
 
 type connectionStorageEnvelope struct {
@@ -90,7 +96,30 @@ func (cs *ConnectionStorage) Load() ([]SavedConnection, bool, error) {
 
 func scrubSavedConnection(connection SavedConnection) SavedConnection {
 	connection.Config.Password = ""
+	connection.Config.SSHPassword = ""
+	connection.Config.SSHKeyPassphrase = ""
 	return connection
+}
+
+func sshPasswordCredentialID(profileID string) string {
+	return profileID + sshPasswordCredentialSuffix
+}
+
+func sshPassphraseCredentialID(profileID string) string {
+	return profileID + sshPassphraseCredentialSuffix
+}
+
+func (s *Service) migratePlaintextSecret(
+	value string,
+	credentialID string,
+) (bool, error) {
+	if value == "" {
+		return false, nil
+	}
+	if err := s.credentialStore.Set(credentialID, value); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Save writes an atomic 0600 versioned envelope. Even callers that
@@ -151,21 +180,53 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 	}
 	needsRewrite := legacyFormat
 	for index := range connections {
-		password := connections[index].Config.Password
-		if password == "" {
-			connections[index].Config.Password = ""
-			continue
-		}
-		if err := s.credentialStore.Set(connections[index].ID, password); err != nil {
+		connection := &connections[index]
+		passwordMigrated, err := s.migratePlaintextSecret(
+			connection.Config.Password,
+			connection.ID,
+		)
+		if err != nil {
 			return nil, fmt.Errorf(
 				"migrate password for %q to the operating system credential store: %w",
-				connections[index].Config.Name,
+				connection.Config.Name,
 				err,
 			)
 		}
-		connections[index].Config.Password = ""
-		connections[index].HasPassword = true
-		needsRewrite = true
+		sshPasswordMigrated, err := s.migratePlaintextSecret(
+			connection.Config.SSHPassword,
+			sshPasswordCredentialID(connection.ID),
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"migrate SSH password for %q to the operating system credential store: %w",
+				connection.Config.Name,
+				err,
+			)
+		}
+		passphraseMigrated, err := s.migratePlaintextSecret(
+			connection.Config.SSHKeyPassphrase,
+			sshPassphraseCredentialID(connection.ID),
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"migrate SSH key passphrase for %q to the operating system credential store: %w",
+				connection.Config.Name,
+				err,
+			)
+		}
+		if passwordMigrated {
+			connection.HasPassword = true
+		}
+		if sshPasswordMigrated {
+			connection.HasSSHPassword = true
+		}
+		if passphraseMigrated {
+			connection.HasSSHKeyPassphrase = true
+		}
+		if passwordMigrated || sshPasswordMigrated || passphraseMigrated {
+			*connection = scrubSavedConnection(*connection)
+			needsRewrite = true
+		}
 	}
 	if needsRewrite {
 		if err := s.connectionStorage.Save(connections); err != nil {
@@ -189,6 +250,99 @@ func connectionStorageError[T any](summary string, err error) response.BaseRespo
 		err.Error(),
 		"Check access to the operating system credential store and the Rolling Thunder settings directory.",
 	)
+}
+
+type credentialState struct {
+	id     string
+	value  string
+	exists bool
+}
+
+func loadCredentialState(
+	store CredentialStore,
+	id string,
+	expected bool,
+) (credentialState, error) {
+	state := credentialState{id: id, exists: expected}
+	if !expected {
+		return state, nil
+	}
+	value, err := store.Get(id)
+	if err != nil {
+		return credentialState{}, err
+	}
+	state.value = value
+	return state, nil
+}
+
+func writeCredentialState(store CredentialStore, state credentialState) error {
+	if state.exists {
+		return store.Set(state.id, state.value)
+	}
+	err := store.Delete(state.id)
+	if errors.Is(err, ErrCredentialNotFound) {
+		return nil
+	}
+	return err
+}
+
+func restoreCredentialStates(
+	store CredentialStore,
+	states []credentialState,
+) {
+	for _, state := range states {
+		_ = writeCredentialState(store, state)
+	}
+}
+
+func applyCredentialStates(
+	store CredentialStore,
+	previous []credentialState,
+	desired []credentialState,
+) error {
+	for index, state := range desired {
+		if index < len(previous) &&
+			previous[index].id == state.id &&
+			previous[index].exists == state.exists &&
+			(!state.exists || previous[index].value == state.value) {
+			continue
+		}
+		if err := writeCredentialState(store, state); err != nil {
+			restoreCredentialStates(store, previous)
+			return err
+		}
+	}
+	return nil
+}
+
+func profileCredentialStates(
+	store CredentialStore,
+	connection SavedConnection,
+) ([]credentialState, error) {
+	specifications := []struct {
+		id       string
+		expected bool
+	}{
+		{connection.ID, connection.HasPassword},
+		{sshPasswordCredentialID(connection.ID), connection.HasSSHPassword},
+		{
+			sshPassphraseCredentialID(connection.ID),
+			connection.HasSSHKeyPassphrase,
+		},
+	}
+	states := make([]credentialState, 0, len(specifications))
+	for _, specification := range specifications {
+		state, err := loadCredentialState(
+			store,
+			specification.id,
+			specification.expected,
+		)
+		if err != nil {
+			return nil, err
+		}
+		states = append(states, state)
+	}
+	return states, nil
 }
 
 func (s *Service) GetSavedConnections() response.BaseResponse[[]SavedConnection] {
@@ -216,25 +370,50 @@ func (s *Service) SaveConnection(
 		config.Driver = "postgres"
 	}
 	password := config.Password
+	sshPassword := config.SSHPassword
+	sshKeyPassphrase := config.SSHKeyPassphrase
+	sshAuthMode := resolvedSSHAuthMode(config)
 	config.Password = ""
+	config.SSHPassword = ""
+	config.SSHKeyPassphrase = ""
 	connection := SavedConnection{
 		ID:          uuid.NewString(),
 		Config:      config,
 		HasPassword: password != "",
+		HasSSHPassword: config.SSHEnabled &&
+			sshAuthMode == "password" &&
+			sshPassword != "",
+		HasSSHKeyPassphrase: config.SSHEnabled &&
+			(sshAuthMode == "private-key" || sshAuthMode == "key") &&
+			sshKeyPassphrase != "",
 	}
-	if password != "" {
-		if err := s.credentialStore.Set(connection.ID, password); err != nil {
-			return connectionStorageError[SavedConnection](
-				"Could not secure connection password",
-				err,
-			)
-		}
+	previous := []credentialState{
+		{id: connection.ID},
+		{id: sshPasswordCredentialID(connection.ID)},
+		{id: sshPassphraseCredentialID(connection.ID)},
+	}
+	desired := []credentialState{
+		{id: connection.ID, value: password, exists: connection.HasPassword},
+		{
+			id:     sshPasswordCredentialID(connection.ID),
+			value:  sshPassword,
+			exists: connection.HasSSHPassword,
+		},
+		{
+			id:     sshPassphraseCredentialID(connection.ID),
+			value:  sshKeyPassphrase,
+			exists: connection.HasSSHKeyPassphrase,
+		},
+	}
+	if err := applyCredentialStates(s.credentialStore, previous, desired); err != nil {
+		return connectionStorageError[SavedConnection](
+			"Could not secure connection credentials",
+			err,
+		)
 	}
 	connections = append(connections, connection)
 	if err := s.connectionStorage.Save(connections); err != nil {
-		if password != "" {
-			_ = s.credentialStore.Delete(connection.ID)
-		}
+		restoreCredentialStates(s.credentialStore, previous)
 		return connectionStorageError[SavedConnection](
 			"Could not save connection profile",
 			err,
@@ -275,40 +454,70 @@ func (s *Service) UpdateConnection(
 	}
 
 	previous := connections[index]
-	newPassword := config.Password
-	config.Password = ""
-	updated := SavedConnection{
-		ID:          previous.ID,
-		Config:      config,
-		HasPassword: previous.HasPassword || newPassword != "",
+	previousCredentials, err := profileCredentialStates(
+		s.credentialStore,
+		previous,
+	)
+	if err != nil {
+		return connectionStorageError[SavedConnection](
+			"Could not unlock the existing connection credentials",
+			err,
+		)
 	}
-	var previousPassword string
+	newPassword := config.Password
+	newSSHPassword := config.SSHPassword
+	newSSHKeyPassphrase := config.SSHKeyPassphrase
+	sshAuthMode := resolvedSSHAuthMode(config)
+	config.Password = ""
+	config.SSHPassword = ""
+	config.SSHKeyPassphrase = ""
+	passwordState := previousCredentials[0]
 	if newPassword != "" {
-		if previous.HasPassword {
-			previousPassword, err = s.credentialStore.Get(id)
-			if err != nil {
-				return connectionStorageError[SavedConnection](
-					"Could not unlock the existing connection password",
-					err,
-				)
-			}
-		}
-		if err := s.credentialStore.Set(id, newPassword); err != nil {
-			return connectionStorageError[SavedConnection](
-				"Could not secure connection password",
-				err,
-			)
-		}
+		passwordState.value = newPassword
+		passwordState.exists = true
+	}
+	sshPasswordState := previousCredentials[1]
+	if !config.SSHEnabled || sshAuthMode != "password" {
+		sshPasswordState.value = ""
+		sshPasswordState.exists = false
+	} else if newSSHPassword != "" {
+		sshPasswordState.value = newSSHPassword
+		sshPasswordState.exists = true
+	}
+	sshPassphraseState := previousCredentials[2]
+	if !config.SSHEnabled ||
+		(sshAuthMode != "private-key" && sshAuthMode != "key") {
+		sshPassphraseState.value = ""
+		sshPassphraseState.exists = false
+	} else if newSSHKeyPassphrase != "" {
+		sshPassphraseState.value = newSSHKeyPassphrase
+		sshPassphraseState.exists = true
+	}
+	updated := SavedConnection{
+		ID:                  previous.ID,
+		Config:              config,
+		HasPassword:         passwordState.exists,
+		HasSSHPassword:      sshPasswordState.exists,
+		HasSSHKeyPassphrase: sshPassphraseState.exists,
+	}
+	desiredCredentials := []credentialState{
+		passwordState,
+		sshPasswordState,
+		sshPassphraseState,
+	}
+	if err := applyCredentialStates(
+		s.credentialStore,
+		previousCredentials,
+		desiredCredentials,
+	); err != nil {
+		return connectionStorageError[SavedConnection](
+			"Could not secure connection credentials",
+			err,
+		)
 	}
 	connections[index] = updated
 	if err := s.connectionStorage.Save(connections); err != nil {
-		if newPassword != "" {
-			if previousPassword != "" {
-				_ = s.credentialStore.Set(id, previousPassword)
-			} else {
-				_ = s.credentialStore.Delete(id)
-			}
-		}
+		restoreCredentialStates(s.credentialStore, previousCredentials)
 		return connectionStorageError[SavedConnection](
 			"Could not update connection profile",
 			err,
@@ -374,6 +583,65 @@ func (s *Service) ClearConnectionPassword(
 	return response.BaseResponse[bool]{Data: true}
 }
 
+func (s *Service) ClearConnectionSSHCredentials(
+	id string,
+) response.BaseResponse[bool] {
+	connections, err := s.loadSavedConnections()
+	if err != nil {
+		return connectionStorageError[bool](
+			"Could not load saved connections",
+			err,
+		)
+	}
+	index := -1
+	for candidateIndex := range connections {
+		if connections[candidateIndex].ID == id {
+			index = candidateIndex
+			break
+		}
+	}
+	if index < 0 {
+		return serviceErrorWithCode[bool](
+			404,
+			errorCodeInvalidRequest,
+			"Connection profile not found",
+			"The saved profile no longer exists.",
+			"Refresh saved connections and choose another profile.",
+		)
+	}
+	previous, err := profileCredentialStates(
+		s.credentialStore,
+		connections[index],
+	)
+	if err != nil {
+		return connectionStorageError[bool](
+			"Could not unlock SSH credentials before removing them",
+			err,
+		)
+	}
+	desired := append([]credentialState(nil), previous...)
+	desired[1].value = ""
+	desired[1].exists = false
+	desired[2].value = ""
+	desired[2].exists = false
+	if err := applyCredentialStates(s.credentialStore, previous, desired); err != nil {
+		return connectionStorageError[bool](
+			"Could not remove SSH credentials",
+			err,
+		)
+	}
+	connections[index].HasSSHPassword = false
+	connections[index].HasSSHKeyPassphrase = false
+	if err := s.connectionStorage.Save(connections); err != nil {
+		restoreCredentialStates(s.credentialStore, previous)
+		return connectionStorageError[bool](
+			"Could not update connection profile",
+			err,
+		)
+	}
+	return response.BaseResponse[bool]{Data: true}
+}
+
 func (s *Service) DeleteConnection(id string) response.BaseResponse[bool] {
 	connections, err := s.loadSavedConnections()
 	if err != nil {
@@ -383,17 +651,16 @@ func (s *Service) DeleteConnection(id string) response.BaseResponse[bool] {
 		)
 	}
 	filtered := make([]SavedConnection, 0, len(connections))
-	found := false
-	hadPassword := false
+	var deleted *SavedConnection
 	for _, connection := range connections {
 		if connection.ID == id {
-			found = true
-			hadPassword = connection.HasPassword
+			copy := connection
+			deleted = &copy
 			continue
 		}
 		filtered = append(filtered, connection)
 	}
-	if !found {
+	if deleted == nil {
 		return serviceErrorWithCode[bool](
 			404,
 			errorCodeInvalidRequest,
@@ -402,37 +669,86 @@ func (s *Service) DeleteConnection(id string) response.BaseResponse[bool] {
 			"Refresh saved connections and choose another profile.",
 		)
 	}
-	var previousPassword string
-	credentialFound := false
-	if hadPassword {
-		previousPassword, err = s.credentialStore.Get(id)
-		if err != nil && !errors.Is(err, ErrCredentialNotFound) {
-			return connectionStorageError[bool](
-				"Could not unlock the connection password before deleting the profile",
-				err,
-			)
-		}
-		if err == nil {
-			credentialFound = true
-			if err := s.credentialStore.Delete(id); err != nil &&
-				!errors.Is(err, ErrCredentialNotFound) {
-				return connectionStorageError[bool](
-					"Could not remove the connection password",
-					err,
-				)
-			}
-		}
+	previousCredentials, err := profileCredentialStates(
+		s.credentialStore,
+		*deleted,
+	)
+	if err != nil {
+		return connectionStorageError[bool](
+			"Could not unlock connection credentials before deleting the profile",
+			err,
+		)
+	}
+	removedCredentials := make([]credentialState, len(previousCredentials))
+	for index, credential := range previousCredentials {
+		removedCredentials[index] = credentialState{id: credential.id}
+	}
+	if err := applyCredentialStates(
+		s.credentialStore,
+		previousCredentials,
+		removedCredentials,
+	); err != nil {
+		return connectionStorageError[bool](
+			"Could not remove connection credentials",
+			err,
+		)
 	}
 	if err := s.connectionStorage.Save(filtered); err != nil {
-		if credentialFound {
-			_ = s.credentialStore.Set(id, previousPassword)
-		}
+		restoreCredentialStates(s.credentialStore, previousCredentials)
 		return connectionStorageError[bool](
 			"Could not delete connection profile",
 			err,
 		)
 	}
 	return response.BaseResponse[bool]{Data: true}
+}
+
+func (s *Service) hydrateProfileCredentials(
+	profile SavedConnection,
+	config database.Config,
+) (database.Config, error) {
+	if config.Password == "" && profile.HasPassword {
+		password, err := s.credentialStore.Get(profile.ID)
+		if err != nil {
+			return database.Config{}, fmt.Errorf(
+				"unlock database password: %w",
+				err,
+			)
+		}
+		config.Password = password
+	}
+	if !config.SSHEnabled {
+		return config, nil
+	}
+	switch resolvedSSHAuthMode(config) {
+	case "password":
+		if config.SSHPassword == "" && profile.HasSSHPassword {
+			password, err := s.credentialStore.Get(
+				sshPasswordCredentialID(profile.ID),
+			)
+			if err != nil {
+				return database.Config{}, fmt.Errorf(
+					"unlock SSH password: %w",
+					err,
+				)
+			}
+			config.SSHPassword = password
+		}
+	case "private-key", "key":
+		if config.SSHKeyPassphrase == "" && profile.HasSSHKeyPassphrase {
+			passphrase, err := s.credentialStore.Get(
+				sshPassphraseCredentialID(profile.ID),
+			)
+			if err != nil {
+				return database.Config{}, fmt.Errorf(
+					"unlock SSH key passphrase: %w",
+					err,
+				)
+			}
+			config.SSHKeyPassphrase = passphrase
+		}
+	}
+	return config, nil
 }
 
 func (s *Service) ConnectSavedConnection(
@@ -462,16 +778,12 @@ func (s *Service) ConnectSavedConnection(
 			"Refresh saved connections and choose another profile.",
 		)
 	}
-	config := profile.Config
-	if profile.HasPassword {
-		password, credentialErr := s.credentialStore.Get(profile.ID)
-		if credentialErr != nil {
-			return connectionStorageError[ConnectResponse](
-				"Could not unlock connection password",
-				credentialErr,
-			)
-		}
-		config.Password = password
+	config, err := s.hydrateProfileCredentials(*profile, profile.Config)
+	if err != nil {
+		return connectionStorageError[ConnectResponse](
+			"Could not unlock connection credentials",
+			err,
+		)
 	}
 	return s.Connect(ConnectRequest{
 		Driver:    config.Driver,
@@ -515,15 +827,12 @@ func (s *Service) ConnectWithProfile(
 	if config.Driver == "" {
 		config.Driver = profile.Config.Driver
 	}
-	if config.Password == "" && profile.HasPassword {
-		password, credentialErr := s.credentialStore.Get(profile.ID)
-		if credentialErr != nil {
-			return connectionStorageError[ConnectResponse](
-				"Could not unlock connection password",
-				credentialErr,
-			)
-		}
-		config.Password = password
+	config, err = s.hydrateProfileCredentials(*profile, config)
+	if err != nil {
+		return connectionStorageError[ConnectResponse](
+			"Could not unlock connection credentials",
+			err,
+		)
 	}
 	return s.Connect(ConnectRequest{
 		Driver:    config.Driver,

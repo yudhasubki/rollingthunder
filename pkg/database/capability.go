@@ -66,6 +66,9 @@ type Capabilities struct {
 	AttachedDatabases   bool    `json:"attachedDatabases"`
 	GeneratedColumns    bool    `json:"generatedColumns"`
 	Upsert              bool    `json:"upsert"`
+	ManageSecurity      bool    `json:"manageSecurity"`
+	ActivityMonitor     bool    `json:"activityMonitor"`
+	SSHConnections      bool    `json:"sshConnections"`
 }
 
 func (capabilities Capabilities) Validate() error {

@@ -93,12 +93,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: MySQL 8.0
+          - name: MySQL 8.0 (legacy compatibility)
             image: mysql:8.0
             driver: mysql
             health_command: mysqladmin ping -h 127.0.0.1 -uroot -prolling --silent
           - name: MySQL 8.4 LTS
             image: mysql:8.4
+            driver: mysql
+            health_command: mysqladmin ping -h 127.0.0.1 -uroot -prolling --silent
+          - name: MySQL 9.7 LTS
+            image: mysql:9.7
             driver: mysql
             health_command: mysqladmin ping -h 127.0.0.1 -uroot -prolling --silent
           - name: MariaDB 10.11 LTS
@@ -107,6 +111,14 @@ jobs:
             health_command: healthcheck.sh --connect --innodb_initialized
           - name: MariaDB 11.4 LTS
             image: mariadb:11.4
+            driver: mariadb
+            health_command: healthcheck.sh --connect --innodb_initialized
+          - name: MariaDB 11.8 LTS
+            image: mariadb:11.8
+            driver: mariadb
+            health_command: healthcheck.sh --connect --innodb_initialized
+          - name: MariaDB 12.3 LTS
+            image: mariadb:12.3
             driver: mariadb
             health_command: healthcheck.sh --connect --innodb_initialized
     services:

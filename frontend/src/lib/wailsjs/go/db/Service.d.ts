@@ -8,13 +8,25 @@ import {context} from '../models';
 
 export function ApplyDatabaseObjectChange(arg1:string,arg2:database.ApplyObjectChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectChangeResult_>;
 
+export function ApplyDatabaseRestore(arg1:database.ApplyRestoreRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_RestoreResult_>;
+
+export function ApplySchemaMigration(arg1:database.ApplySchemaMigrationRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_SchemaMigrationResult_>;
+
+export function ApplySecurityChange(arg1:string,arg2:database.ApplySecurityChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_SecurityChangeResult_>;
+
 export function ApplyTableChanges(arg1:string,arg2:database.TableChangeSet):Promise<response.BaseResponse_rollingthunder_pkg_database_TableChangeResult_>;
+
+export function BackupDatabase(arg1:database.BackupRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_BackupResult_>;
 
 export function BeginTransaction(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
 
 export function CancelConnectionAttempt(arg1:string):Promise<response.BaseResponse_bool_>;
 
+export function CancelDatabaseSession(arg1:database.CancelSessionRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_CancelSessionResult_>;
+
 export function CancelExport(arg1:string):Promise<response.BaseResponse_bool_>;
+
+export function CancelMaintenance(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function CancelQuery(arg1:string):Promise<response.BaseResponse_bool_>;
 
@@ -24,9 +36,13 @@ export function CheckForUpdates():Promise<response.BaseResponse_rollingthunder_i
 
 export function ChooseImportFile():Promise<response.BaseResponse_rollingthunder_pkg_database_ImportFileSelection_>;
 
+export function ChooseRestoreFile(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_RestoreFileSelection_>;
+
 export function ChooseSQLiteDatabaseFile(arg1:boolean):Promise<response.BaseResponse_string_>;
 
 export function ClearConnectionPassword(arg1:string):Promise<response.BaseResponse_bool_>;
+
+export function ClearConnectionSSHCredentials(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function ClearDiagnostics():Promise<response.BaseResponse_bool_>;
 
@@ -62,6 +78,8 @@ export function ExportTableData(arg1:string,arg2:database.TableExportRequest):Pr
 
 export function GetActiveConnections():Promise<response.BaseResponse___rollingthunder_internal_db_ConnectionInfo_>;
 
+export function GetBackupCapabilities(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_BackupCapabilities_>;
+
 export function GetCapabilities(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_Capabilities_>;
 
 export function GetCollectionData(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_TableData_>;
@@ -76,6 +94,8 @@ export function GetConnectionHealths():Promise<response.BaseResponse___rollingth
 
 export function GetDataTypes(arg1:string):Promise<response.BaseResponse___rollingthunder_pkg_database_DataType_>;
 
+export function GetDatabaseActivity(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_DatabaseActivity_>;
+
 export function GetDatabaseInfo(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_Info_>;
 
 export function GetDatabaseObject(arg1:string,arg2:database.ObjectReference):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectDetail_>;
@@ -88,9 +108,13 @@ export function GetExportProgress(arg1:string):Promise<response.BaseResponse_rol
 
 export function GetIndices(arg1:string,arg2:database.Table):Promise<response.BaseResponse_rollingthunder_pkg_database_Indices_>;
 
+export function GetMaintenanceProgress(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_MaintenanceProgress_>;
+
 export function GetSavedConnections():Promise<response.BaseResponse___rollingthunder_internal_db_SavedConnection_>;
 
 export function GetSchemas(arg1:string):Promise<response.BaseResponse___string_>;
+
+export function GetSecurityOverview(arg1:string,arg2:string,arg3:string):Promise<response.BaseResponse_rollingthunder_pkg_database_SecurityOverview_>;
 
 export function GetTableDDL(arg1:string,arg2:database.Table):Promise<response.BaseResponse_string_>;
 
@@ -101,6 +125,12 @@ export function InsertRow(arg1:string,arg2:database.Table,arg3:Record<string, an
 export function InspectImportFile(arg1:database.ImportPreviewRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ImportPreview_>;
 
 export function PreviewDatabaseObjectChange(arg1:string,arg2:database.ObjectChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_>;
+
+export function PreviewDatabaseRestore(arg1:database.RestorePreviewRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_RestorePreview_>;
+
+export function PreviewSchemaMigration(arg1:database.SchemaMigrationRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_SchemaMigrationPreview_>;
+
+export function PreviewSecurityChange(arg1:string,arg2:database.SecurityChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_SecurityChangePreview_>;
 
 export function ReconnectConnection(arg1:string,arg2:string):Promise<response.BaseResponse_rollingthunder_pkg_database_ConnectionHealth_>;
 

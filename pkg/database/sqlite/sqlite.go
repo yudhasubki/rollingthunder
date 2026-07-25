@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
+	modernsqlite "modernc.org/sqlite"
 )
 
 const defaultBusyTimeout = 5 * time.Second
@@ -139,6 +139,102 @@ func (s *SQLite) Close() error {
 	err := s.conn.Close()
 	s.conn = nil
 	return err
+}
+
+type sqliteOnlineBackuper interface {
+	NewBackup(string) (*modernsqlite.Backup, error)
+	NewRestore(string) (*modernsqlite.Backup, error)
+}
+
+func runSQLiteOnlineBackup(
+	ctx context.Context,
+	connection *sql.Conn,
+	path string,
+	restore bool,
+) error {
+	return connection.Raw(func(driverConnection any) error {
+		backuper, ok := driverConnection.(sqliteOnlineBackuper)
+		if !ok {
+			return fmt.Errorf("SQLite driver does not expose online backup support")
+		}
+		var (
+			backup *modernsqlite.Backup
+			err    error
+		)
+		if restore {
+			backup, err = backuper.NewRestore(path)
+		} else {
+			backup, err = backuper.NewBackup(path)
+		}
+		if err != nil {
+			return err
+		}
+		finished := false
+		defer func() {
+			if !finished {
+				_ = backup.Finish()
+			}
+		}()
+		for more := true; more; {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+			more, err = backup.Step(256)
+			if err != nil {
+				return err
+			}
+		}
+		if err := backup.Finish(); err != nil {
+			return err
+		}
+		finished = true
+		return nil
+	})
+}
+
+func (s *SQLite) BackupDatabase(ctx context.Context, path string) error {
+	if err := s.ensureConnected(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("SQLite backup destination is required")
+	}
+	connection, err := s.conn.Connx(ctx)
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	if err := runSQLiteOnlineBackup(ctx, connection.Conn, path, false); err != nil {
+		return fmt.Errorf("create SQLite online backup: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLite) RestoreDatabase(ctx context.Context, path string) error {
+	if err := s.ensureConnected(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("SQLite restore source is required")
+	}
+	connection, err := s.conn.Connx(ctx)
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	if err := runSQLiteOnlineBackup(ctx, connection.Conn, path, true); err != nil {
+		return fmt.Errorf("restore SQLite online backup: %w", err)
+	}
+	var integrity string
+	if err := connection.GetContext(ctx, &integrity, "PRAGMA quick_check"); err != nil {
+		return fmt.Errorf("validate restored SQLite database: %w", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(integrity), "ok") {
+		return fmt.Errorf("restored SQLite database failed quick_check: %s", integrity)
+	}
+	return nil
 }
 
 func (s *SQLite) Ping(ctx context.Context) error {

@@ -327,7 +327,7 @@
 					<div class="mt-4">
 						<div class="flex items-center justify-between text-[8px] font-semibold">
 							<span class="text-muted-foreground">Metadata loaded</span>
-							<span>{loadedCount} / {totalCount || '—'}</span>
+							<span>{loadedCount} / {totalCount || '-'}</span>
 						</div>
 						<div class="bg-muted mt-2 h-1.5 overflow-hidden rounded-full">
 							<div

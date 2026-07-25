@@ -32,8 +32,13 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Live export progress, safe cancellation, and configurable CSV encodings
 - [x] Dark and light appearance modes
 - [x] Activity console and informative loading states
+- [x] Reviewed same-engine schema diff and migration plans
+- [x] Built-in SQLite backup/restore and native PostgreSQL/MySQL/MariaDB maintenance workflows
+- [x] PostgreSQL role and MySQL/MariaDB user/grant administration
+- [x] PostgreSQL/MySQL/MariaDB activity and blocker monitoring
+- [x] Strictly verified SSH tunnels with OS-managed secrets
 
-## Milestone 1 — Reliable data workflows
+## Milestone 1 - Reliable data workflows
 
 This milestone closes the biggest gaps in daily table and query-result work.
 
@@ -71,7 +76,7 @@ explicit, tested ordering behavior.
 - [x] Warn before an unfiltered update or delete.
 - [x] Add stable error codes and actionable connection/query messages.
 
-## Milestone 2 — Complete database-object explorer
+## Milestone 2 - Complete database-object explorer
 
 Tables are only one kind of database object. The explorer will move to a capability-based tree so
 each engine can expose the objects it genuinely supports.
@@ -104,7 +109,7 @@ Every supported object should provide:
 - [x] Alter existing table columns and constraints.
 - [x] Preview generated SQL before applying structural changes.
 
-## Milestone 3 — Real multi-engine support
+## Milestone 3 - Real multi-engine support
 
 The connection-provider flow and SQL completion catalogs are already engine-aware. This milestone
 adds production-quality drivers and exposes only capabilities implemented by each engine.
@@ -131,7 +136,7 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 - [x] Map rowid, affinity, generated columns, and SQLite pragmas.
 - [x] Handle file locking, busy timeouts, and WAL mode clearly.
 
-## Milestone 4 — Power-user query tooling
+## Milestone 4 - Power-user query tooling
 
 - [x] Persist query tabs and restore them on launch.
 - [x] Saved snippets and named queries.
@@ -143,7 +148,7 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 - [x] Import CSV/JSON into an existing or new table.
 - [x] Command palette and customizable keyboard shortcuts.
 
-## Milestone 5 — Release readiness
+## Milestone 5 - Release readiness
 
 - [x] Store credentials in macOS Keychain, Windows Credential Manager, or Linux Secret Service.
 - [x] Add bounded connection attempts with elapsed-time feedback and cancellation.
@@ -157,6 +162,55 @@ adds production-quality drivers and exposes only capabilities implemented by eac
 
 Release verification, supported database versions, the artifact trust model, privacy behavior,
 storage migrations, and the manual accessibility matrix are documented under [`docs/`](docs/).
+
+## Milestone 6 - Administration and portability
+
+These workflows share one Database tools surface and require a reviewed preview before they can
+change schema, security, or database contents.
+
+### Schema sync
+
+- [x] Snapshot two active connections of the same engine.
+- [x] Compare tables, columns, and indexes with schema-aware identifiers.
+- [x] Generate ordered SQL for create/add/alter/drop operations through the target driver.
+- [x] Keep destructive changes disabled until explicitly requested.
+- [x] Fingerprint previews and reject stale or modified apply requests.
+- [x] Report complex constraint drift as manual work instead of guessing unsafe SQL.
+
+### Backup and restore
+
+- [x] Use SQLite's online backup API with integrity checks and automatic restore rollback.
+- [x] Support PostgreSQL custom backups through `pg_dump` / `pg_restore`.
+- [x] Support MySQL/MariaDB SQL backups through their native dump/client tools.
+- [x] Keep credentials out of process arguments and temporary MySQL client files permission
+      restricted.
+- [x] Grant backend-only file tokens, detect changed restore files, and require target confirmation.
+- [x] Show progress and allow cancellation of long-running maintenance commands.
+- [x] Route external client tools through the active SSH tunnel when one is configured.
+
+### Security and operations
+
+- [x] List PostgreSQL roles and MySQL/MariaDB users with direct grants and memberships.
+- [x] Preview and apply create/alter/drop, grant/revoke, and membership changes.
+- [x] Redact passwords from SQL previews while including the secret in review fingerprints.
+- [x] List active sessions, running SQL, waits, blockers, client details, and durations.
+- [x] Cancel statements or terminate sessions through an explicit confirmation drawer.
+- [x] Protect Rolling Thunder's own monitoring session from accidental termination.
+
+### SSH connections
+
+- [x] Forward PostgreSQL and MySQL/MariaDB connections through a local loopback tunnel.
+- [x] Support SSH agent, encrypted/unencrypted private key, and password authentication.
+- [x] Require a known-hosts match or an explicitly pinned SHA256 host-key fingerprint.
+- [x] Store SSH passwords and key passphrases in the operating-system credential store.
+- [x] Tie tunnel replacement and cleanup atomically to connect, reconnect, disconnect, and shutdown.
+- [x] Preserve the original database endpoint in profile/UI metadata while drivers and maintenance
+      tools use the tunnel endpoint.
+
+All six planned milestones are implemented. Future work should be driven by production feedback and
+measured gaps rather than expanding the compatibility surface speculatively. Candidate follow-ups
+include richer visual explain plans, migration support for complex constraints, and signed/notarized
+macOS distribution when project signing resources become available.
 
 ## Prioritization principles
 

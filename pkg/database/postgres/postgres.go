@@ -15,15 +15,16 @@ import (
 )
 
 type Config struct {
-	Host        string
-	Port        string
-	User        string
-	Password    string
-	Db          string
-	SSLMode     string
-	SSLRootCert string
-	SSLCert     string
-	SSLKey      string
+	Host          string
+	Port          string
+	User          string
+	Password      string
+	Db            string
+	SSLMode       string
+	SSLRootCert   string
+	SSLCert       string
+	SSLKey        string
+	TLSServerName string
 }
 
 type Postgres struct {
@@ -42,6 +43,83 @@ func NewPostgres(ctx context.Context, cfg Config) *Postgres {
 	}
 }
 
+func applyPostgresTLSServerName(
+	config *pgxpool.Config,
+	serverName string,
+) {
+	serverName = strings.TrimSpace(serverName)
+	if config == nil || serverName == "" {
+		return
+	}
+	if config.ConnConfig.TLSConfig != nil {
+		config.ConnConfig.TLSConfig = config.ConnConfig.TLSConfig.Clone()
+		config.ConnConfig.TLSConfig.ServerName = serverName
+	}
+	for _, fallback := range config.ConnConfig.Fallbacks {
+		if fallback.TLSConfig == nil {
+			continue
+		}
+		fallback.TLSConfig = fallback.TLSConfig.Clone()
+		fallback.TLSConfig.ServerName = serverName
+	}
+}
+
+func quotePostgresConfigValue(value string) string {
+	escaped := strings.NewReplacer(
+		`\`, `\\`,
+		`'`, `\'`,
+	).Replace(value)
+	return "'" + escaped + "'"
+}
+
+func buildPostgresPoolConfig(config Config) (*pgxpool.Config, error) {
+	sslMode := strings.TrimSpace(config.SSLMode)
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	host := strings.TrimSpace(config.Host)
+	if host == "" {
+		host = "localhost"
+	}
+	port := strings.TrimSpace(config.Port)
+	if port == "" {
+		port = "5432"
+	}
+
+	setting := func(name string, value string) string {
+		return name + "=" + quotePostgresConfigValue(value)
+	}
+	dsn := []string{
+		setting("dbname", config.Db),
+		setting("application_name", "Rolling Thunder"),
+		setting("sslmode", sslMode),
+		setting("host", host),
+		setting("port", port),
+	}
+	if config.SSLRootCert != "" {
+		dsn = append(dsn, setting("sslrootcert", config.SSLRootCert))
+	}
+	if config.SSLCert != "" {
+		dsn = append(dsn, setting("sslcert", config.SSLCert))
+	}
+	if config.SSLKey != "" {
+		dsn = append(dsn, setting("sslkey", config.SSLKey))
+	}
+	if config.User != "" {
+		dsn = append(dsn, setting("user", config.User))
+	}
+	if config.Password != "" {
+		dsn = append(dsn, setting("password", config.Password))
+	}
+
+	poolConfig, err := pgxpool.ParseConfig(strings.Join(dsn, " "))
+	if err != nil {
+		return nil, err
+	}
+	applyPostgresTLSServerName(poolConfig, config.TLSServerName)
+	return poolConfig, nil
+}
+
 func (p *Postgres) Connect(ctx context.Context) error {
 	if p.cfg.Db == "" {
 		return errors.New("database is not exists")
@@ -53,47 +131,11 @@ func (p *Postgres) Connect(ctx context.Context) error {
 		ctx = context.Background()
 	}
 
-	dsn := []string{"dbname=" + p.cfg.Db}
-
-	// SSL Mode
-	sslMode := "disable"
-	if p.cfg.SSLMode != "" {
-		sslMode = p.cfg.SSLMode
+	poolConfig, err := buildPostgresPoolConfig(p.cfg)
+	if err != nil {
+		return err
 	}
-	dsn = append(dsn, fmt.Sprintf("sslmode=%s", sslMode))
-
-	// SSL Certificates
-	if p.cfg.SSLRootCert != "" {
-		dsn = append(dsn, fmt.Sprintf("sslrootcert=%s", p.cfg.SSLRootCert))
-	}
-	if p.cfg.SSLCert != "" {
-		dsn = append(dsn, fmt.Sprintf("sslcert=%s", p.cfg.SSLCert))
-	}
-	if p.cfg.SSLKey != "" {
-		dsn = append(dsn, fmt.Sprintf("sslkey=%s", p.cfg.SSLKey))
-	}
-
-	if p.cfg.User != "" {
-		dsn = append(dsn, fmt.Sprintf("user=%s", p.cfg.User))
-	}
-
-	if p.cfg.Password != "" {
-		dsn = append(dsn, fmt.Sprintf("password=%s", p.cfg.Password))
-	}
-
-	host := "localhost"
-	if p.cfg.Host != "" {
-		host = p.cfg.Host
-	}
-	dsn = append(dsn, fmt.Sprintf("host=%s", host))
-
-	port := "5432"
-	if p.cfg.Port != "" {
-		port = p.cfg.Port
-	}
-	dsn = append(dsn, fmt.Sprintf("port=%s", port))
-
-	pool, err := pgxpool.New(ctx, strings.Join(dsn, " "))
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return err
 	}

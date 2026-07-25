@@ -642,11 +642,28 @@
 									<button
 										type="button"
 										class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold"
+										onclick={() => openTableChange('add-column')}
+									>
+										<Plus class="h-3 w-3" />
+										Add column
+									</button>
+									<button
+										type="button"
+										class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold"
 										onclick={() => openTableChange('alter-column')}
 										disabled={columns.length === 0}
 									>
 										<Settings2 class="h-3 w-3" />
 										Alter column
+									</button>
+									<button
+										type="button"
+										class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[8px] font-semibold text-red-500 hover:bg-red-500/10"
+										onclick={() => openTableChange('drop-column')}
+										disabled={columns.length <= 1}
+									>
+										<Trash2 class="h-3 w-3" />
+										Drop column
 									</button>
 									<button
 										type="button"
@@ -861,7 +878,7 @@
 																default {col.default}
 															</span>
 														{:else if !relation}
-															<span>—</span>
+															<span>-</span>
 														{/if}
 													</div>
 												</td>

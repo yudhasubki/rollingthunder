@@ -156,6 +156,60 @@ func buildSQLiteIndexChange(
 	return statement + ";", nil
 }
 
+func buildSQLiteAddColumn(
+	change database.AddColumnChange,
+) (string, error) {
+	if change.First || strings.TrimSpace(change.After) != "" {
+		return "", fmt.Errorf(
+			"SQLite appends new columns; changing physical column order requires rebuilding the table",
+		)
+	}
+	column := change.Column
+	if column.PrimaryKey || column.Unique {
+		return "", fmt.Errorf(
+			"SQLite cannot add a PRIMARY KEY or UNIQUE column in place; add the column first and create a reviewed unique index, or rebuild the table",
+		)
+	}
+	if !column.Nullable && strings.TrimSpace(column.Default) == "" {
+		return "", fmt.Errorf(
+			"SQLite requires a non-NULL default when adding a required column to an existing table",
+		)
+	}
+	if err := validateSQLiteFragment(column.Type, "column data type"); err != nil {
+		return "", err
+	}
+	if err := validateSQLiteFragment(column.Default, "column default"); err != nil {
+		return "", err
+	}
+	statement := fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN %s %s",
+		quoteSQLiteQualifiedIdentifier(
+			normalizeSQLiteSchema(change.Table.Schema),
+			change.Table.Name,
+		),
+		quoteSQLiteIdentifier(strings.TrimSpace(column.Name)),
+		strings.TrimSpace(column.Type),
+	)
+	if strings.TrimSpace(column.Default) != "" {
+		statement += " DEFAULT " + strings.TrimSpace(column.Default)
+	}
+	if !column.Nullable {
+		statement += " NOT NULL"
+	}
+	return statement + ";", nil
+}
+
+func buildSQLiteDropColumn(change database.DropColumnChange) string {
+	return fmt.Sprintf(
+		"ALTER TABLE %s DROP COLUMN %s;",
+		quoteSQLiteQualifiedIdentifier(
+			normalizeSQLiteSchema(change.Table.Schema),
+			change.Table.Name,
+		),
+		quoteSQLiteIdentifier(strings.TrimSpace(change.Name)),
+	)
+}
+
 func sqliteRefreshReference(
 	kind database.ObjectKind,
 	table database.Table,
@@ -315,6 +369,34 @@ func (s *SQLite) BuildObjectChange(
 			},
 		}, nil
 
+	case database.ObjectChangeAddColumn:
+		request.AddColumn.Table.Schema = normalizeSQLiteSchema(
+			request.AddColumn.Table.Schema,
+		)
+		statement, err := buildSQLiteAddColumn(*request.AddColumn)
+		if err != nil {
+			return database.ObjectChangePlan{}, err
+		}
+		return database.ObjectChangePlan{
+			Summary: fmt.Sprintf(
+				"Add column %s to %s",
+				request.AddColumn.Column.Name,
+				request.AddColumn.Table.Name,
+			),
+			Statements:    []string{statement},
+			Transactional: true,
+			Warnings: []string{
+				"SQLite appends the column at the end of the table.",
+				"Existing rows receive the reviewed default value.",
+			},
+			Refresh: []database.ObjectReference{
+				sqliteRefreshReference(
+					database.ObjectKindTable,
+					request.AddColumn.Table,
+				),
+			},
+		}, nil
+
 	case database.ObjectChangeAlterColumn:
 		if strings.TrimSpace(request.Column.NewName) == "" ||
 			strings.TrimSpace(request.Column.DataType) != "" ||
@@ -350,6 +432,33 @@ func (s *SQLite) BuildObjectChange(
 				sqliteRefreshReference(
 					database.ObjectKindTable,
 					request.Column.Table,
+				),
+			},
+		}, nil
+
+	case database.ObjectChangeDropColumn:
+		request.DropColumn.Table.Schema = normalizeSQLiteSchema(
+			request.DropColumn.Table.Schema,
+		)
+		return database.ObjectChangePlan{
+			Summary: fmt.Sprintf(
+				"Drop column %s from %s",
+				request.DropColumn.Name,
+				request.DropColumn.Table.Name,
+			),
+			Statements: []string{
+				buildSQLiteDropColumn(*request.DropColumn),
+			},
+			Destructive:   true,
+			Transactional: true,
+			Warnings: []string{
+				"Dropping a column permanently removes its data.",
+				"SQLite refuses the change when an index, trigger, generated column, or constraint still depends on the column.",
+			},
+			Refresh: []database.ObjectReference{
+				sqliteRefreshReference(
+					database.ObjectKindTable,
+					request.DropColumn.Table,
 				),
 			},
 		}, nil

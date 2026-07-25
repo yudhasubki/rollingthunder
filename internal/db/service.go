@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,17 +18,37 @@ import (
 
 // Connection represents an active database connection
 type Connection struct {
-	ID          string          `json:"id"`
-	ProfileID   string          `json:"profileId,omitempty"`
-	Name        string          `json:"name"`
-	Driver      database.Driver `json:"-"`
-	Config      database.Config `json:"config"`
-	Color       string          `json:"color"`
-	ConnectedAt time.Time       `json:"connectedAt"`
-	mu          sync.RWMutex
-	healthMu    sync.RWMutex
-	health      database.ConnectionHealth
-	closed      bool
+	ID           string           `json:"id"`
+	ProfileID    string           `json:"profileId,omitempty"`
+	Name         string           `json:"name"`
+	Driver       database.Driver  `json:"-"`
+	Config       database.Config  `json:"-"`
+	Tunnel       connectionTunnel `json:"-"`
+	EndpointHost string           `json:"-"`
+	EndpointPort string           `json:"-"`
+	Color        string           `json:"color"`
+	ConnectedAt  time.Time        `json:"connectedAt"`
+	mu           sync.RWMutex
+	healthMu     sync.RWMutex
+	health       database.ConnectionHealth
+	closed       bool
+}
+
+// effectiveConfig keeps the profile endpoint available to the UI while
+// routing external client tools through the same local SSH endpoint as the
+// active driver.
+func (connection *Connection) effectiveConfig() database.Config {
+	config := connection.Config
+	if strings.TrimSpace(connection.EndpointHost) != "" {
+		if connection.Config.SSHEnabled {
+			config.TLSServerName = connection.Config.Host
+		}
+		config.Host = connection.EndpointHost
+	}
+	if strings.TrimSpace(connection.EndpointPort) != "" {
+		config.Port = connection.EndpointPort
+	}
+	return config
 }
 
 // ConnectionInfo is the public info about a connection (without driver)
@@ -39,6 +60,7 @@ type ConnectionInfo struct {
 	Database  string                    `json:"database"`
 	Host      string                    `json:"host"`
 	Color     string                    `json:"color"`
+	SSHTunnel bool                      `json:"sshTunnel"`
 	IsActive  bool                      `json:"isActive"`
 	Health    database.ConnectionHealth `json:"health"`
 }
@@ -52,11 +74,19 @@ type Service struct {
 	sqliteOpenDialog    openFileDialogFunc
 	sqliteSaveDialog    saveFileDialogFunc
 	importOpenDialog    openFileDialogFunc
+	restoreOpenDialog   openFileDialogFunc
 	importFiles         map[string]importFileGrant
 	importFileMu        sync.RWMutex
+	restoreFiles        map[string]restoreFileGrant
+	restoreFileMu       sync.RWMutex
 	exportJobs          map[string]*exportJob
 	exportMu            sync.RWMutex
+	maintenanceJobs     map[string]*maintenanceJob
+	maintenanceMu       sync.RWMutex
+	lookPath            executableLookup
+	commandContext      commandFactory
 	newDriver           driverFactory
+	newTunnel           tunnelFactory
 	connectionTimeout   time.Duration
 	connectionAttempts  map[string]*connectionAttempt
 	connectionAttemptMu sync.Mutex
@@ -97,9 +127,15 @@ func NewServiceWithDiagnosticsAndVersion(
 		sqliteOpenDialog:   defaultOpenFileDialog,
 		sqliteSaveDialog:   defaultSaveFileDialog,
 		importOpenDialog:   defaultOpenFileDialog,
+		restoreOpenDialog:  defaultOpenFileDialog,
 		importFiles:        make(map[string]importFileGrant),
+		restoreFiles:       make(map[string]restoreFileGrant),
 		exportJobs:         make(map[string]*exportJob),
+		maintenanceJobs:    make(map[string]*maintenanceJob),
+		lookPath:           defaultExecutableLookup,
+		commandContext:     defaultCommandFactory,
 		newDriver:          NewDriver,
+		newTunnel:          newSSHTunnel,
 		connectionTimeout:  defaultConnectionTimeout,
 		connectionAttempts: make(map[string]*connectionAttempt),
 		queryAttempts:      make(map[string]*queryAttempt),
@@ -184,8 +220,23 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 	}
 	defer s.finishConnectionAttempt(attempt)
 
-	driver, err := s.newDriver(attempt.ctx, driverName, req.Config)
+	effectiveConfig := req.Config
+	var tunnel connectionTunnel
+	if req.Config.SSHEnabled {
+		tunnel, err = s.newTunnel(attempt.ctx, req.Config)
+		if err != nil {
+			return connectionFailure[ConnectResponse](attempt, err)
+		}
+		effectiveConfig.TLSServerName = req.Config.Host
+		effectiveConfig.Host = tunnel.LocalHost()
+		effectiveConfig.Port = tunnel.LocalPort()
+	}
+
+	driver, err := s.newDriver(attempt.ctx, driverName, effectiveConfig)
 	if err != nil {
+		if tunnel != nil {
+			_ = tunnel.Close()
+		}
 		return serviceErrorWithCode[ConnectResponse](
 			400,
 			errorCodeInvalidRequest,
@@ -198,11 +249,17 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 	err = driver.Connect(attempt.ctx)
 	if err != nil {
 		_ = driver.Close()
+		if tunnel != nil {
+			_ = tunnel.Close()
+		}
 		return connectionFailure[ConnectResponse](attempt, err)
 	}
 
 	if !s.claimConnectionAttempt(attempt) {
 		_ = driver.Close()
+		if tunnel != nil {
+			_ = tunnel.Close()
+		}
 		return connectionFailure[ConnectResponse](
 			attempt,
 			connectionAttemptError(attempt, nil),
@@ -214,13 +271,16 @@ func (s *Service) Connect(req ConnectRequest) response.BaseResponse[ConnectRespo
 	connectedAt := time.Now()
 	healthTimestamp := connectedAt.UTC().Format(time.RFC3339Nano)
 	conn := &Connection{
-		ID:          connID,
-		ProfileID:   req.ProfileID,
-		Name:        req.Config.Name,
-		Driver:      driver,
-		Config:      req.Config,
-		Color:       req.Config.Color,
-		ConnectedAt: connectedAt,
+		ID:           connID,
+		ProfileID:    req.ProfileID,
+		Name:         req.Config.Name,
+		Driver:       driver,
+		Config:       req.Config,
+		Tunnel:       tunnel,
+		EndpointHost: effectiveConfig.Host,
+		EndpointPort: effectiveConfig.Port,
+		Color:        req.Config.Color,
+		ConnectedAt:  connectedAt,
 		health: database.ConnectionHealth{
 			ConnectionID: connID,
 			State:        database.ConnectionHealthHealthy,
@@ -566,6 +626,7 @@ func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo]
 				Database:  conn.Config.Db,
 				Host:      conn.Config.Host,
 				Color:     conn.Color,
+				SSHTunnel: conn.Config.SSHEnabled,
 				IsActive:  conn.ID == activeID,
 				Health:    conn.healthSnapshot(),
 			},
@@ -629,6 +690,11 @@ func (s *Service) DisconnectConnection(connectionID string) response.BaseRespons
 	conn.closed = true
 	s.rollbackTransactionsForConnection(connectionID)
 	err := conn.Driver.Close()
+	if conn.Tunnel != nil {
+		if tunnelErr := conn.Tunnel.Close(); err == nil {
+			err = tunnelErr
+		}
+	}
 	conn.mu.Unlock()
 	if err != nil {
 		return serviceError[bool](err.Error())

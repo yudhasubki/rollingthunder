@@ -67,19 +67,40 @@ go test ./integration -run TestMySQLCompatibleDriverWorkflow -count=1 -v
 Use `RT_DATABASE_DRIVER=mariadb` against MariaDB. CI runs the version matrix documented in
 [RELEASING.md](RELEASING.md).
 
+## SSH tunnel checks
+
+The unit suite starts an in-process SSH server and TCP target where local listeners are permitted.
+It verifies password authentication, pinned host-key verification, traffic forwarding, endpoint
+routing, reconnect replacement, and cleanup. Sandboxes that prohibit local listeners skip only the
+socket-forwarding case; CI must run it.
+
+Manual checks should use a disposable bastion and database:
+
+1. Add the bastion key to a disposable `known_hosts` file and connect with SSH agent, private-key,
+   and password authentication in turn.
+2. Remove the known-hosts entry and confirm connection fails closed. Repeat with the correct pinned
+   SHA256 fingerprint, then with a different fingerprint and confirm the mismatch is reported.
+3. Set the database host to an address resolvable only from the bastion. Confirm queries,
+   PostgreSQL/MySQL backup, and restore all use the tunnel.
+4. Cancel a slow connection attempt, reconnect an active profile, and disconnect it. Confirm no
+   loopback listener remains and a failed replacement leaves the previous connection usable.
+5. Inspect `connections.json`; SSH passwords and key passphrases must never appear.
+
 ## Credential and migration checks
 
 Use a disposable saved profile:
 
-1. Save a password and accept the OS keychain prompt.
-2. Inspect `connections.json`; the password must not occur anywhere and `hasPassword` must be true.
+1. Save a database password, SSH password, and encrypted-key passphrase in representative profiles,
+   then accept the OS keychain prompt.
+2. Inspect `connections.json`; no secret may occur anywhere. Only `hasPassword`,
+   `hasSshPassword`, and `hasSshKeyPassphrase` metadata may be true.
 3. Edit another field while leaving Password blank. Reconnect successfully with the preserved
    credential.
 4. Enter a replacement password, save, and reconnect.
-5. Use the two-step Remove stored password action. Reopen the profile and confirm it requests a
-   password.
-6. Test an old version-1 profile fixture on a disposable OS account/keychain. The migration must
-   rewrite metadata only after the keychain accepts the password.
+5. Use the two-step removal actions for database and SSH credentials. Reopen the profile and confirm
+   it requests the removed secret without affecting the other credential.
+6. Test old version-1/version-2 profile fixtures on a disposable OS account/keychain. Migration to
+   version 3 must rewrite metadata only after the keychain accepts every plaintext secret.
 
 Automated tests cover restrictive file modes, plaintext absence, fail-safe legacy migration,
 backend-only secret resolution, and credential removal.
@@ -103,6 +124,16 @@ Repeat critical workflows for PostgreSQL, MySQL/MariaDB, and SQLite where applic
 - Run batches with multiple result sets, query variables, formatter/linter, Explain, cancellation,
   and explicit commit/rollback.
 - Import CSV and JSON into existing and new tables, including cancellation and invalid-row errors.
+- Add, alter, rename, and drop columns; create/drop indexes and constraints; verify the SQL preview
+  and stale-preview rejection before applying.
+- Compare disposable source/target schemas for each engine. Exercise non-destructive sync first,
+  then opt into drop operations and confirm complex constraint drift remains manual.
+- Back up and restore each engine. Change the selected backup after preview and confirm apply is
+  rejected; cancel an external restore and verify the partial-restore warning remains visible.
+- Create a disposable role/user, grant and revoke table privileges and membership, alter it, then
+  drop it. Confirm password text is redacted from previews.
+- Start a long query from a second client, inspect it in Activity, cancel the statement, and test
+  session termination. Rolling Thunder's own protected session must not expose a destructive action.
 - Close and reopen the application. Saved query tabs and named queries must restore only under their
   owning connection.
 - Enable optional diagnostics, trigger a controlled frontend error in development, export the ZIP,

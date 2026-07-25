@@ -44,6 +44,18 @@ const (
 	errorCodeObjectChangePreviewFailed  = "OBJECT_CHANGE_PREVIEW_FAILED"
 	errorCodeObjectChangeReviewRequired = "OBJECT_CHANGE_REVIEW_REQUIRED"
 	errorCodeObjectChangeFailed         = "OBJECT_CHANGE_FAILED"
+	errorCodeSchemaMigrationFailed      = "SCHEMA_MIGRATION_FAILED"
+	errorCodeSchemaMigrationReview      = "SCHEMA_MIGRATION_REVIEW_REQUIRED"
+	errorCodeBackupUnavailable          = "BACKUP_UNAVAILABLE"
+	errorCodeBackupFailed               = "BACKUP_FAILED"
+	errorCodeRestoreFailed              = "RESTORE_FAILED"
+	errorCodeRestoreReview              = "RESTORE_REVIEW_REQUIRED"
+	errorCodeSecurityUnsupported        = "SECURITY_MANAGEMENT_UNSUPPORTED"
+	errorCodeSecurityFailed             = "SECURITY_CHANGE_FAILED"
+	errorCodeSecurityReview             = "SECURITY_CHANGE_REVIEW_REQUIRED"
+	errorCodeActivityUnsupported        = "ACTIVITY_MONITOR_UNSUPPORTED"
+	errorCodeActivityFailed             = "ACTIVITY_MONITOR_FAILED"
+	errorCodeSessionCancellationFailed  = "SESSION_CANCELLATION_FAILED"
 	errorCodeInvalidRequest             = "INVALID_REQUEST"
 )
 

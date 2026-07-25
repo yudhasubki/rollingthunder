@@ -227,18 +227,16 @@ func (s *Service) reconnectConfig(
 		if profile.ID != connection.ProfileID {
 			continue
 		}
-		if !profile.HasPassword {
-			config.Password = ""
-			return config, nil
-		}
-		password, err := s.credentialStore.Get(profile.ID)
+		config.Password = ""
+		config.SSHPassword = ""
+		config.SSHKeyPassphrase = ""
+		config, err = s.hydrateProfileCredentials(profile, config)
 		if err != nil {
 			return database.Config{}, fmt.Errorf(
-				"unlock saved connection password: %w",
+				"unlock saved connection credentials: %w",
 				err,
 			)
 		}
-		config.Password = password
 		return config, nil
 	}
 	// A deleted saved profile does not invalidate an already-active session.
@@ -307,12 +305,39 @@ func (s *Service) ReconnectConnection(
 		0,
 		false,
 	)
+	effectiveConfig := config
+	var replacementTunnel connectionTunnel
+	if config.SSHEnabled {
+		replacementTunnel, err = s.newTunnel(attempt.ctx, config)
+		if err != nil {
+			failure := connectionAttemptError(attempt, err)
+			health := connection.updateHealth(
+				database.ConnectionHealthDegraded,
+				failure.Error(),
+				0,
+				false,
+			)
+			return reconnectError(
+				health,
+				http.StatusServiceUnavailable,
+				"Reconnect failed",
+				failure.Error(),
+				"The existing connection was kept. Check the SSH endpoint, authentication, and verified host key.",
+			)
+		}
+		effectiveConfig.TLSServerName = config.Host
+		effectiveConfig.Host = replacementTunnel.LocalHost()
+		effectiveConfig.Port = replacementTunnel.LocalPort()
+	}
 	replacement, err := s.newDriver(
 		attempt.ctx,
-		config.Driver,
-		config,
+		effectiveConfig.Driver,
+		effectiveConfig,
 	)
 	if err != nil {
+		if replacementTunnel != nil {
+			_ = replacementTunnel.Close()
+		}
 		health := connection.updateHealth(
 			database.ConnectionHealthDegraded,
 			err.Error(),
@@ -330,6 +355,9 @@ func (s *Service) ReconnectConnection(
 	started := time.Now()
 	if err := replacement.Connect(attempt.ctx); err != nil {
 		_ = replacement.Close()
+		if replacementTunnel != nil {
+			_ = replacementTunnel.Close()
+		}
 		failure := connectionAttemptError(attempt, err)
 		health := connection.updateHealth(
 			database.ConnectionHealthDegraded,
@@ -347,6 +375,9 @@ func (s *Service) ReconnectConnection(
 	}
 	if !s.claimConnectionAttempt(attempt) {
 		_ = replacement.Close()
+		if replacementTunnel != nil {
+			_ = replacementTunnel.Close()
+		}
 		failure := connectionAttemptError(attempt, nil)
 		health := connection.updateHealth(
 			database.ConnectionHealthDegraded,
@@ -363,13 +394,25 @@ func (s *Service) ReconnectConnection(
 		)
 	}
 	previous := connection.Driver
+	previousTunnel := connection.Tunnel
 	connection.Driver = replacement
+	connection.Tunnel = replacementTunnel
+	connection.EndpointHost = effectiveConfig.Host
+	connection.EndpointPort = effectiveConfig.Port
 	connection.Config.Password = config.Password
+	connection.Config.SSHPassword = config.SSHPassword
+	connection.Config.SSHKeyPassphrase = config.SSHKeyPassphrase
 	connection.ConnectedAt = time.Now()
-	if err := previous.Close(); err != nil {
+	cleanupErr := previous.Close()
+	if previousTunnel != nil {
+		if err := previousTunnel.Close(); cleanupErr == nil {
+			cleanupErr = err
+		}
+	}
+	if cleanupErr != nil {
 		health := connection.updateHealth(
 			database.ConnectionHealthHealthy,
-			fmt.Sprintf("Reconnected; old connection cleanup reported: %v", err),
+			fmt.Sprintf("Reconnected; old connection cleanup reported: %v", cleanupErr),
 			time.Since(started),
 			true,
 		)

@@ -5,6 +5,7 @@
 		ConnectWithProfile,
 		ChooseSQLiteDatabaseFile,
 		ClearConnectionPassword,
+		ClearConnectionSSHCredentials,
 		DeleteConnection,
 		GetSavedConnections,
 		SaveConnection,
@@ -26,6 +27,7 @@
 		AlertCircle,
 		ArrowLeft,
 		Check,
+		ChevronDown,
 		ChevronRight,
 		Database,
 		Eye,
@@ -34,11 +36,13 @@
 		FolderOpen,
 		Loader2,
 		Lock,
+		Network,
 		Play,
 		Plus,
 		Save,
 		Search,
 		Server,
+		ShieldCheck,
 		Trash2,
 		X
 	} from 'lucide-svelte';
@@ -101,6 +105,11 @@
 		{ value: 'verify-ca', label: 'Verify CA' },
 		{ value: 'verify-full', label: 'Verify full' }
 	];
+	const sshAuthOptions = [
+		{ value: 'agent', label: 'SSH agent' },
+		{ value: 'private-key', label: 'Private key' },
+		{ value: 'password', label: 'Password' }
+	];
 
 	let profiles = $state<db.SavedConnection[]>([]);
 	let searchQuery = $state('');
@@ -113,6 +122,21 @@
 	let showPassword = $state(false);
 	let hasStoredPassword = $state(false);
 	let clearPasswordConfirm = $state(false);
+	let sshExpanded = $state(false);
+	let sshEnabled = $state(false);
+	let sshHost = $state('');
+	let sshPort = $state('22');
+	let sshUser = $state('');
+	let sshAuthMode = $state('agent');
+	let sshPrivateKeyPath = $state('');
+	let sshKnownHostsPath = $state('');
+	let sshHostKeyFingerprint = $state('');
+	let sshPassword = $state('');
+	let sshKeyPassphrase = $state('');
+	let hasStoredSSHPassword = $state(false);
+	let hasStoredSSHKeyPassphrase = $state(false);
+	let showSSHSecret = $state(false);
+	let clearSSHCredentialsConfirm = $state(false);
 	let loadedForOpen = $state(false);
 	let connectionAttemptID = $state<string | null>(null);
 	let connectionElapsedSeconds = $state(0);
@@ -236,6 +260,21 @@
 		sslRootCert = config.sslRootCert || '';
 		sslCert = config.sslCert || '';
 		sslKey = config.sslKey || '';
+		sshEnabled = Boolean(config.sshEnabled);
+		sshExpanded = Boolean(config.sshEnabled);
+		sshHost = config.sshHost || '';
+		sshPort = config.sshPort || '22';
+		sshUser = config.sshUser || '';
+		sshAuthMode = config.sshAuthMode || 'agent';
+		sshPrivateKeyPath = config.sshPrivateKeyPath || '';
+		sshKnownHostsPath = config.sshKnownHostsPath || '';
+		sshHostKeyFingerprint = config.sshHostKeyFingerprint || '';
+		sshPassword = '';
+		sshKeyPassphrase = '';
+		hasStoredSSHPassword = Boolean(profile.hasSshPassword);
+		hasStoredSSHKeyPassphrase = Boolean(profile.hasSshKeyPassphrase);
+		showSSHSecret = false;
+		clearSSHCredentialsConfirm = false;
 		provider = profileProvider;
 		deleteConfirm = false;
 		message = '';
@@ -256,6 +295,21 @@
 		sslRootCert = '';
 		sslCert = '';
 		sslKey = '';
+		sshExpanded = false;
+		sshEnabled = false;
+		sshHost = '';
+		sshPort = '22';
+		sshUser = '';
+		sshAuthMode = 'agent';
+		sshPrivateKeyPath = '';
+		sshKnownHostsPath = '';
+		sshHostKeyFingerprint = '';
+		sshPassword = '';
+		sshKeyPassphrase = '';
+		hasStoredSSHPassword = false;
+		hasStoredSSHKeyPassphrase = false;
+		showSSHSecret = false;
+		clearSSHCredentialsConfirm = false;
 		provider = '';
 		deleteConfirm = false;
 		showPassword = false;
@@ -287,7 +341,19 @@
 			sslMode: sqlite ? 'disable' : sslMode,
 			sslRootCert: sqlite ? '' : sslRootCert.trim(),
 			sslCert: sqlite ? '' : sslCert.trim(),
-			sslKey: sqlite ? '' : sslKey.trim()
+			sslKey: sqlite ? '' : sslKey.trim(),
+			sshEnabled: !sqlite && sshEnabled,
+			sshHost: !sqlite && sshEnabled ? sshHost.trim() : '',
+			sshPort: !sqlite && sshEnabled ? sshPort.trim() || '22' : '',
+			sshUser: !sqlite && sshEnabled ? sshUser.trim() : '',
+			sshAuthMode: !sqlite && sshEnabled ? sshAuthMode : '',
+			sshPrivateKeyPath:
+				!sqlite && sshEnabled && sshAuthMode === 'private-key' ? sshPrivateKeyPath.trim() : '',
+			sshKnownHostsPath: !sqlite && sshEnabled ? sshKnownHostsPath.trim() : '',
+			sshHostKeyFingerprint: !sqlite && sshEnabled ? sshHostKeyFingerprint.trim() : '',
+			sshPassword: !sqlite && sshEnabled && sshAuthMode === 'password' ? sshPassword : '',
+			sshKeyPassphrase:
+				!sqlite && sshEnabled && sshAuthMode === 'private-key' ? sshKeyPassphrase : ''
 		});
 	}
 
@@ -308,6 +374,23 @@
 			showMessage('Host, port, and database are required.', 'error');
 			return false;
 		}
+		if (provider !== 'sqlite' && sshEnabled) {
+			if (!sshHost.trim() || !sshUser.trim()) {
+				showMessage('SSH host and username are required when the tunnel is enabled.', 'error');
+				sshExpanded = true;
+				return false;
+			}
+			if (sshAuthMode === 'password' && !sshPassword && !(editingId && hasStoredSSHPassword)) {
+				showMessage('Enter the SSH password or choose another authentication method.', 'error');
+				sshExpanded = true;
+				return false;
+			}
+			if (sshAuthMode === 'private-key' && !sshPrivateKeyPath.trim()) {
+				showMessage('Choose an SSH private key for private-key authentication.', 'error');
+				sshExpanded = true;
+				return false;
+			}
+		}
 		return true;
 	}
 
@@ -325,6 +408,8 @@
 			username = '';
 			password = '';
 			sslMode = 'disable';
+			sshEnabled = false;
+			sshExpanded = false;
 		} else {
 			host ||= '127.0.0.1';
 		}
@@ -477,6 +562,37 @@
 			showMessage('Stored password removed from the operating system credential store.', 'success');
 		} catch (error: any) {
 			showMessage(error?.message || 'Could not remove stored password', 'error');
+		} finally {
+			action = null;
+		}
+	}
+
+	async function clearStoredSSHCredentials() {
+		if (!editingId || (!hasStoredSSHPassword && !hasStoredSSHKeyPassphrase) || action !== null)
+			return;
+		if (!clearSSHCredentialsConfirm) {
+			clearSSHCredentialsConfirm = true;
+			showMessage('Press “Remove stored SSH secret” again to confirm.', 'info');
+			return;
+		}
+		action = 'save';
+		try {
+			const response = await ClearConnectionSSHCredentials(editingId);
+			if (response.errors?.length || !response.data) {
+				throw createServiceError(response.errors?.[0], 'Could not remove stored SSH credentials');
+			}
+			hasStoredSSHPassword = false;
+			hasStoredSSHKeyPassphrase = false;
+			sshPassword = '';
+			sshKeyPassphrase = '';
+			clearSSHCredentialsConfirm = false;
+			await loadProfiles(editingId);
+			showMessage(
+				'Stored SSH secret removed from the operating system credential store.',
+				'success'
+			);
+		} catch (error: any) {
+			showMessage(error?.message || 'Could not remove stored SSH credentials', 'error');
 		} finally {
 			action = null;
 		}
@@ -908,7 +1024,7 @@
 												type={showPassword ? 'text' : 'password'}
 												bind:value={password}
 												placeholder={hasStoredPassword
-													? 'Stored by the operating system — leave blank to keep'
+													? 'Stored by the operating system - leave blank to keep'
 													: 'Enter password'}
 												class="!pr-10"
 												disabled={action !== null}
@@ -970,6 +1086,246 @@
 											/>
 										</div>
 									{/if}
+
+									<div
+										class="col-span-2 overflow-hidden rounded-lg border bg-[var(--surface-sunken)]"
+									>
+										<div class="flex min-h-12 items-center">
+											<button
+												type="button"
+												class="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-3 text-left"
+												onclick={() => (sshExpanded = !sshExpanded)}
+												disabled={action !== null}
+												aria-expanded={sshExpanded}
+											>
+												<span
+													class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-[var(--surface-raised)]"
+												>
+													<Network class="text-muted-foreground h-3.5 w-3.5" />
+												</span>
+												<span class="min-w-0 flex-1">
+													<span class="block text-[10px] font-bold">SSH tunnel</span>
+													<span class="text-muted-foreground mt-0.5 block text-[8px]">
+														{sshEnabled
+															? `Via ${sshHost || 'SSH host'}:${sshPort || '22'}`
+															: 'Optional secure forwarding through a bastion host'}
+													</span>
+												</span>
+												<ChevronDown
+													class="text-muted-foreground h-3.5 w-3.5 transition-transform {sshExpanded
+														? 'rotate-180'
+														: ''}"
+												/>
+											</button>
+											<button
+												type="button"
+												class="mr-3 inline-flex h-7 min-w-12 items-center justify-center rounded-full border px-2.5 text-[8px] font-bold transition-colors {sshEnabled
+													? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
+													: 'text-muted-foreground bg-[var(--surface-raised)]'}"
+												onclick={() => {
+													sshEnabled = !sshEnabled;
+													if (sshEnabled) sshExpanded = true;
+												}}
+												disabled={action !== null}
+												aria-pressed={sshEnabled}
+											>
+												{sshEnabled ? 'On' : 'Off'}
+											</button>
+										</div>
+
+										{#if sshExpanded}
+											<div class="grid grid-cols-2 gap-3 border-t bg-[var(--surface-raised)] p-3.5">
+												<div>
+													<label for="modal-ssh-host">SSH host</label>
+													<input
+														id="modal-ssh-host"
+														bind:value={sshHost}
+														placeholder="bastion.example.com"
+														disabled={action !== null || !sshEnabled}
+													/>
+												</div>
+												<div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3">
+													<div>
+														<label for="modal-ssh-port">Port</label>
+														<input
+															id="modal-ssh-port"
+															bind:value={sshPort}
+															placeholder="22"
+															disabled={action !== null || !sshEnabled}
+														/>
+													</div>
+													<div>
+														<label for="modal-ssh-user">Username</label>
+														<input
+															id="modal-ssh-user"
+															bind:value={sshUser}
+															placeholder="deploy"
+															disabled={action !== null || !sshEnabled}
+														/>
+													</div>
+												</div>
+
+												<div class="col-span-2">
+													<label for="modal-ssh-auth">Authentication</label>
+													<FilterCombobox
+														id="modal-ssh-auth"
+														options={sshAuthOptions}
+														value={sshAuthMode}
+														onChange={(value) => {
+															sshAuthMode = value;
+															clearSSHCredentialsConfirm = false;
+														}}
+														searchable={false}
+														disabled={action !== null || !sshEnabled}
+														triggerClass="h-9 px-3 text-xs"
+														placeholder="Select SSH authentication"
+													/>
+												</div>
+
+												{#if sshAuthMode === 'private-key'}
+													<div class="col-span-2">
+														<label for="modal-ssh-key">Private key path</label>
+														<input
+															id="modal-ssh-key"
+															bind:value={sshPrivateKeyPath}
+															placeholder="~/.ssh/id_ed25519"
+															disabled={action !== null || !sshEnabled}
+														/>
+													</div>
+													<div class="col-span-2">
+														<div class="mb-1.5 flex items-center justify-between gap-2">
+															<label for="modal-ssh-passphrase" class="!mb-0">
+																Key passphrase
+															</label>
+															{#if hasStoredSSHKeyPassphrase}
+																<span class="text-muted-foreground text-[8px] font-semibold">
+																	Stored securely
+																</span>
+															{/if}
+														</div>
+														<div class="relative">
+															<input
+																id="modal-ssh-passphrase"
+																type={showSSHSecret ? 'text' : 'password'}
+																bind:value={sshKeyPassphrase}
+																placeholder={hasStoredSSHKeyPassphrase
+																	? 'Stored by the operating system - leave blank to keep'
+																	: 'Optional for encrypted keys'}
+																class="!pr-10"
+																disabled={action !== null || !sshEnabled}
+															/>
+															<button
+																type="button"
+																class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
+																onclick={() => (showSSHSecret = !showSSHSecret)}
+																aria-label={showSSHSecret
+																	? 'Hide SSH key passphrase'
+																	: 'Show SSH key passphrase'}
+															>
+																{#if showSSHSecret}
+																	<EyeOff class="h-3.5 w-3.5" />
+																{:else}
+																	<Eye class="h-3.5 w-3.5" />
+																{/if}
+															</button>
+														</div>
+													</div>
+												{:else if sshAuthMode === 'password'}
+													<div class="col-span-2">
+														<div class="mb-1.5 flex items-center justify-between gap-2">
+															<label for="modal-ssh-password" class="!mb-0">SSH password</label>
+															{#if hasStoredSSHPassword}
+																<span class="text-muted-foreground text-[8px] font-semibold">
+																	Stored securely
+																</span>
+															{/if}
+														</div>
+														<div class="relative">
+															<input
+																id="modal-ssh-password"
+																type={showSSHSecret ? 'text' : 'password'}
+																bind:value={sshPassword}
+																placeholder={hasStoredSSHPassword
+																	? 'Stored by the operating system - leave blank to keep'
+																	: 'Enter SSH password'}
+																class="!pr-10"
+																disabled={action !== null || !sshEnabled}
+															/>
+															<button
+																type="button"
+																class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
+																onclick={() => (showSSHSecret = !showSSHSecret)}
+																aria-label={showSSHSecret
+																	? 'Hide SSH password'
+																	: 'Show SSH password'}
+															>
+																{#if showSSHSecret}
+																	<EyeOff class="h-3.5 w-3.5" />
+																{:else}
+																	<Eye class="h-3.5 w-3.5" />
+																{/if}
+															</button>
+														</div>
+													</div>
+												{:else}
+													<div
+														class="col-span-2 rounded-md border border-emerald-500/20 bg-emerald-500/8 px-3 py-2 text-[8px] leading-relaxed text-emerald-700 dark:text-emerald-400"
+													>
+														Rolling Thunder uses the agent exposed by <code>SSH_AUTH_SOCK</code>. No
+														private key or SSH password is copied into the profile.
+													</div>
+												{/if}
+
+												<div>
+													<label for="modal-known-hosts">Known hosts file</label>
+													<input
+														id="modal-known-hosts"
+														bind:value={sshKnownHostsPath}
+														placeholder="~/.ssh/known_hosts (default)"
+														disabled={action !== null || !sshEnabled}
+													/>
+												</div>
+												<div>
+													<label for="modal-host-fingerprint">Pinned host fingerprint</label>
+													<input
+														id="modal-host-fingerprint"
+														bind:value={sshHostKeyFingerprint}
+														placeholder="SHA256:… (optional)"
+														disabled={action !== null || !sshEnabled}
+													/>
+												</div>
+
+												<div
+													class="col-span-2 flex items-start gap-2 rounded-md border px-3 py-2.5"
+												>
+													<ShieldCheck class="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+													<div class="min-w-0 flex-1">
+														<p class="text-[8px] font-bold">Strict host verification</p>
+														<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
+															The pinned SHA256 fingerprint takes priority. Otherwise the selected
+															or default known_hosts file must already trust this server.
+														</p>
+													</div>
+													{#if editingId && (hasStoredSSHPassword || hasStoredSSHKeyPassphrase)}
+														<button
+															type="button"
+															class="text-muted-foreground hover:text-destructive shrink-0 text-[8px] font-semibold"
+															onclick={clearStoredSSHCredentials}
+															disabled={action !== null}
+														>
+															{clearSSHCredentialsConfirm
+																? 'Remove stored SSH secret'
+																: 'Remove secret'}
+														</button>
+													{/if}
+												</div>
+												<p class="text-muted-foreground col-span-2 text-[8px] leading-relaxed">
+													The database host above is resolved from the SSH server. Use
+													<code>127.0.0.1</code> when the database only listens on that server.
+												</p>
+											</div>
+										{/if}
+									</div>
 								{/if}
 							</div>
 						{/if}

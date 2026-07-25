@@ -98,7 +98,7 @@ func TestSavedConnectionStoresPasswordOutsideProfileFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "super-secret-value") ||
-		!strings.Contains(string(data), `"version": 2`) {
+		!strings.Contains(string(data), `"version": 3`) {
 		t.Fatalf("profile file = %s", data)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -122,6 +122,174 @@ func TestSavedConnectionStoresPasswordOutsideProfileFile(t *testing.T) {
 	password, err = credentials.Get(saved.Data.ID)
 	if err != nil || password != "super-secret-value" {
 		t.Fatalf("preserved credential = %q, %v", password, err)
+	}
+}
+
+func TestSavedConnectionStoresSSHSecretsOutsideProfileFile(t *testing.T) {
+	service, credentials := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:                  "Private production",
+		Driver:                "postgres",
+		Host:                  "database.internal",
+		Port:                  "5432",
+		Password:              "database-secret",
+		Db:                    "rolling",
+		SSHEnabled:            true,
+		SSHHost:               "bastion.example",
+		SSHPort:               "22",
+		SSHUser:               "deploy",
+		SSHAuthMode:           "password",
+		SSHPassword:           "ssh-secret",
+		SSHKeyPassphrase:      "unused-passphrase",
+		SSHHostKeyFingerprint: "SHA256:trusted",
+	})
+	if len(saved.Errors) > 0 {
+		t.Fatalf("SaveConnection() errors = %+v", saved.Errors)
+	}
+	if !saved.Data.HasPassword || !saved.Data.HasSSHPassword ||
+		saved.Data.HasSSHKeyPassphrase {
+		t.Fatalf("saved secret flags = %+v", saved.Data)
+	}
+	if saved.Data.Config.Password != "" ||
+		saved.Data.Config.SSHPassword != "" ||
+		saved.Data.Config.SSHKeyPassphrase != "" {
+		t.Fatalf("saved profile exposed credentials: %+v", saved.Data.Config)
+	}
+	if password, err := credentials.Get(saved.Data.ID); err != nil ||
+		password != "database-secret" {
+		t.Fatalf("database credential = %q, %v", password, err)
+	}
+	if password, err := credentials.Get(
+		sshPasswordCredentialID(saved.Data.ID),
+	); err != nil || password != "ssh-secret" {
+		t.Fatalf("SSH credential = %q, %v", password, err)
+	}
+	if _, err := credentials.Get(
+		sshPassphraseCredentialID(saved.Data.ID),
+	); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("unused passphrase was stored: %v", err)
+	}
+	data, err := os.ReadFile(service.connectionStorage.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{
+		"database-secret",
+		"ssh-secret",
+		"unused-passphrase",
+	} {
+		if strings.Contains(string(data), secret) {
+			t.Fatalf("profile file contains %q: %s", secret, data)
+		}
+	}
+}
+
+func TestActiveConnectionJSONCannotExposeConfigurationSecrets(t *testing.T) {
+	data, err := json.Marshal(Connection{
+		ID:   "active",
+		Name: "Private",
+		Config: database.Config{
+			Password:         "database-secret",
+			SSHPassword:      "ssh-secret",
+			SSHKeyPassphrase: "passphrase-secret",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{
+		"database-secret",
+		"ssh-secret",
+		"passphrase-secret",
+	} {
+		if strings.Contains(string(data), secret) {
+			t.Fatalf("active connection JSON exposed %q: %s", secret, data)
+		}
+	}
+}
+
+func TestConnectSavedConnectionHydratesSSHCredentialsBackendSide(t *testing.T) {
+	service, _ := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:              "Private production",
+		Driver:            "postgres",
+		Host:              "database.internal",
+		Port:              "5432",
+		Password:          "database-secret",
+		Db:                "rolling",
+		SSHEnabled:        true,
+		SSHHost:           "bastion.example",
+		SSHUser:           "deploy",
+		SSHAuthMode:       "private-key",
+		SSHPrivateKeyPath: "~/.ssh/id_ed25519",
+		SSHKeyPassphrase:  "key-secret",
+	})
+	if len(saved.Errors) > 0 {
+		t.Fatalf("SaveConnection() errors = %+v", saved.Errors)
+	}
+	tunnel := &fakeConnectionTunnel{host: "127.0.0.1", port: "41003"}
+	var tunnelConfig database.Config
+	service.newTunnel = func(
+		_ context.Context,
+		config database.Config,
+	) (connectionTunnel, error) {
+		tunnelConfig = config
+		return tunnel, nil
+	}
+	driver := &connectionTestDriver{}
+	service.newDriver = func(
+		context.Context,
+		string,
+		database.Config,
+	) (database.Driver, error) {
+		return driver, nil
+	}
+
+	connected := service.ConnectSavedConnection(saved.Data.ID, "ssh-saved")
+	if len(connected.Errors) > 0 || !connected.Data.Connected {
+		t.Fatalf("ConnectSavedConnection() = %+v", connected)
+	}
+	if tunnelConfig.Password != "database-secret" ||
+		tunnelConfig.SSHKeyPassphrase != "key-secret" {
+		t.Fatalf("hydrated config = %+v", tunnelConfig)
+	}
+	if tunnelConfig.SSHPassword != "" {
+		t.Fatalf("unexpected SSH password = %q", tunnelConfig.SSHPassword)
+	}
+}
+
+func TestClearSSHCredentialsPreservesDatabasePassword(t *testing.T) {
+	service, credentials := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:        "Private production",
+		Driver:      "postgres",
+		Password:    "database-secret",
+		SSHEnabled:  true,
+		SSHAuthMode: "password",
+		SSHPassword: "ssh-secret",
+	})
+	if len(saved.Errors) > 0 {
+		t.Fatalf("SaveConnection() errors = %+v", saved.Errors)
+	}
+
+	cleared := service.ClearConnectionSSHCredentials(saved.Data.ID)
+	if len(cleared.Errors) > 0 || !cleared.Data {
+		t.Fatalf("ClearConnectionSSHCredentials() = %+v", cleared)
+	}
+	if password, err := credentials.Get(saved.Data.ID); err != nil ||
+		password != "database-secret" {
+		t.Fatalf("database credential = %q, %v", password, err)
+	}
+	if _, err := credentials.Get(
+		sshPasswordCredentialID(saved.Data.ID),
+	); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("SSH credential still exists: %v", err)
+	}
+	loaded := service.GetSavedConnections()
+	if len(loaded.Errors) > 0 || len(loaded.Data) != 1 ||
+		loaded.Data[0].HasSSHPassword ||
+		!loaded.Data[0].HasPassword {
+		t.Fatalf("saved profile after clear = %+v", loaded)
 	}
 }
 
@@ -163,7 +331,7 @@ func TestLegacyPlaintextPasswordMigratesBeforeProfileRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(migrated), "legacy-password") ||
-		!strings.Contains(string(migrated), `"version": 2`) {
+		!strings.Contains(string(migrated), `"version": 3`) {
 		t.Fatalf("migrated profile file = %s", migrated)
 	}
 }
@@ -187,7 +355,7 @@ func TestLegacyProfileWithoutPasswordStillMigratesToVersionedEnvelope(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(migrated), `"version": 2`) {
+	if !strings.Contains(string(migrated), `"version": 3`) {
 		t.Fatalf("legacy profile was not versioned: %s", migrated)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)

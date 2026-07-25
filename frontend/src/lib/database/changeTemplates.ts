@@ -12,7 +12,9 @@ export type StructuralChangeIntent =
 	| 'enable'
 	| 'disable'
 	| 'create-index'
+	| 'add-column'
 	| 'alter-column'
+	| 'drop-column'
 	| 'add-constraint'
 	| 'drop-constraint';
 
@@ -56,8 +58,12 @@ export function structuralIntentLabel(intent: StructuralChangeIntent): string {
 			return 'Disable trigger';
 		case 'create-index':
 			return 'Create index';
+		case 'add-column':
+			return 'Add column';
 		case 'alter-column':
 			return 'Alter column';
+		case 'drop-column':
+			return 'Drop column';
 		case 'add-constraint':
 			return 'Add constraint';
 		case 'drop-constraint':
@@ -117,6 +123,8 @@ export function defaultObjectName(intent: StructuralChangeIntent): string {
 			return 'new_trigger';
 		case 'create-index':
 			return 'new_index';
+		case 'add-column':
+			return 'new_column';
 		case 'add-constraint':
 			return 'new_constraint';
 		default:

@@ -46,4 +46,35 @@ func TestObjectChangeRequestValidatesStructuredChanges(t *testing.T) {
 	if err := request.Validate(); err == nil {
 		t.Fatal("index request without columns was accepted")
 	}
+
+	addColumn := ObjectChangeRequest{
+		Action: ObjectChangeAddColumn,
+		AddColumn: &AddColumnChange{
+			Table: Table{Schema: "public", Name: "orders"},
+			Column: ColumnDefinition{
+				Name:     "status",
+				Type:     "text",
+				Nullable: true,
+			},
+		},
+	}
+	if err := addColumn.Validate(); err != nil {
+		t.Fatalf("valid add-column request: %v", err)
+	}
+	addColumn.AddColumn.First = true
+	addColumn.AddColumn.After = "id"
+	if err := addColumn.Validate(); err == nil {
+		t.Fatal("conflicting add-column position was accepted")
+	}
+
+	dropColumn := ObjectChangeRequest{
+		Action: ObjectChangeDropColumn,
+		DropColumn: &DropColumnChange{
+			Table: Table{Schema: "public", Name: "orders"},
+			Name:  "obsolete",
+		},
+	}
+	if err := dropColumn.Validate(); err != nil {
+		t.Fatalf("valid drop-column request: %v", err)
+	}
 }

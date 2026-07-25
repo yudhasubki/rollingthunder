@@ -166,6 +166,51 @@ func TestBuildPostgresColumnChangeProducesReviewedSequence(t *testing.T) {
 	}
 }
 
+func TestBuildPostgresAddAndDropColumnPlans(t *testing.T) {
+	driver := &Postgres{}
+	add, err := driver.BuildObjectChange(
+		context.Background(),
+		database.ObjectChangeRequest{
+			Action: database.ObjectChangeAddColumn,
+			AddColumn: &database.AddColumnChange{
+				Table: database.Table{Schema: "public", Name: "orders"},
+				Column: database.ColumnDefinition{
+					Name:     "status",
+					Type:     "text",
+					Nullable: false,
+					Default:  "'pending'",
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build add column: %v", err)
+	}
+	want := `ALTER TABLE "public"."orders" ADD COLUMN "status" text DEFAULT 'pending' NOT NULL;`
+	if len(add.Statements) != 1 || add.Statements[0] != want {
+		t.Fatalf("add column SQL = %#v, want %q", add.Statements, want)
+	}
+
+	drop, err := driver.BuildObjectChange(
+		context.Background(),
+		database.ObjectChangeRequest{
+			Action:  database.ObjectChangeDropColumn,
+			Cascade: true,
+			DropColumn: &database.DropColumnChange{
+				Table: database.Table{Schema: "public", Name: "orders"},
+				Name:  "status",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build drop column: %v", err)
+	}
+	if !drop.Destructive ||
+		drop.Statements[0] != `ALTER TABLE "public"."orders" DROP COLUMN "status" CASCADE;` {
+		t.Fatalf("drop column plan = %+v", drop)
+	}
+}
+
 func TestBuildPostgresConstraintChangeRejectsArbitrarySQL(t *testing.T) {
 	_, _, err := buildPostgresConstraintChange(
 		database.ObjectChangeAddConstraint,

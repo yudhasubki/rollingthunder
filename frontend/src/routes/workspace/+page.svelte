@@ -8,6 +8,7 @@
 	import ConnectionManagerModal from '$lib/components/ConnectionManagerModal.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import DiagnosticsDialog from '$lib/components/DiagnosticsDialog.svelte';
+	import DatabaseToolsDialog from '$lib/components/DatabaseToolsDialog.svelte';
 	import ImportDataDialog from '$lib/components/database/ImportDataDialog.svelte';
 	import { createTabs, melt } from '@melt-ui/svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
@@ -109,6 +110,7 @@
 	let connectionManagerOpen = $state(false);
 	let commandPaletteOpen = $state(false);
 	let diagnosticsOpen = $state(false);
+	let databaseToolsOpen = $state(false);
 	let importDialogOpen = $state(false);
 	let tabStripElement = $state<HTMLDivElement | null>(null);
 	let reviewOpen = $state(false);
@@ -246,6 +248,9 @@
 		const handleOpenDiagnostics = () => {
 			diagnosticsOpen = true;
 		};
+		const handleOpenDatabaseTools = () => {
+			databaseToolsOpen = true;
+		};
 
 		// Keyboard shortcuts
 		function handleKeydown(e: KeyboardEvent) {
@@ -288,6 +293,7 @@
 		window.addEventListener('open-command-palette', handleOpenCommandPalette);
 		window.addEventListener('open-import-data', handleOpenImportData);
 		window.addEventListener('open-diagnostics', handleOpenDiagnostics);
+		window.addEventListener('open-database-tools', handleOpenDatabaseTools);
 
 		return () => {
 			document.removeEventListener('keydown', handleKeydown);
@@ -295,6 +301,7 @@
 			window.removeEventListener('open-command-palette', handleOpenCommandPalette);
 			window.removeEventListener('open-import-data', handleOpenImportData);
 			window.removeEventListener('open-diagnostics', handleOpenDiagnostics);
+			window.removeEventListener('open-database-tools', handleOpenDatabaseTools);
 		};
 	});
 
@@ -582,6 +589,7 @@
 		onExecute={executeWorkspaceCommand}
 	/>
 	<DiagnosticsDialog open={diagnosticsOpen} onClose={() => (diagnosticsOpen = false)} />
+	<DatabaseToolsDialog open={databaseToolsOpen} onClose={() => (databaseToolsOpen = false)} />
 	{#if activeConnectionId}
 		<ImportDataDialog
 			open={importDialogOpen}

@@ -8,8 +8,8 @@ must be versioned and migrated explicitly.
 
 | Data                      | Current version | Location                                              | Contains secrets    |
 | ------------------------- | --------------: | ----------------------------------------------------- | ------------------- |
-| Saved connection profiles |               2 | `connections.json` in the OS config directory         | No                  |
-| Connection passwords      |      OS-managed | Keychain, Credential Manager, or Secret Service       | Yes                 |
+| Saved connection profiles |               3 | `connections.json` in the OS config directory         | No                  |
+| Database and SSH secrets  |      OS-managed | Keychain, Credential Manager, or Secret Service       | Yes                 |
 | Query workspaces          |               1 | Webview local storage, `rollingthunder.workspace`     | Query text          |
 | Named queries             |               1 | Webview local storage, `rollingthunder.saved-queries` | Query text          |
 | Diagnostics preferences   |               1 | `diagnostics.json` in the OS config directory         | No                  |
@@ -21,8 +21,9 @@ The application config directory is normally:
 - Windows: `%AppData%\RollingThunder`
 - Linux: `$XDG_CONFIG_HOME/RollingThunder` or `~/.config/RollingThunder`
 
-Passwords use the credential service `RollingThunder.DatabaseProfiles` and the opaque saved-profile
-ID as their account key. They are never returned by the saved-profile API.
+Secrets use the credential service `RollingThunder.DatabaseProfiles`. Database passwords use the
+opaque saved-profile ID as their account key; SSH passwords and key passphrases use namespaced keys
+derived from that ID. They are never returned by the saved-profile API.
 
 ## Compatibility rules
 
@@ -54,6 +55,18 @@ Early builds stored a raw JSON array and could include `config.password`. Versio
 
 The migration runs automatically the first time profiles are loaded. A keychain unlock prompt can
 therefore appear after upgrading an older installation.
+
+## Version 2 to version 3 saved profiles
+
+Version 3 adds non-secret SSH tunnel settings and two credential-presence flags:
+`hasSshPassword` and `hasSshKeyPassphrase`. It keeps SSH passwords and private-key passphrases in the
+same operating-system credential service as database passwords, under separate namespaced account
+keys.
+
+Existing version-2 envelopes remain readable. They are written as version 3 the next time profile
+metadata changes. If a development build ever wrote SSH secrets into a legacy `config` object,
+Rolling Thunder moves every plaintext secret to the OS store before atomically rewriting the file.
+If any credential write fails, the source file remains available for a safe retry.
 
 ## Backup before upgrade
 
