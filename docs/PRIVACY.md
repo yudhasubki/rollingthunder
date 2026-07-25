@@ -24,7 +24,7 @@ When optional diagnostics are enabled, an unhandled frontend error can record:
 - a redacted JavaScript stack trace;
 - the UTC occurrence time.
 
-If “Include basic system information” is also enabled, reports add only:
+If "Include basic system information" is also enabled, reports add only:
 
 - operating system;
 - CPU architecture;
@@ -66,10 +66,10 @@ governed by the current OS account and its filesystem policy.
 
 ## Export and deletion
 
-- “Export local reports” opens a native destination picker and creates a ZIP only after a deliberate
+- "Export local reports" opens a native destination picker and creates a ZIP only after a deliberate
   user action.
 - Export does not transmit the ZIP. The user decides whether and how to share it.
-- “Clear local reports” requires a second confirmation and deletes retained report files.
+- "Clear local reports" requires a second confirmation and deletes retained report files.
 - Disabling optional diagnostics stops future frontend reports; it does not silently delete existing
   reports. Use Clear for that.
 - Clearing reports does not remove saved profiles or keychain credentials.
@@ -99,6 +99,6 @@ profiles, credentials, diagnostics, or a device identifier. A failed check is ig
 blocks startup.
 
 When a newer release exists, its version, publication date, and plain-text release notes are shown
-in a local dialog. Choosing “Remind me tomorrow” stores only the release version and reminder
-deadline in browser-local application storage. Choosing “Download update” opens the trusted
+in a local dialog. Choosing "Remind me tomorrow" stores only the release version and reminder
+deadline in browser-local application storage. Choosing "Download update" opens the trusted
 Rolling Thunder GitHub Release page in the system browser; installation is never started silently.

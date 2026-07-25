@@ -7,7 +7,7 @@ unsigned, and manual workflow runs produce preview artifacts without publishing 
 ## Automated workflows
 
 - `ci.yml`: Go tests, race detector, vet, frontend tests/lint/build, and a Linux Wails build.
-- `integration.yml`: SQLite plus PostgreSQL 14–18, MySQL 8.4/9.7 LTS with legacy 8.0
+- `integration.yml`: SQLite plus PostgreSQL 14-18, MySQL 8.4/9.7 LTS with legacy 8.0
   compatibility, and MariaDB 10.11/11.4/11.8/12.3 LTS.
 - `release.yml`: validates the source, builds native macOS arm64/amd64, Windows amd64, and Linux
   amd64 packages, signs Windows/Linux tag builds, creates SHA-256 checksums, emits a GitHub/Sigstore
