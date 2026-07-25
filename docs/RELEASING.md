@@ -63,8 +63,8 @@ Use preview artifacts for cross-platform smoke testing before publishing a versi
 2. Update `README.md`, `ROADMAP.md`, migration notes, and release-facing behavior.
 3. Confirm CI and all integration matrix jobs are green for the exact commit.
 4. Open **Releases → Draft a new release** on GitHub.
-5. Create a semantic-version tag such as `v0.4.0`, target the exact release commit, and prepare the
-   release title and notes.
+5. Create a semantic-version tag such as `v0.1.0-beta.1`, target the exact release commit, and
+   prepare the release title and notes.
 6. Mark unstable versions as a pre-release, then click **Publish release**.
 7. Monitor the Release workflow. The published page initially contains GitHub's source archives;
    native packages appear after every validation and build job succeeds.

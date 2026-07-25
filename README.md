@@ -305,4 +305,5 @@ bugs.
 
 ## License
 
-Rolling Thunder is available under the [MIT License](LICENSE).
+Rolling Thunder is free software licensed under the
+[GNU General Public License v3.0 or later](LICENSE).
