@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestSQLServerActivityKeepsTransactionAggregationOutOfSessionQuery(
+	t *testing.T,
+) {
+	if strings.Contains(sqlServerActivityQuery, "dm_tran_") ||
+		strings.Contains(sqlServerActivityQuery, "transaction_details") {
+		t.Fatal("session query contains the incompatible transaction aggregation join")
+	}
+	if !strings.Contains(
+		sqlServerTransactionStartsQuery,
+		"GROUP BY st.session_id",
+	) {
+		t.Fatal("transaction enrichment query does not group by session")
+	}
+}
+
 func TestSQLServerSessionActionRequiresTermination(t *testing.T) {
 	if _, err := sqlServerSessionActionStatement("51", false); err == nil ||
 		!strings.Contains(err.Error(), "cannot cancel only") {

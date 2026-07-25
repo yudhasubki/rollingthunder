@@ -60,7 +60,6 @@ const sqlServerActivityQuery = `
 				ELSE 0
 			END
 		) AS duration_ms,
-		transaction_details.transaction_started,
 		request_value.start_time AS query_started,
 		session_value.login_time AS started_at,
 		CONVERT(
@@ -74,17 +73,6 @@ const sqlServerActivityQuery = `
 	FROM sys.dm_exec_sessions session_value
 	LEFT JOIN sys.dm_exec_requests request_value
 		ON request_value.session_id = session_value.session_id
-	LEFT JOIN (
-		SELECT
-			session_transaction.session_id,
-			MIN(active_transaction.transaction_begin_time) AS transaction_started
-		FROM sys.dm_tran_session_transactions session_transaction
-		JOIN sys.dm_tran_active_transactions active_transaction
-			ON active_transaction.transaction_id =
-				session_transaction.transaction_id
-		GROUP BY session_transaction.session_id
-	) AS transaction_details
-		ON transaction_details.session_id = session_value.session_id
 	OUTER APPLY sys.dm_exec_sql_text(request_value.sql_handle) statement_value
 	WHERE session_value.is_user_process = 1
 	ORDER BY
@@ -92,22 +80,30 @@ const sqlServerActivityQuery = `
 		request_value.start_time,
 		session_value.session_id`
 
+const sqlServerTransactionStartsQuery = `
+	SELECT
+		st.session_id,
+		MIN(atx.transaction_begin_time)
+	FROM sys.dm_tran_session_transactions st
+	JOIN sys.dm_tran_active_transactions atx
+		ON atx.transaction_id = st.transaction_id
+	GROUP BY st.session_id`
+
 type sqlServerActivityRow struct {
-	id                 int64
-	user               sql.NullString
-	database           sql.NullString
-	client             sql.NullString
-	application        sql.NullString
-	command            sql.NullString
-	state              sql.NullString
-	query              sql.NullString
-	waitEvent          sql.NullString
-	blockedBy          sql.NullString
-	durationMS         int64
-	transactionStarted sql.NullTime
-	queryStarted       sql.NullTime
-	startedAt          sql.NullTime
-	isCurrent          bool
+	id           int64
+	user         sql.NullString
+	database     sql.NullString
+	client       sql.NullString
+	application  sql.NullString
+	command      sql.NullString
+	state        sql.NullString
+	query        sql.NullString
+	waitEvent    sql.NullString
+	blockedBy    sql.NullString
+	durationMS   int64
+	queryStarted sql.NullTime
+	startedAt    sql.NullTime
+	isCurrent    bool
 }
 
 func sqlServerActivityText(value sql.NullString) string {
@@ -133,12 +129,39 @@ func sqlServerBlockedBy(value sql.NullString) []string {
 	return []string{text}
 }
 
+func (s *SQLServer) sqlServerTransactionStarts(
+	ctx context.Context,
+) (map[int64]time.Time, error) {
+	rows, err := s.conn.QueryContext(ctx, sqlServerTransactionStartsQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	starts := make(map[int64]time.Time)
+	for rows.Next() {
+		var sessionID int64
+		var started sql.NullTime
+		if err := rows.Scan(&sessionID, &started); err != nil {
+			return nil, err
+		}
+		if started.Valid {
+			starts[sessionID] = started.Time
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return starts, nil
+}
+
 func (s *SQLServer) GetDatabaseActivity(
 	ctx context.Context,
 ) (database.DatabaseActivity, error) {
 	if err := s.ensureConnected(); err != nil {
 		return database.DatabaseActivity{}, err
 	}
+	transactionStarts, transactionStartsErr := s.sqlServerTransactionStarts(ctx)
 	rows, err := s.conn.QueryContext(
 		ctx,
 		sqlServerActivityQuery,
@@ -168,7 +191,6 @@ func (s *SQLServer) GetDatabaseActivity(
 			&row.waitEvent,
 			&row.blockedBy,
 			&row.durationMS,
-			&row.transactionStarted,
 			&row.queryStarted,
 			&row.startedAt,
 			&row.isCurrent,
@@ -178,6 +200,10 @@ func (s *SQLServer) GetDatabaseActivity(
 		id := strconv.FormatInt(row.id, 10)
 		blockedBy := sqlServerBlockedBy(row.blockedBy)
 		waitEvent := sqlServerActivityText(row.waitEvent)
+		var transactionStarted *time.Time
+		if started, exists := transactionStarts[row.id]; exists {
+			transactionStarted = &started
+		}
 		if row.isCurrent && currentID == "" {
 			currentID = id
 		}
@@ -194,7 +220,7 @@ func (s *SQLServer) GetDatabaseActivity(
 			Waiting:            waitEvent != "" || len(blockedBy) > 0,
 			BlockedBy:          blockedBy,
 			DurationMS:         row.durationMS,
-			TransactionStarted: sqlServerActivityTime(row.transactionStarted),
+			TransactionStarted: transactionStarted,
 			QueryStarted:       sqlServerActivityTime(row.queryStarted),
 			StartedAt:          sqlServerActivityTime(row.startedAt),
 			IsCurrent:          row.isCurrent,
@@ -202,6 +228,11 @@ func (s *SQLServer) GetDatabaseActivity(
 	}
 	if err := rows.Err(); err != nil {
 		return database.DatabaseActivity{}, err
+	}
+	message := "SQL Server can terminate a session with KILL, but it cannot " +
+		"cancel only the current statement through a separate monitoring session."
+	if transactionStartsErr != nil {
+		message += " Transaction start timestamps are unavailable for this account."
 	}
 	return database.DatabaseActivity{
 		Supported:           true,
@@ -211,8 +242,7 @@ func (s *SQLServer) GetDatabaseActivity(
 		CanTerminateSession: true,
 		Sessions:            sessions,
 		CapturedAt:          time.Now(),
-		Message: "SQL Server can terminate a session with KILL, but it cannot " +
-			"cancel only the current statement through a separate monitoring session.",
+		Message:             message,
 	}, nil
 }
 
