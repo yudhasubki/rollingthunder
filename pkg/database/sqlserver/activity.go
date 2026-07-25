@@ -15,32 +15,32 @@ import (
 const sqlServerActivityQuery = `
 	SELECT
 		session_value.session_id,
-		COALESCE(session_value.login_name, N'') AS session_user,
+		COALESCE(session_value.login_name, N''),
 		COALESCE(
 			DB_NAME(COALESCE(request_value.database_id, session_value.database_id)),
 			N''
-		) AS database_name,
-		COALESCE(session_value.host_name, N'') AS client_address,
+		),
+		COALESCE(session_value.host_name, N''),
 		COALESCE(
 			NULLIF(session_value.program_name, N''),
 			NULLIF(session_value.client_interface_name, N''),
 			N''
-		) AS application_name,
-		COALESCE(request_value.command, N'') AS session_command,
+		),
+		COALESCE(request_value.command, N''),
 		LOWER(
 			COALESCE(
 				NULLIF(request_value.status, N''),
 				NULLIF(session_value.status, N''),
 				N'unknown'
 			)
-		) AS session_state,
-		LEFT(COALESCE(statement_value.text, N''), 4000) AS query_text,
-		COALESCE(request_value.wait_type, N'') AS wait_event,
+		),
+		LEFT(COALESCE(statement_value.text, N''), 4000),
+		COALESCE(request_value.wait_type, N''),
 		CASE
 			WHEN request_value.blocking_session_id > 0 THEN
 				CONVERT(nvarchar(20), request_value.blocking_session_id)
 			ELSE N''
-		END AS blocked_by,
+		END,
 		CONVERT(
 			bigint,
 			CASE
@@ -59,9 +59,9 @@ const sqlServerActivityQuery = `
 					END
 				ELSE 0
 			END
-		) AS duration_ms,
-		request_value.start_time AS query_started,
-		session_value.login_time AS started_at,
+		),
+		request_value.start_time,
+		session_value.login_time,
 		CONVERT(
 			bit,
 			CASE
@@ -69,7 +69,7 @@ const sqlServerActivityQuery = `
 				WHEN session_value.program_name = @p1 THEN 1
 				ELSE 0
 			END
-		) AS is_current
+		)
 	FROM sys.dm_exec_sessions session_value
 	LEFT JOIN sys.dm_exec_requests request_value
 		ON request_value.session_id = session_value.session_id

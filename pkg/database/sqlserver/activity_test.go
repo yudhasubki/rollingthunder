@@ -20,6 +20,13 @@ func TestSQLServerActivityKeepsTransactionAggregationOutOfSessionQuery(
 	}
 }
 
+func TestSQLServerActivityQueryAvoidsReservedColumnAliases(t *testing.T) {
+	normalized := strings.ToUpper(sqlServerActivityQuery)
+	if strings.Contains(normalized, " AS SESSION_USER") {
+		t.Fatal("session query aliases a column with the reserved SESSION_USER keyword")
+	}
+}
+
 func TestSQLServerSessionActionRequiresTermination(t *testing.T) {
 	if _, err := sqlServerSessionActionStatement("51", false); err == nil ||
 		!strings.Contains(err.Error(), "cannot cancel only") {
