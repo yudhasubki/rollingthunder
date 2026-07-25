@@ -30,6 +30,14 @@ test('components consume semantic colors instead of raw palette values', async (
 	}
 });
 
+test('components use the shared dropdown instead of native select styling', async () => {
+	for (const file of await sourceFiles()) {
+		if (!file.pathname.endsWith('.svelte')) continue;
+		const content = await readFile(file, 'utf8');
+		assert.doesNotMatch(content, /<select\b/, `${file.pathname} contains a native select`);
+	}
+});
+
 test('the theme defines the complete semantic feedback palette', async () => {
 	const styles = await readFile(new URL('../src/app.css', import.meta.url), 'utf8');
 	for (const token of ['info', 'success', 'warning', 'danger']) {

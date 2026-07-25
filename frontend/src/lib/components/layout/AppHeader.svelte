@@ -14,19 +14,43 @@
 		HeartPulse,
 		RefreshCw,
 		ShieldCheck,
-		ArchiveRestore
+		ArchiveRestore,
+		AlertTriangle,
+		Lock,
+		Unlock,
+		X
 	} from 'lucide-svelte';
 	import { createDropdownMenu, melt } from '@melt-ui/svelte';
 	import { onMount } from 'svelte';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import { fly } from 'svelte/transition';
 	import { connectionStore } from '$lib/stores/connectionStore.svelte';
-	import { CheckConnection, ReconnectConnection } from '$lib/wailsjs/go/db/Service';
+	import {
+		CheckConnection,
+		ReconnectConnection,
+		SetConnectionWriteAccess
+	} from '$lib/wailsjs/go/db/Service';
+	import { db } from '$lib/wailsjs/go/models';
+	import { createServiceError } from '$lib/errors/service';
 	import { updateStatus } from '$lib/stores/status.svelte';
-	import { APPLICATION, UI_RUNTIME, connectionEnvironmentOption } from '$lib/config/application';
+	import {
+		APPLICATION,
+		UI_RUNTIME,
+		connectionEnvironmentOption,
+		providerOption
+	} from '$lib/config/application';
 
+	interface Props {
+		onOpenCommandPalette: () => void;
+	}
+
+	let { onOpenCommandPalette }: Props = $props();
 	let theme: 'light' | 'dark' | 'system' = $state('system');
 	let healthBusy = $state(false);
+	let writeGuardOpen = $state(false);
+	let writeGuardBusy = $state(false);
+	let writeGuardConfirmation = $state('');
+	let writeGuardError = $state('');
 
 	// Create melt-ui dropdown menu for theme
 	const {
@@ -109,7 +133,7 @@
 	}
 
 	function openCommandPalette() {
-		window.dispatchEvent(new CustomEvent('open-command-palette'));
+		onOpenCommandPalette();
 	}
 
 	function openDiagnostics() {
@@ -123,6 +147,10 @@
 	function connectionEndpoint(connection: NonNullable<typeof connectionStore.activeConnection>) {
 		if (connection.driver === 'sqlite') return connection.database;
 		return `${connection.database} · ${connection.host}`;
+	}
+
+	function writeConfirmationName(connection: NonNullable<typeof connectionStore.activeConnection>) {
+		return connection.name || connection.database;
 	}
 
 	function healthColor(state?: string): string {
@@ -186,6 +214,54 @@
 			healthBusy = false;
 		}
 	}
+
+	async function setActiveWriteAccess(enable: boolean) {
+		const connection = connectionStore.activeConnection;
+		if (!connection || writeGuardBusy) return;
+		writeGuardBusy = true;
+		writeGuardError = '';
+		try {
+			const response = await SetConnectionWriteAccess(
+				new db.SetConnectionWriteAccessRequest({
+					connectionId: connection.id,
+					enable,
+					confirmation: enable ? writeGuardConfirmation : ''
+				})
+			);
+			if (response.errors?.length) {
+				throw createServiceError(
+					response.errors[0],
+					enable ? 'Could not unlock writes' : 'Could not lock writes'
+				);
+			}
+			await connectionStore.refreshConnections();
+			writeGuardOpen = false;
+			writeGuardConfirmation = '';
+			updateStatus(
+				enable
+					? `Writes temporarily unlocked for ${connection.name || connection.database}`
+					: `Writes locked for ${connection.name || connection.database}`,
+				enable ? 'info' : 'success'
+			);
+		} catch (error: any) {
+			writeGuardError = error?.message || 'Could not change write access';
+		} finally {
+			writeGuardBusy = false;
+		}
+	}
+
+	function handleWriteGuard() {
+		const connection = connectionStore.activeConnection;
+		if (!connection?.readOnly) return;
+		connOpen.set(false);
+		if (connection.writeUnlocked) {
+			void setActiveWriteAccess(false);
+			return;
+		}
+		writeGuardConfirmation = '';
+		writeGuardError = '';
+		writeGuardOpen = true;
+	}
 </script>
 
 <header
@@ -238,9 +314,25 @@
 								>
 									{activeEnvironment.label}
 								</span>
+								{#if connectionStore.activeConnection.readOnly}
+									<span
+										class="text-muted-foreground flex shrink-0 items-center gap-0.5 rounded border px-1 py-0.5 text-[6px] font-bold tracking-wide uppercase"
+										title={connectionStore.activeConnection.writeUnlocked
+											? 'Writes temporarily unlocked'
+											: 'Database writes are blocked'}
+									>
+										{#if connectionStore.activeConnection.writeUnlocked}
+											<Unlock class="h-2.5 w-2.5" />
+											Unlocked
+										{:else}
+											<Lock class="h-2.5 w-2.5" />
+											Read only
+										{/if}
+									</span>
+								{/if}
 							</span>
 							<span class="text-muted-foreground block max-w-44 truncate text-[9px]">
-								{connectionStore.activeConnection.driver} ·
+								{providerOption(connectionStore.activeConnection.driver).name} ·
 								{connectionEndpoint(connectionStore.activeConnection)}
 							</span>
 						</span>
@@ -306,7 +398,7 @@
 												>{conn.name || conn.database}</span
 											>
 											<span class="text-muted-foreground mt-0.5 block truncate text-[9px]"
-												>{conn.driver} · {connectionEndpoint(conn)}</span
+												>{providerOption(conn.driver).name} · {connectionEndpoint(conn)}</span
 											>
 										</span>
 										{#if conn.isActive}
@@ -366,6 +458,36 @@
 									</button>
 								{/if}
 							</div>
+							{#if connectionStore.activeConnection?.readOnly}
+								<button
+									type="button"
+									class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--surface-hover)]"
+									onclick={handleWriteGuard}
+									disabled={writeGuardBusy}
+								>
+									<span
+										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-[var(--surface-sunken)]"
+									>
+										{#if connectionStore.activeConnection.writeUnlocked}
+											<Unlock class="text-muted-foreground h-3.5 w-3.5" />
+										{:else}
+											<Lock class="text-muted-foreground h-3.5 w-3.5" />
+										{/if}
+									</span>
+									<span class="min-w-0 flex-1">
+										<span class="block text-[11px] font-bold">
+											{connectionStore.activeConnection.writeUnlocked
+												? 'Lock writes now'
+												: 'Temporarily unlock writes'}
+										</span>
+										<span class="text-muted-foreground mt-0.5 block text-[9px]">
+											{connectionStore.activeConnection.writeUnlocked
+												? 'End this session override'
+												: 'Requires the exact connection name'}
+										</span>
+									</span>
+								</button>
+							{/if}
 							<button
 								type="button"
 								class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--surface-hover)]"
@@ -511,3 +633,87 @@
 		{/if}
 	</div>
 </header>
+
+{#if writeGuardOpen && connectionStore.activeConnection}
+	<div class="fixed inset-0 z-[120] flex items-center justify-center p-5">
+		<button
+			type="button"
+			class="bg-overlay/45 absolute inset-0 cursor-default backdrop-blur-[2px]"
+			aria-label="Cancel write unlock"
+			onclick={() => {
+				if (!writeGuardBusy) writeGuardOpen = false;
+			}}
+		></button>
+		<div
+			class="rt-popover relative w-full max-w-[430px] overflow-hidden rounded-xl"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="write-guard-title"
+		>
+			<div class="flex items-start gap-3 border-b p-4">
+				<span
+					class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-[var(--surface-sunken)]"
+				>
+					<AlertTriangle class="h-4 w-4" />
+				</span>
+				<div class="min-w-0 flex-1">
+					<h2 id="write-guard-title" class="text-[13px] font-bold">Temporarily unlock writes</h2>
+					<p class="text-muted-foreground mt-1 text-[9px] leading-relaxed">
+						This enables data, schema, import, restore, and administrative changes until the
+						connection closes or you lock it again.
+					</p>
+				</div>
+				<button
+					type="button"
+					class="rt-toolbar-button h-8 w-8"
+					aria-label="Close"
+					disabled={writeGuardBusy}
+					onclick={() => (writeGuardOpen = false)}
+				>
+					<X class="h-4 w-4" />
+				</button>
+			</div>
+			<form
+				class="p-4"
+				onsubmit={(event) => {
+					event.preventDefault();
+					void setActiveWriteAccess(true);
+				}}
+			>
+				<label for="write-guard-confirmation" class="text-[9px] font-bold">
+					Type <span class="font-mono"
+						>{writeConfirmationName(connectionStore.activeConnection)}</span
+					> to confirm
+				</label>
+				<input
+					id="write-guard-confirmation"
+					class="rt-input mt-2 h-9 w-full px-3 font-mono text-[10px]"
+					bind:value={writeGuardConfirmation}
+					autocomplete="off"
+					disabled={writeGuardBusy}
+				/>
+				{#if writeGuardError}
+					<p class="text-danger mt-2 text-[9px]">{writeGuardError}</p>
+				{/if}
+				<div class="mt-4 flex justify-end gap-2 border-t pt-3">
+					<button
+						type="button"
+						class="rt-toolbar-button h-8 px-3 text-[9px] font-bold"
+						disabled={writeGuardBusy}
+						onclick={() => (writeGuardOpen = false)}
+					>
+						Cancel
+					</button>
+					<button
+						type="submit"
+						class="rt-primary-button h-8 rounded-md px-3 text-[9px] font-bold"
+						disabled={writeGuardBusy ||
+							writeGuardConfirmation !== writeConfirmationName(connectionStore.activeConnection)}
+					>
+						{writeGuardBusy ? 'Unlocking…' : 'Unlock for this session'}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}

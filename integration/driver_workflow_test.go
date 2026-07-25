@@ -51,6 +51,13 @@ func exerciseDriverWorkflow(
 
 	tableName := "rt_integration_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
 	table := database.Table{Schema: schema, Name: tableName}
+	textType := "TEXT"
+	switch driver.Capabilities().Engine {
+	case database.DriverOracle:
+		textType = "VARCHAR2(255)"
+	case database.DriverSQLServer:
+		textType = "NVARCHAR(255)"
+	}
 	if err := driver.CreateTable(table, []database.ColumnDefinition{
 		{
 			Name:       "id",
@@ -60,7 +67,7 @@ func exerciseDriverWorkflow(
 		},
 		{
 			Name:     "name",
-			Type:     "TEXT",
+			Type:     textType,
 			Nullable: false,
 		},
 	}); err != nil {
@@ -201,4 +208,34 @@ func TestMySQLCompatibleDriverWorkflow(t *testing.T) {
 		Db:       environment("RT_DATABASE_NAME", "rolling"),
 		SSLMode:  "disable",
 	}, environment("RT_DATABASE_NAME", "rolling"))
+}
+
+func TestOracleDriverWorkflow(t *testing.T) {
+	if os.Getenv("RT_INTEGRATION_ORACLE") != "1" {
+		t.Skip("set RT_INTEGRATION_ORACLE=1 to run Oracle integration")
+	}
+	exerciseDriverWorkflow(t, database.DriverOracle, database.Config{
+		Driver:   database.DriverOracle,
+		Host:     environment("RT_DATABASE_HOST", "127.0.0.1"),
+		Port:     environment("RT_DATABASE_PORT", "1521"),
+		User:     environment("RT_DATABASE_USER", "system"),
+		Password: environment("RT_DATABASE_PASSWORD", "RollingThunder_2026"),
+		Db:       environment("RT_DATABASE_NAME", "FREEPDB1"),
+		SSLMode:  environment("RT_DATABASE_SSL_MODE", "disable"),
+	}, strings.ToUpper(environment("RT_DATABASE_SCHEMA", "SYSTEM")))
+}
+
+func TestSQLServerDriverWorkflow(t *testing.T) {
+	if os.Getenv("RT_INTEGRATION_SQLSERVER") != "1" {
+		t.Skip("set RT_INTEGRATION_SQLSERVER=1 to run SQL Server integration")
+	}
+	exerciseDriverWorkflow(t, database.DriverSQLServer, database.Config{
+		Driver:   database.DriverSQLServer,
+		Host:     environment("RT_DATABASE_HOST", "127.0.0.1"),
+		Port:     environment("RT_DATABASE_PORT", "1433"),
+		User:     environment("RT_DATABASE_USER", "sa"),
+		Password: environment("RT_DATABASE_PASSWORD", "RollingThunder_2026!"),
+		Db:       environment("RT_DATABASE_NAME", "master"),
+		SSLMode:  environment("RT_DATABASE_SSL_MODE", "disable"),
+	}, environment("RT_DATABASE_SCHEMA", "dbo"))
 }

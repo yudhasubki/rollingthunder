@@ -21,6 +21,9 @@ func SplitSQLStatements(query string) ([]string, error) {
 	if isRoutineDefinition(query) {
 		return []string{strings.TrimSuffix(query, ";")}, nil
 	}
+	if isCompoundSQLBlock(query) {
+		return []string{query}, nil
+	}
 
 	statements := make([]string, 0, 2)
 	start := 0
@@ -37,6 +40,9 @@ func SplitSQLStatements(query string) ([]string, error) {
 			index = skipLineComment(query, index+1)
 		case current == '/' && next == '*':
 			index = skipBlockComment(query, index+2)
+		case (current == 'q' || current == 'Q') &&
+			next == '\'':
+			index = skipOracleAlternativeQuote(query, index)
 		case current == '\'' || current == '"' || current == '`':
 			index = skipQuotedSQL(query, index, current)
 		case current == '[':
@@ -83,17 +89,50 @@ func SplitSQLStatements(query string) ([]string, error) {
 }
 
 func isRoutineDefinition(query string) bool {
+	// PostgreSQL dollar-quoted bodies are already handled by the regular
+	// splitter. Keeping them on that path also lets us detect a statement
+	// appended after the closing routine terminator.
+	for index := 0; index < len(query); index++ {
+		if query[index] != '$' {
+			continue
+		}
+		if _, ok := postgresDollarQuoteDelimiter(query[index:]); ok {
+			return false
+		}
+	}
 	keywords := LeadingSQLKeywords(query, 5)
 	if len(keywords) < 2 || keywords[0] != "CREATE" {
 		return false
 	}
 	for _, keyword := range keywords[1:] {
 		switch keyword {
-		case "FUNCTION", "PROCEDURE", "TRIGGER":
+		case "FUNCTION", "PROCEDURE", "TRIGGER", "PACKAGE", "TYPE":
 			return true
 		}
 	}
 	return false
+}
+
+func isCompoundSQLBlock(query string) bool {
+	keywords := LeadingSQLKeywords(query, 3)
+	if len(keywords) == 0 {
+		return false
+	}
+	if keywords[0] == "DECLARE" {
+		return true
+	}
+	if keywords[0] != "BEGIN" {
+		return false
+	}
+	if len(keywords) == 1 {
+		return false
+	}
+	switch keywords[1] {
+	case "TRANSACTION", "TRAN", "WORK":
+		return false
+	default:
+		return true
+	}
 }
 
 func skipLineComment(query string, index int) int {
@@ -119,6 +158,32 @@ func skipBlockComment(query string, index int) int {
 		index++
 	}
 	return index
+}
+
+func skipOracleAlternativeQuote(query string, index int) int {
+	if index+2 >= len(query) ||
+		(query[index] != 'q' && query[index] != 'Q') ||
+		query[index+1] != '\'' {
+		return index + 1
+	}
+	open := query[index+2]
+	close := open
+	switch open {
+	case '[':
+		close = ']'
+	case '{':
+		close = '}'
+	case '(':
+		close = ')'
+	case '<':
+		close = '>'
+	}
+	for cursor := index + 3; cursor+1 < len(query); cursor++ {
+		if query[cursor] == close && query[cursor+1] == '\'' {
+			return cursor + 2
+		}
+	}
+	return len(query)
 }
 
 func skipBracketIdentifier(query string, index int) int {
@@ -171,6 +236,9 @@ func BindQueryVariables(
 			end = skipLineComment(query, index+1)
 		case current == '/' && next == '*':
 			end = skipBlockComment(query, index+2)
+		case (current == 'q' || current == 'Q') &&
+			next == '\'':
+			end = skipOracleAlternativeQuote(query, index)
 		case current == '\'' || current == '"' || current == '`':
 			end = skipQuotedSQL(query, index, current)
 		case current == '[':

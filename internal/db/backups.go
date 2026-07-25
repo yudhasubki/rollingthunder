@@ -1191,8 +1191,13 @@ func (s *Service) ApplyDatabaseRestore(
 			"Review the refreshed restore preview before applying it.",
 		)
 	}
-	connection, release, err := s.pinnedConnection(request.Restore.ConnectionID)
+	connection, release, err := s.writePinnedConnection(
+		request.Restore.ConnectionID,
+	)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[database.RestoreResult]()
+		}
 		return serviceError[database.RestoreResult](err.Error())
 	}
 	defer release()

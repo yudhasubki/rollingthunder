@@ -207,6 +207,8 @@ func (s *Service) ExecuteQuery(
 				err.Error(),
 				"Reconnect the database and start a new transaction.",
 			)
+		case errors.Is(err, errConnectionReadOnly):
+			return readOnlyConnectionError[database.QueryResult]()
 		}
 		return queryFailure[database.QueryResult](err, inTransaction)
 	}
@@ -229,6 +231,7 @@ func (s *Service) executeQueryBatch(
 		run              queryStatementRunner
 		release          func()
 	)
+	requiresWrite := database.FindWriteStatement(request.Query) != ""
 
 	if strings.TrimSpace(request.TransactionID) != "" {
 		s.transactionMu.RLock()
@@ -252,6 +255,12 @@ func (s *Service) executeQueryBatch(
 			session.connection.mu.RUnlock()
 			return database.QueryResult{}, errTransactionNotActive
 		}
+		if requiresWrite &&
+			!connectionWriteAccessLocked(session.connection).WriteEnabled {
+			session.mu.Unlock()
+			session.connection.mu.RUnlock()
+			return database.QueryResult{}, errConnectionReadOnly
+		}
 		capabilityDriver = session.connection.Driver
 		run = session.transaction.ExecuteQuery
 		release = func() {
@@ -259,7 +268,16 @@ func (s *Service) executeQueryBatch(
 			session.connection.mu.RUnlock()
 		}
 	} else {
-		driver, driverRelease, err := s.driverFor(request.ConnectionID)
+		var (
+			driver        database.Driver
+			driverRelease func()
+			err           error
+		)
+		if requiresWrite {
+			driver, driverRelease, err = s.writeDriverFor(request.ConnectionID)
+		} else {
+			driver, driverRelease, err = s.driverFor(request.ConnectionID)
+		}
 		if err != nil {
 			return database.QueryResult{}, err
 		}

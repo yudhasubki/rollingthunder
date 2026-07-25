@@ -236,9 +236,6 @@
 		const handleOpenConnectionManager = () => {
 			connectionManagerOpen = true;
 		};
-		const handleOpenCommandPalette = () => {
-			commandPaletteOpen = true;
-		};
 		const handleOpenImportData = () => {
 			if (!activeConnectionId) {
 				updateStatus('Connect a database before importing data', 'warn');
@@ -291,7 +288,6 @@
 
 		document.addEventListener('keydown', handleKeydown);
 		window.addEventListener('open-connection-manager', handleOpenConnectionManager);
-		window.addEventListener('open-command-palette', handleOpenCommandPalette);
 		window.addEventListener('open-import-data', handleOpenImportData);
 		window.addEventListener('open-diagnostics', handleOpenDiagnostics);
 		window.addEventListener('open-database-tools', handleOpenDatabaseTools);
@@ -299,7 +295,6 @@
 		return () => {
 			document.removeEventListener('keydown', handleKeydown);
 			window.removeEventListener('open-connection-manager', handleOpenConnectionManager);
-			window.removeEventListener('open-command-palette', handleOpenCommandPalette);
 			window.removeEventListener('open-import-data', handleOpenImportData);
 			window.removeEventListener('open-diagnostics', handleOpenDiagnostics);
 			window.removeEventListener('open-database-tools', handleOpenDatabaseTools);
@@ -576,7 +571,7 @@
 
 <div class="rt-shell flex h-screen flex-col">
 	<!-- Header -->
-	<AppHeader />
+	<AppHeader onOpenCommandPalette={() => (commandPaletteOpen = true)} />
 	<ConnectionManagerModal
 		open={connectionManagerOpen}
 		onClose={() => (connectionManagerOpen = false)}

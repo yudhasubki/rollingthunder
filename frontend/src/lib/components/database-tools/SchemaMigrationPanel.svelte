@@ -21,7 +21,7 @@
 	import { BACKEND_RESTART_MESSAGE, hasBackendMethod } from '$lib/wails/backendCompatibility';
 	import { addConsoleLog, updateStatus } from '$lib/stores/status.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
-	import { APPLICATION } from '$lib/config/application';
+	import { APPLICATION, providerOption } from '$lib/config/application';
 
 	let sourceConnectionId = $state('');
 	let targetConnectionId = $state('');
@@ -44,7 +44,7 @@
 	const connectionOptions = $derived(
 		connections.map((connection) => ({
 			value: connection.id,
-			label: `${connection.name || connection.database} · ${connection.driver}`
+			label: `${connection.name || connection.database} · ${providerOption(connection.driver).name}`
 		}))
 	);
 	const sourceConnection = $derived(
@@ -58,7 +58,7 @@
 	const targetConnectionOptions = $derived(
 		compatibleTargets.map((connection) => ({
 			value: connection.id,
-			label: `${connection.name || connection.database} · ${connection.driver}`
+			label: `${connection.name || connection.database} · ${providerOption(connection.driver).name}`
 		}))
 	);
 	const sourceSchemaOptions = $derived(
@@ -106,6 +106,8 @@
 	function fallbackSchemas(connection: ConnectionInfo | null): string[] {
 		if (!connection) return [];
 		if (connection.driver === 'sqlite') return ['main'];
+		if (connection.driver === 'sqlserver') return ['dbo'];
+		if (connection.driver === 'oracle') return [];
 		if (connection.database) return [connection.database];
 		return ['public'];
 	}

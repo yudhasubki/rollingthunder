@@ -27,7 +27,8 @@ type SqlLexicalState =
 	| 'bracket'
 	| 'line-comment'
 	| 'block-comment'
-	| 'dollar-quote';
+	| 'dollar-quote'
+	| 'oracle-quote';
 
 interface MaskedSql {
 	text: string;
@@ -72,6 +73,7 @@ function maskSql(sql: string, maskQuotedIdentifiers: boolean): MaskedSql {
 	let state: SqlLexicalState = 'code';
 	let blockCommentDepth = 0;
 	let dollarQuoteDelimiter = '';
+	let oracleQuoteClose = '';
 
 	const hide = (index: number, shouldHide = true) => {
 		if (shouldHide && masked[index] !== '\n' && masked[index] !== '\r') {
@@ -117,6 +119,17 @@ function maskSql(sql: string, maskQuotedIdentifiers: boolean): MaskedSql {
 				state = 'code';
 			} else {
 				hide(index);
+			}
+			continue;
+		}
+
+		if (state === 'oracle-quote') {
+			hide(index);
+			if (character === oracleQuoteClose && next === "'") {
+				hide(index + 1);
+				index += 1;
+				oracleQuoteClose = '';
+				state = 'code';
 			}
 			continue;
 		}
@@ -186,6 +199,17 @@ function maskSql(sql: string, maskQuotedIdentifiers: boolean): MaskedSql {
 			state = 'block-comment';
 			blockCommentDepth = 1;
 			index += 1;
+			continue;
+		}
+		if ((character === 'q' || character === 'Q') && next === "'" && index + 2 < sql.length) {
+			const open = sql[index + 2];
+			oracleQuoteClose =
+				({ '[': ']', '{': '}', '(': ')', '<': '>' } as Record<string, string>)[open] ?? open;
+			hide(index);
+			hide(index + 1);
+			hide(index + 2);
+			state = 'oracle-quote';
+			index += 2;
 			continue;
 		}
 		if (character === "'") {
@@ -275,7 +299,9 @@ export function getStatementAtCursor(sql: string, cursorOffset: number): Stateme
 
 export function isCursorInCommentOrString(sqlBeforeCursor: string): boolean {
 	const { state } = maskSql(sqlBeforeCursor, false);
-	return ['single-quote', 'line-comment', 'block-comment', 'dollar-quote'].includes(state);
+	return ['single-quote', 'line-comment', 'block-comment', 'dollar-quote', 'oracle-quote'].includes(
+		state
+	);
 }
 
 export function parseTableReferences(statement: string): ParsedTableReference[] {

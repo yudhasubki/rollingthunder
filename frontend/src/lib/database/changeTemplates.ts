@@ -90,10 +90,22 @@ export function createObjectDefinitionTemplate(
 			if (engine === 'mysql') {
 				return `CREATE FUNCTION ${object}()\nRETURNS INTEGER\nDETERMINISTIC\nBEGIN\n  RETURN 1;\nEND;`;
 			}
+			if (engine === 'oracle') {
+				return `CREATE FUNCTION ${object}\nRETURN NUMBER\nAS\nBEGIN\n  RETURN 1;\nEND;`;
+			}
+			if (engine === 'sqlserver') {
+				return `CREATE FUNCTION ${object}()\nRETURNS int\nAS\nBEGIN\n  RETURN 1;\nEND;`;
+			}
 			return `CREATE OR REPLACE FUNCTION ${object}()\nRETURNS void\nLANGUAGE plpgsql\nAS $function$\nBEGIN\n  -- function body\nEND;\n$function$;`;
 		case 'create-procedure':
 			if (engine === 'mysql') {
 				return `CREATE PROCEDURE ${object}()\nBEGIN\n  -- procedure body\nEND;`;
+			}
+			if (engine === 'oracle') {
+				return `CREATE PROCEDURE ${object}\nAS\nBEGIN\n  NULL;\nEND;`;
+			}
+			if (engine === 'sqlserver') {
+				return `CREATE PROCEDURE ${object}\nAS\nBEGIN\n  SET NOCOUNT ON;\n  -- procedure body\nEND;`;
 			}
 			return `CREATE OR REPLACE PROCEDURE ${object}()\nLANGUAGE plpgsql\nAS $procedure$\nBEGIN\n  -- procedure body\nEND;\n$procedure$;`;
 		case 'create-trigger':
@@ -102,6 +114,12 @@ export function createObjectDefinitionTemplate(
 			}
 			if (engine === 'mysql') {
 				return `CREATE TRIGGER ${object}\nAFTER INSERT ON ${table}\nFOR EACH ROW\nBEGIN\n  -- trigger statements\nEND;`;
+			}
+			if (engine === 'oracle') {
+				return `CREATE TRIGGER ${object}\nAFTER INSERT ON ${table}\nFOR EACH ROW\nBEGIN\n  NULL;\nEND;`;
+			}
+			if (engine === 'sqlserver') {
+				return `CREATE TRIGGER ${object}\nON ${table}\nAFTER INSERT\nAS\nBEGIN\n  SET NOCOUNT ON;\n  -- trigger statements\nEND;`;
 			}
 			return `CREATE OR REPLACE TRIGGER ${quoteIdentifier(name, capabilities)}\nAFTER INSERT ON ${table}\nFOR EACH ROW\nEXECUTE FUNCTION ${qualifiedName(schema, 'trigger_function', capabilities)}();`;
 		default:

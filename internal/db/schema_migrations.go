@@ -121,6 +121,23 @@ func retargetTableDefinition(
 			definition = strings.ReplaceAll(definition, sourcePrefix, targetPrefix)
 		}
 		return definition, true
+	case "oracle", "sqlserver":
+		sourcePrefix := driver.QuoteIdentifier(sourceSchema) + "."
+		targetPrefix := driver.QuoteIdentifier(targetSchema) + "."
+		if sourcePrefix != targetPrefix {
+			definition = strings.ReplaceAll(
+				definition,
+				sourcePrefix,
+				targetPrefix,
+			)
+		}
+		createPrefix := "CREATE TABLE " + qualifiedTarget
+		if strings.Contains(
+			strings.ToUpper(definition),
+			strings.ToUpper(createPrefix),
+		) {
+			return definition, true
+		}
 	case "mysql":
 		needles := []string{
 			"CREATE TABLE " + quotedTable,
@@ -174,9 +191,9 @@ func migrationColumnType(column database.Structure, engine string) string {
 		}
 		return name
 	}
-	dataType := strings.TrimSpace(column.NativeType)
+	dataType := strings.TrimSpace(column.DataType)
 	if dataType == "" {
-		dataType = strings.TrimSpace(column.DataType)
+		dataType = strings.TrimSpace(column.NativeType)
 	}
 	if dataType == "" {
 		dataType = "TEXT"
@@ -217,6 +234,19 @@ func migrationColumnDefinition(
 		PrimaryKey: column.IsPrimary,
 		Unique:     column.IsUnique && !column.IsPrimary,
 	}
+}
+
+func canAutomateAddedColumn(
+	column database.Structure,
+	engine string,
+) bool {
+	if !column.IsGenerated && !column.IsAutoInc {
+		return true
+	}
+	return column.IsAutoInc &&
+		(engine == database.DriverPostgres ||
+			engine == database.DriverMySQL ||
+			engine == database.DriverMariaDB)
 }
 
 func normalizedMigrationValue(value string) string {
@@ -549,6 +579,18 @@ func (s *Service) buildSchemaMigration(
 			targetColumn, columnExists := targetColumns[columnName]
 			columnObject := object + "." + columnName
 			if !columnExists {
+				if !canAutomateAddedColumn(sourceColumn, target.Engine) {
+					appendManualChange(
+						&changes,
+						"add_column",
+						columnObject,
+						"Add generated or identity column "+columnObject,
+						"Adding this generated or identity column requires engine-specific syntax and data review.",
+						false,
+						false,
+					)
+					continue
+				}
 				plan, planErr := buildTargetObjectPlan(
 					ctx,
 					changeDriver,
@@ -1041,10 +1083,13 @@ func (s *Service) ApplySchemaMigration(
 		}
 	}
 
-	targetDriver, release, err := s.driverFor(
+	targetDriver, release, err := s.writeDriverFor(
 		request.Migration.TargetConnectionID,
 	)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[database.SchemaMigrationResult]()
+		}
 		return serviceError[database.SchemaMigrationResult](err.Error())
 	}
 	defer release()

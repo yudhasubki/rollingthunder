@@ -38,6 +38,36 @@ func TestBuildPostgresInsertMutationOmitsGeneratedDefaults(t *testing.T) {
 	}
 }
 
+func TestBuildPostgresInsertMutationOverridesAlwaysIdentityWhenExplicit(t *testing.T) {
+	mutation, err := buildPostgresInsertMutation(
+		database.Table{Schema: "public", Name: "events"},
+		map[string]interface{}{
+			"id":    int64(42),
+			"label": "restored",
+		},
+		database.Structures{
+			{
+				Name:       "id",
+				IsPrimary:  true,
+				IsAutoInc:  true,
+				Generation: "IDENTITY ALWAYS",
+			},
+			{Name: "label"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const expected = `INSERT INTO "public"."events" ("id", "label") ` +
+		`OVERRIDING SYSTEM VALUE VALUES ($1, $2)`
+	if mutation.SQL != expected {
+		t.Fatalf("SQL = %q, want %q", mutation.SQL, expected)
+	}
+	if !reflect.DeepEqual(mutation.Args, []interface{}{int64(42), "restored"}) {
+		t.Fatalf("args = %#v", mutation.Args)
+	}
+}
+
 func TestBuildPostgresUpdateMutationUsesOriginalCompositeKey(t *testing.T) {
 	mutation, err := buildPostgresUpdateMutation(
 		database.Table{Schema: "tenant", Name: "memberships"},

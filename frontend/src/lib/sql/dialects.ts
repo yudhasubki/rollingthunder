@@ -1,4 +1,4 @@
-export type SqlDialect = 'postgresql' | 'mysql' | 'sqlite' | 'generic';
+export type SqlDialect = 'postgresql' | 'mysql' | 'sqlite' | 'oracle' | 'sqlserver' | 'generic';
 
 export interface SqlFunctionDefinition {
 	name: string;
@@ -17,7 +17,8 @@ export interface SqlSnippetDefinition {
 export interface SqlDialectDefinition {
 	id: SqlDialect;
 	label: string;
-	identifierQuote: '"' | '`';
+	identifierQuote: '"' | '`' | '[';
+	identifierClose: '"' | '`' | ']';
 	keywords: string[];
 	functions: SqlFunctionDefinition[];
 	snippets: SqlSnippetDefinition[];
@@ -367,11 +368,138 @@ const SQLITE_FUNCTIONS: SqlFunctionDefinition[] = [
 	}
 ];
 
+const ORACLE_FUNCTIONS: SqlFunctionDefinition[] = [
+	{
+		name: 'SYSDATE',
+		signature: 'SYSDATE',
+		description: 'Return the current database server date and time.',
+		insertText: 'SYSDATE'
+	},
+	{
+		name: 'SYSTIMESTAMP',
+		signature: 'SYSTIMESTAMP',
+		description: 'Return the current timestamp with time zone.',
+		insertText: 'SYSTIMESTAMP'
+	},
+	{
+		name: 'NVL',
+		signature: 'NVL(value, fallback)',
+		description: 'Return a fallback when a value is null.',
+		insertText: 'NVL(${1:value}, ${2:fallback})'
+	},
+	{
+		name: 'DECODE',
+		signature: 'DECODE(expression, search, result, default)',
+		description: 'Map expression values to result values.',
+		insertText: 'DECODE(${1:expression}, ${2:search}, ${3:result}, ${4:default})'
+	},
+	{
+		name: 'LISTAGG',
+		signature: 'LISTAGG(value, delimiter) WITHIN GROUP (ORDER BY value)',
+		description: 'Concatenate ordered values from a group.',
+		insertText: "LISTAGG(${1:value}, '${2:, }') WITHIN GROUP (ORDER BY ${1:value})"
+	},
+	{
+		name: 'TO_DATE',
+		signature: 'TO_DATE(text, format)',
+		description: 'Parse text as an Oracle date.',
+		insertText: "TO_DATE(${1:text}, '${2:YYYY-MM-DD}')"
+	},
+	{
+		name: 'TO_TIMESTAMP',
+		signature: 'TO_TIMESTAMP(text, format)',
+		description: 'Parse text as an Oracle timestamp.',
+		insertText: "TO_TIMESTAMP(${1:text}, '${2:YYYY-MM-DD HH24:MI:SS}')"
+	},
+	{
+		name: 'TO_CHAR',
+		signature: 'TO_CHAR(value, format)',
+		description: 'Format a date, timestamp, or number as text.',
+		insertText: "TO_CHAR(${1:value}, '${2:YYYY-MM-DD}')"
+	},
+	{
+		name: 'JSON_VALUE',
+		signature: 'JSON_VALUE(document, path)',
+		description: 'Extract a scalar from a JSON document.',
+		insertText: "JSON_VALUE(${1:document}, '${2:$.path}')"
+	},
+	{
+		name: 'SYS_GUID',
+		signature: 'SYS_GUID()',
+		description: 'Generate a globally unique RAW identifier.',
+		insertText: 'SYS_GUID()'
+	}
+];
+
+const SQLSERVER_FUNCTIONS: SqlFunctionDefinition[] = [
+	{
+		name: 'GETDATE',
+		signature: 'GETDATE()',
+		description: 'Return the current database server date and time.',
+		insertText: 'GETDATE()'
+	},
+	{
+		name: 'SYSDATETIME',
+		signature: 'SYSDATETIME()',
+		description: 'Return the current high-precision server timestamp.',
+		insertText: 'SYSDATETIME()'
+	},
+	{
+		name: 'ISNULL',
+		signature: 'ISNULL(value, fallback)',
+		description: 'Return a fallback when a value is null.',
+		insertText: 'ISNULL(${1:value}, ${2:fallback})'
+	},
+	{
+		name: 'IIF',
+		signature: 'IIF(condition, true_value, false_value)',
+		description: 'Return one of two values based on a condition.',
+		insertText: 'IIF(${1:condition}, ${2:true_value}, ${3:false_value})'
+	},
+	{
+		name: 'STRING_AGG',
+		signature: 'STRING_AGG(value, separator)',
+		description: 'Concatenate values from a group.',
+		insertText: "STRING_AGG(${1:value}, '${2:, }')"
+	},
+	{
+		name: 'DATEADD',
+		signature: 'DATEADD(datepart, number, date)',
+		description: 'Add an interval to a date.',
+		insertText: 'DATEADD(${1:day}, ${2:number}, ${3:date})'
+	},
+	{
+		name: 'DATEDIFF',
+		signature: 'DATEDIFF(datepart, start_date, end_date)',
+		description: 'Return the difference between two dates.',
+		insertText: 'DATEDIFF(${1:day}, ${2:start_date}, ${3:end_date})'
+	},
+	{
+		name: 'JSON_VALUE',
+		signature: 'JSON_VALUE(document, path)',
+		description: 'Extract a scalar from JSON text.',
+		insertText: "JSON_VALUE(${1:document}, '${2:$.path}')"
+	},
+	{
+		name: 'NEWID',
+		signature: 'NEWID()',
+		description: 'Generate a uniqueidentifier value.',
+		insertText: 'NEWID()'
+	},
+	{
+		name: 'SCOPE_IDENTITY',
+		signature: 'SCOPE_IDENTITY()',
+		description: 'Return the latest identity value in the current scope.',
+		insertText: 'SCOPE_IDENTITY()'
+	}
+];
+
 const DIALECTS: Record<SqlDialect, SqlDialectDefinition> = {
 	postgresql: {
 		id: 'postgresql',
 		label: 'PostgreSQL',
 		identifierQuote: '"',
+		identifierClose: '"',
 		keywords: [
 			...CORE_KEYWORDS,
 			'ILIKE',
@@ -414,6 +542,7 @@ const DIALECTS: Record<SqlDialect, SqlDialectDefinition> = {
 		id: 'mysql',
 		label: 'MySQL',
 		identifierQuote: '`',
+		identifierClose: '`',
 		keywords: [
 			...CORE_KEYWORDS,
 			'AUTO_INCREMENT',
@@ -449,6 +578,7 @@ const DIALECTS: Record<SqlDialect, SqlDialectDefinition> = {
 		id: 'sqlite',
 		label: 'SQLite',
 		identifierQuote: '"',
+		identifierClose: '"',
 		keywords: [
 			...CORE_KEYWORDS,
 			'PRAGMA',
@@ -481,10 +611,119 @@ const DIALECTS: Record<SqlDialect, SqlDialectDefinition> = {
 			}
 		]
 	},
+	oracle: {
+		id: 'oracle',
+		label: 'Oracle',
+		identifierQuote: '"',
+		identifierClose: '"',
+		keywords: [
+			...CORE_KEYWORDS,
+			'CONNECT',
+			'START',
+			'PRIOR',
+			'LEVEL',
+			'ROWNUM',
+			'ROWID',
+			'MINUS',
+			'MERGE',
+			'MATCHED',
+			'PIVOT',
+			'UNPIVOT',
+			'MODEL',
+			'SIBLINGS',
+			'PACKAGE',
+			'SEQUENCE',
+			'SYNONYM',
+			'PLSQL',
+			'EXCEPTION',
+			'BULK',
+			'COLLECT',
+			'RETURNING'
+		],
+		functions: [...CORE_FUNCTIONS, ...ORACLE_FUNCTIONS],
+		snippets: [
+			...CORE_SNIPPETS,
+			{
+				label: 'Oracle MERGE',
+				prefix: 'merge',
+				description: 'Insert or update rows with a MERGE statement.',
+				insertText:
+					'MERGE INTO ${1:target} target\nUSING ${2:source} source\nON (${3:target.id = source.id})\nWHEN MATCHED THEN\n\tUPDATE SET ${4:target.column = source.column}\nWHEN NOT MATCHED THEN\n\tINSERT (${5:columns}) VALUES (${6:values});'
+			},
+			{
+				label: 'Oracle hierarchical query',
+				prefix: 'connectby',
+				description: 'Traverse hierarchical rows with CONNECT BY.',
+				insertText:
+					'SELECT ${1:*}\nFROM ${2:table}\nSTART WITH ${3:parent_id IS NULL}\nCONNECT BY PRIOR ${4:id = parent_id};'
+			},
+			{
+				label: 'Oracle execution plan',
+				prefix: 'explain',
+				description: 'Populate the plan table for a statement.',
+				insertText:
+					'EXPLAIN PLAN FOR\n${1:SELECT * FROM table};\n\nSELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);'
+			}
+		]
+	},
+	sqlserver: {
+		id: 'sqlserver',
+		label: 'SQL Server',
+		identifierQuote: '[',
+		identifierClose: ']',
+		keywords: [
+			...CORE_KEYWORDS,
+			'TOP',
+			'OUTPUT',
+			'MERGE',
+			'MATCHED',
+			'APPLY',
+			'CROSS',
+			'OUTER',
+			'PIVOT',
+			'UNPIVOT',
+			'IDENTITY',
+			'GO',
+			'DECLARE',
+			'EXEC',
+			'TRY',
+			'CATCH',
+			'THROW',
+			'NOCOUNT',
+			'CLUSTERED',
+			'NONCLUSTERED',
+			'INCLUDE'
+		],
+		functions: [...CORE_FUNCTIONS, ...SQLSERVER_FUNCTIONS],
+		snippets: [
+			...CORE_SNIPPETS,
+			{
+				label: 'SQL Server pagination',
+				prefix: 'page',
+				description: 'Page through an ordered SQL Server result.',
+				insertText:
+					'SELECT ${1:*}\nFROM ${2:table}\nORDER BY ${3:id}\nOFFSET ${4:0} ROWS FETCH NEXT ${5:100} ROWS ONLY;'
+			},
+			{
+				label: 'SQL Server MERGE',
+				prefix: 'merge',
+				description: 'Synchronize source and target rows.',
+				insertText:
+					'MERGE ${1:target} AS target\nUSING ${2:source} AS source\nON ${3:target.id = source.id}\nWHEN MATCHED THEN\n\tUPDATE SET ${4:target.column = source.column}\nWHEN NOT MATCHED THEN\n\tINSERT (${5:columns}) VALUES (${6:values});'
+			},
+			{
+				label: 'SQL Server TRY/CATCH',
+				prefix: 'trycatch',
+				description: 'Wrap T-SQL statements in structured error handling.',
+				insertText: 'BEGIN TRY\n\t${1:statement};\nEND TRY\nBEGIN CATCH\n\tTHROW;\nEND CATCH;'
+			}
+		]
+	},
 	generic: {
 		id: 'generic',
 		label: 'SQL',
 		identifierQuote: '"',
+		identifierClose: '"',
 		keywords: CORE_KEYWORDS,
 		functions: CORE_FUNCTIONS,
 		snippets: CORE_SNIPPETS
@@ -507,6 +746,16 @@ export function normalizeSqlDialect(engine?: string): SqlDialect {
 	if (normalized.includes('sqlite')) {
 		return 'sqlite';
 	}
+	if (normalized.includes('oracle')) {
+		return 'oracle';
+	}
+	if (
+		normalized.includes('sqlserver') ||
+		normalized.includes('sql server') ||
+		normalized.includes('mssql')
+	) {
+		return 'sqlserver';
+	}
 	return 'generic';
 }
 
@@ -523,6 +772,8 @@ export function quoteSqlIdentifier(identifier: string, engine?: string): string 
 		return identifier;
 	}
 
-	const quote = getSqlDialectDefinition(engine).identifierQuote;
-	return `${quote}${identifier.replaceAll(quote, quote + quote)}${quote}`;
+	const dialect = getSqlDialectDefinition(engine);
+	const open = dialect.identifierQuote;
+	const close = dialect.identifierClose;
+	return `${open}${identifier.replaceAll(close, close + close)}${close}`;
 }

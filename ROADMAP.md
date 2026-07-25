@@ -24,10 +24,10 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Confirmation guard for unfiltered `UPDATE` and `DELETE` statements
 - [x] Stable connection/query error codes with actionable recovery hints
 - [x] Context-aware SQL completion for schemas, tables, aliases, and columns
-- [x] PostgreSQL, MySQL, and SQLite keyword/function completion catalogs
+- [x] PostgreSQL, MySQL/MariaDB, SQLite, Oracle, and SQL Server keyword/function completion catalogs
 - [x] Regression tests for SQL context parsing and dialect catalogs
 - [x] Streaming CSV and JSON export for table pages, all filtered rows, and loaded query results
-- [x] Streaming PostgreSQL `INSERT` export for table pages and all filtered rows
+- [x] Streaming driver-owned `INSERT` export for table pages and all filtered rows
 - [x] Checked-row export for table pages and query-result pages
 - [x] Live export progress, safe cancellation, and configurable CSV encodings
 - [x] Dark and light appearance modes
@@ -58,7 +58,7 @@ explicit, tested ordering behavior.
 
 - [x] Export table rows and loaded query results as CSV.
 - [x] Export table rows and loaded query results as JSON.
-- [x] Export PostgreSQL table rows as SQL `INSERT` statements.
+- [x] Export table rows as driver-owned SQL `INSERT` statements.
 - [x] Choose between the current table page or all filtered rows.
 - [x] Export selected rows.
 - [x] Stream all-filtered table exports instead of holding the complete dataset in memory.
@@ -207,10 +207,44 @@ change schema, security, or database contents.
 - [x] Preserve the original database endpoint in profile/UI metadata while drivers and maintenance
       tools use the tunnel endpoint.
 
-All six planned milestones are implemented. Future work should be driven by production feedback and
-measured gaps rather than expanding the compatibility surface speculatively. Candidate follow-ups
-include richer visual explain plans, migration support for complex constraints, and signed/notarized
-macOS distribution when project signing resources become available.
+## Milestone 7 - Oracle and SQL Server beta
+
+The new drivers share the same safety and capability contracts as the established engines while
+remaining explicitly labeled beta until production feedback closes their engine-specific gaps.
+
+### Core driver workflows
+
+- [x] Connect, reconnect, TLS configuration, strict SSH forwarding, health checks, and cancellation.
+- [x] Browse schemas, tables, views, routines, triggers, sequences, types, constraints, and indexes
+      according to each engine's actual capabilities.
+- [x] Paginate, filter, sort, insert, update, delete, import, and stream CSV/JSON data.
+- [x] Export driver-owned SQL `INSERT` scripts with Oracle and SQL Server literal/size rules.
+- [x] Generate estimated explain plans without executing the reviewed query.
+- [x] Provide dialect-aware completion, query templates, identifiers, placeholders, and pagination.
+
+### Reviewed structural workflows
+
+- [x] Create/replace views, routines, and triggers.
+- [x] Enable or disable triggers and manage supported indexes.
+- [x] Add, alter, rename, and drop columns and constraints through reviewed previews.
+- [x] Disclose Oracle's auto-committing DDL behavior instead of claiming transactional rollback.
+- [x] Include Oracle and SQL Server in same-engine schema sync and atomic data sync.
+
+### Verification and remaining beta scope
+
+- [x] Add shared live conformance entry points for both drivers.
+- [x] Test SQL Server 2022 and 2025 in the regular CI matrix.
+- [x] Test the current official Oracle Database Free image weekly and on manual workflow runs.
+- [ ] Add native Oracle and SQL Server backup/restore workflows.
+- [ ] Add Oracle and SQL Server security administration and activity monitoring.
+- [ ] Add Oracle wallet/TNS alias flows and SQL Server Entra/integrated authentication.
+- [ ] Add dependency graphs beyond normalized table relationships.
+
+All seven planned milestones now have implemented, testable core scope. Oracle and SQL Server remain
+beta where the unchecked engine-specific administration and authentication work above is concerned.
+Future work should be driven by production feedback and measured gaps. Candidate follow-ups include
+richer visual explain plans, migration support for complex constraints, and signed/notarized macOS
+distribution when project signing resources become available.
 
 ## Prioritization principles
 

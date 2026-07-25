@@ -87,3 +87,40 @@ func TestApplyColumnTypeIdentifiesEnums(t *testing.T) {
 		t.Fatalf("expected enum type name, got %+v", info.TypeName)
 	}
 }
+
+func TestApplyColumnGenerationPreservesGeneratedExpression(t *testing.T) {
+	expression := "(quantity * unit_price)"
+	info := database.Structure{}
+
+	applyColumnGeneration(
+		&info,
+		Column{
+			IsGenerated: "ALWAYS",
+			Generation:  &expression,
+		},
+	)
+
+	if !info.IsGenerated || info.Generation != expression {
+		t.Fatalf("expected generated-column metadata, got %+v", info)
+	}
+}
+
+func TestApplyColumnGenerationPreservesIdentityMode(t *testing.T) {
+	mode := "ALWAYS"
+	info := database.Structure{}
+
+	applyColumnGeneration(
+		&info,
+		Column{
+			IsIdentity:   "YES",
+			IdentityMode: &mode,
+		},
+	)
+
+	if !info.IsAutoInc || info.IsGenerated {
+		t.Fatalf("expected identity metadata, got %+v", info)
+	}
+	if info.Generation != "IDENTITY ALWAYS" {
+		t.Fatalf("identity generation = %q", info.Generation)
+	}
+}

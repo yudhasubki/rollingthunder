@@ -130,6 +130,68 @@ export namespace database {
 		    return a;
 		}
 	}
+	export class DataSyncRequest {
+	    sourceConnectionId: string;
+	    sourceSchema: string;
+	    sourceTable: string;
+	    targetConnectionId: string;
+	    targetSchema: string;
+	    targetTable: string;
+	    keyColumns?: string[];
+	    compareColumns?: string[];
+	    maxRows?: number;
+
+	    static createFrom(source: any = {}) {
+	        return new DataSyncRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceConnectionId = source["sourceConnectionId"];
+	        this.sourceSchema = source["sourceSchema"];
+	        this.sourceTable = source["sourceTable"];
+	        this.targetConnectionId = source["targetConnectionId"];
+	        this.targetSchema = source["targetSchema"];
+	        this.targetTable = source["targetTable"];
+	        this.keyColumns = source["keyColumns"];
+	        this.compareColumns = source["compareColumns"];
+	        this.maxRows = source["maxRows"];
+	    }
+	}
+	export class ApplyDataSyncRequest {
+	    sync: DataSyncRequest;
+	    fingerprint: string;
+	    selectedChangeIds?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new ApplyDataSyncRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sync = this.convertValues(source["sync"], DataSyncRequest);
+	        this.fingerprint = source["fingerprint"];
+	        this.selectedChangeIds = source["selectedChangeIds"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ConstraintChange {
 	    table: Table;
 	    name: string;
@@ -861,6 +923,9 @@ export namespace database {
 	export class Config {
 	    name: string;
 	    environment: string;
+	    accessMode: string;
+	    folder?: string;
+	    tags?: string[];
 	    driver: string;
 	    color?: string;
 	    host: string;
@@ -891,6 +956,9 @@ export namespace database {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.environment = source["environment"];
+	        this.accessMode = source["accessMode"];
+	        this.folder = source["folder"];
+	        this.tags = source["tags"];
 	        this.driver = source["driver"];
 	        this.color = source["color"];
 	        this.host = source["host"];
@@ -939,6 +1007,105 @@ export namespace database {
 	    }
 	}
 
+	export class DataSyncChange {
+	    id: string;
+	    kind: string;
+	    key: Record<string, any>;
+	    source?: Record<string, any>;
+	    target?: Record<string, any>;
+	    changedColumns?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new DataSyncChange(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.key = source["key"];
+	        this.source = source["source"];
+	        this.target = source["target"];
+	        this.changedColumns = source["changedColumns"];
+	    }
+	}
+	export class DataSyncPreview {
+	    sourceEngine: string;
+	    targetEngine: string;
+	    keyColumns: string[];
+	    compareColumns: string[];
+	    changes: DataSyncChange[];
+	    added: number;
+	    updated: number;
+	    deleted: number;
+	    sourceRows: number;
+	    targetRows: number;
+	    truncated: boolean;
+	    safeToApply: boolean;
+	    warnings: string[];
+	    fingerprint: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DataSyncPreview(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sourceEngine = source["sourceEngine"];
+	        this.targetEngine = source["targetEngine"];
+	        this.keyColumns = source["keyColumns"];
+	        this.compareColumns = source["compareColumns"];
+	        this.changes = this.convertValues(source["changes"], DataSyncChange);
+	        this.added = source["added"];
+	        this.updated = source["updated"];
+	        this.deleted = source["deleted"];
+	        this.sourceRows = source["sourceRows"];
+	        this.targetRows = source["targetRows"];
+	        this.truncated = source["truncated"];
+	        this.safeToApply = source["safeToApply"];
+	        this.warnings = source["warnings"];
+	        this.fingerprint = source["fingerprint"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+	export class DataSyncResult {
+	    applied: boolean;
+	    inserted: number;
+	    updated: number;
+	    deleted: number;
+	    fingerprint: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DataSyncResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.applied = source["applied"];
+	        this.inserted = source["inserted"];
+	        this.updated = source["updated"];
+	        this.deleted = source["deleted"];
+	        this.fingerprint = source["fingerprint"];
+	    }
+	}
 	export class DataType {
 	    name: string;
 	    category: string;
@@ -2469,6 +2636,9 @@ export namespace db {
 	    database: string;
 	    host: string;
 	    environment: string;
+	    accessMode: string;
+	    readOnly: boolean;
+	    writeUnlocked: boolean;
 	    sshTunnel: boolean;
 	    isActive: boolean;
 	    health: database.ConnectionHealth;
@@ -2486,6 +2656,9 @@ export namespace db {
 	        this.database = source["database"];
 	        this.host = source["host"];
 	        this.environment = source["environment"];
+	        this.accessMode = source["accessMode"];
+	        this.readOnly = source["readOnly"];
+	        this.writeUnlocked = source["writeUnlocked"];
 	        this.sshTunnel = source["sshTunnel"];
 	        this.isActive = source["isActive"];
 	        this.health = this.convertValues(source["health"], database.ConnectionHealth);
@@ -2508,6 +2681,83 @@ export namespace db {
 		    }
 		    return a;
 		}
+	}
+	export class ConnectionWriteAccess {
+	    connectionId: string;
+	    accessMode: string;
+	    writeEnabled: boolean;
+	    temporaryUnlock: boolean;
+	    confirmation: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionWriteAccess(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connectionId = source["connectionId"];
+	        this.accessMode = source["accessMode"];
+	        this.writeEnabled = source["writeEnabled"];
+	        this.temporaryUnlock = source["temporaryUnlock"];
+	        this.confirmation = source["confirmation"];
+	    }
+	}
+	export class SQLWorkspaceFile {
+	    token: string;
+	    name: string;
+	    path: string;
+	    content: string;
+	    // Go type: time
+	    modifiedAt: any;
+
+	    static createFrom(source: any = {}) {
+	        return new SQLWorkspaceFile(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.content = source["content"];
+	        this.modifiedAt = this.convertValues(source["modifiedAt"], null);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SaveSQLFileRequest {
+	    token?: string;
+	    content: string;
+	    saveAs: boolean;
+	    suggestedName?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SaveSQLFileRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.content = source["content"];
+	        this.saveAs = source["saveAs"];
+	        this.suggestedName = source["suggestedName"];
+	    }
 	}
 	export class SavedConnection {
 	    id: string;
@@ -2546,6 +2796,22 @@ export namespace db {
 		    }
 		    return a;
 		}
+	}
+	export class SetConnectionWriteAccessRequest {
+	    connectionId: string;
+	    enable: boolean;
+	    confirmation: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SetConnectionWriteAccessRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.connectionId = source["connectionId"];
+	        this.enable = source["enable"];
+	        this.confirmation = source["confirmation"];
+	    }
 	}
 	export class TransactionInfo {
 	    id: string;
@@ -2946,6 +3212,70 @@ export namespace response {
 		    return a;
 		}
 	}
+	export class BaseResponse_rollingthunder_internal_db_ConnectionWriteAccess_ {
+	    errors?: BaseErrorResponse[];
+	    data?: db.ConnectionWriteAccess;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_internal_db_ConnectionWriteAccess_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], db.ConnectionWriteAccess);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_internal_db_SQLWorkspaceFile_ {
+	    errors?: BaseErrorResponse[];
+	    data?: db.SQLWorkspaceFile;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_internal_db_SQLWorkspaceFile_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], db.SQLWorkspaceFile);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class BaseResponse_rollingthunder_internal_db_SavedConnection_ {
 	    errors?: BaseErrorResponse[];
 	    data?: db.SavedConnection;
@@ -3246,6 +3576,70 @@ export namespace response {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
 	        this.data = this.convertValues(source["data"], database.ConnectionHealth);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_DataSyncPreview_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.DataSyncPreview;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_DataSyncPreview_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.DataSyncPreview);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_DataSyncResult_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.DataSyncResult;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_DataSyncResult_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.DataSyncResult);
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

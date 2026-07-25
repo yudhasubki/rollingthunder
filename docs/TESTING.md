@@ -67,6 +67,50 @@ go test ./integration -run TestMySQLCompatibleDriverWorkflow -count=1 -v
 Use `RT_DATABASE_DRIVER=mariadb` against MariaDB. CI runs the version matrix documented in
 [RELEASING.md](RELEASING.md).
 
+### Oracle Database
+
+```bash
+RT_INTEGRATION_ORACLE=1 \
+RT_DATABASE_HOST=127.0.0.1 \
+RT_DATABASE_PORT=1521 \
+RT_DATABASE_USER=system \
+RT_DATABASE_PASSWORD=RollingThunder_2026 \
+RT_DATABASE_NAME=FREEPDB1 \
+RT_DATABASE_SCHEMA=SYSTEM \
+RT_DATABASE_SSL_MODE=disable \
+go test ./integration -run TestOracleDriverWorkflow -count=1 -v
+```
+
+The package-level shared conformance suite uses the equivalent
+`ROLLINGTHUNDER_ORACLE_TEST_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_SERVICE`, and `_SSL_MODE`
+variables:
+
+```bash
+go test ./pkg/database/oracle -run TestOracleLiveConformance -count=1 -v
+```
+
+### SQL Server
+
+```bash
+RT_INTEGRATION_SQLSERVER=1 \
+RT_DATABASE_HOST=127.0.0.1 \
+RT_DATABASE_PORT=1433 \
+RT_DATABASE_USER=sa \
+RT_DATABASE_PASSWORD='RollingThunder_2026!' \
+RT_DATABASE_NAME=master \
+RT_DATABASE_SCHEMA=dbo \
+RT_DATABASE_SSL_MODE=disable \
+go test ./integration -run TestSQLServerDriverWorkflow -count=1 -v
+```
+
+The package-level shared conformance suite uses the equivalent
+`ROLLINGTHUNDER_SQLSERVER_TEST_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_DATABASE`, and `_SSL_MODE`
+variables:
+
+```bash
+go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v
+```
+
 ## SSH tunnel checks
 
 The unit suite starts an in-process SSH server and TCP target where local listeners are permitted.
@@ -112,7 +156,9 @@ Frontend tests also enforce the semantic color contract recorded in the reposito
 
 ## Manual application matrix
 
-Repeat critical workflows for PostgreSQL, MySQL/MariaDB, and SQLite where applicable:
+Repeat critical workflows for PostgreSQL, MySQL/MariaDB, SQLite, Oracle, and SQL Server where
+applicable. Native backup/security/activity checks currently apply only to the engines whose
+capabilities expose those tools:
 
 - Create, edit, connect, cancel a slow connection attempt, switch, disconnect, and reopen profiles.
 - Stop the database server, run an explicit health check, verify the degraded label, restart the

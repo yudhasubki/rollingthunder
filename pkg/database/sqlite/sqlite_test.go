@@ -15,6 +15,37 @@ func TestSQLiteCapabilityContract(t *testing.T) {
 	drivertest.RunCapabilityContract(t, driver, "sqlite")
 }
 
+func TestSQLiteKeepsDurableOperationContextAfterConnectAttemptEnds(t *testing.T) {
+	connectContext, cancelConnect := context.WithCancel(context.Background())
+	driver := NewSQLite(connectContext, Config{Db: ":memory:"})
+	if err := driver.Connect(connectContext); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	t.Cleanup(func() { _ = driver.Close() })
+	cancelConnect()
+
+	if err := driver.CreateTable(
+		table("main", "durable_context"),
+		[]database.ColumnDefinition{
+			{Name: "id", Type: "INTEGER", PrimaryKey: true},
+			{Name: "name", Type: "TEXT", Nullable: true},
+		},
+	); err != nil {
+		t.Fatalf("CreateTable() after connect cancellation error = %v", err)
+	}
+	if _, err := driver.ApplyTableChanges(
+		nil,
+		database.TableChangeSet{
+			Table: table("main", "durable_context"),
+			Added: []map[string]interface{}{{
+				"id": int64(1), "name": "storm",
+			}},
+		},
+	); err != nil {
+		t.Fatalf("ApplyTableChanges() after connect cancellation error = %v", err)
+	}
+}
+
 func TestSQLiteLiveConformance(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "conformance.sqlite3")
 	driver := NewSQLite(context.Background(), Config{Db: path})

@@ -39,6 +39,8 @@ type routingTestDriver struct {
 	changeRequest database.TableChangeSet
 	changeResult  database.TableChangeResult
 	changeErr     error
+	structures    database.Structures
+	queryRows     []map[string]interface{}
 
 	objectFilter    database.ObjectFilter
 	objectReference database.ObjectReference
@@ -111,7 +113,7 @@ func (d *routingTestDriver) GetCollections(...string) ([]string, error) {
 }
 
 func (d *routingTestDriver) GetCollectionStructures(database.Table) (database.Structures, error) {
-	return nil, nil
+	return d.structures, nil
 }
 
 func (d *routingTestDriver) GetIndices(database.Table) (database.Indices, error) {
@@ -141,6 +143,7 @@ func (d *routingTestDriver) ExecuteQuery(
 ) (database.QueryResult, error) {
 	d.mu.Lock()
 	d.queries = append(d.queries, query)
+	rows := d.queryRows
 	d.mu.Unlock()
 
 	if d.queryStarted != nil {
@@ -156,8 +159,11 @@ func (d *routingTestDriver) ExecuteQuery(
 		}
 	}
 
+	if rows == nil {
+		rows = []map[string]interface{}{{"source": d.name}}
+	}
 	return database.QueryResult{
-		Rows:     []map[string]interface{}{{"source": d.name}},
+		Rows:     rows,
 		RowLimit: options.MaxRows,
 	}, nil
 }

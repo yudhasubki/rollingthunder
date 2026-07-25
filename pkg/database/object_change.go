@@ -135,6 +135,10 @@ func (request ObjectChangeRequest) Validate() error {
 		if request.Column.Default != nil && request.Column.DropDefault {
 			return fmt.Errorf("set default and drop default cannot be combined")
 		}
+		if request.Column.Default != nil &&
+			strings.TrimSpace(*request.Column.Default) == "" {
+			return fmt.Errorf("column default expression is required")
+		}
 		return nil
 
 	case ObjectChangeAddColumn:

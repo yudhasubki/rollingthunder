@@ -39,10 +39,15 @@
 - Keep passwords in macOS Keychain, Windows Credential Manager, or Linux Secret Service instead of
   profile JSON.
 - Keep multiple database sessions open and switch between them.
+- Organize profiles with folders and tags, then search the complete profile list.
 - Classify profiles as Unclassified, Development, Staging, or Production. Colors are derived from
   that operational meaning instead of being arbitrary profile decoration.
-- Configure PostgreSQL or MySQL/MariaDB TLS modes and client certificates.
-- Route PostgreSQL and MySQL/MariaDB through an SSH tunnel using an SSH agent, private key, or
+- Choose read-write or read-only access per profile; newly classified Production profiles default
+  to read-only. This application guardrail complements rather than replaces database-side
+  least-privilege roles.
+- Configure TLS modes for PostgreSQL, MySQL/MariaDB, Oracle, and SQL Server. PostgreSQL,
+  MySQL/MariaDB, and Oracle also accept client-certificate settings.
+- Route any supported network database through an SSH tunnel using an SSH agent, private key, or
   password. Host keys must match a known-hosts entry or an explicitly pinned SHA256 fingerprint.
 - Keep SSH passwords and private-key passphrases in the operating-system credential store alongside
   database passwords; profile JSON contains only non-secret SSH settings.
@@ -54,7 +59,8 @@
 
 ### Database workspace
 
-- Browse PostgreSQL schemas, MySQL/MariaDB databases, and SQLite attached databases.
+- Browse PostgreSQL, Oracle, and SQL Server schemas, MySQL/MariaDB databases, and SQLite attached
+  databases.
 - Explore and search tables, views, materialized views, routines, triggers, sequences, types,
   constraints, indexes, and PostgreSQL extensions according to each driver capability.
 - Inspect columns, constraints, relationships, indexes, and table DDL.
@@ -90,6 +96,9 @@
 - Compare two active connections of the same engine, review table/column/index drift, and apply a
   fingerprinted schema-sync plan. Destructive changes remain opt-in and unsupported constraint
   drift is called out for manual review.
+- Compare table rows across two active connections, choose stable key and value columns, review
+  inserts/updates/deletes individually, and apply only the selected changes after a fresh
+  fingerprint check. Truncated comparisons can never be applied.
 - Create and restore SQLite online backups without an external process.
 - Create PostgreSQL custom-format backups with `pg_dump` and restore them with `pg_restore`.
 - Create and restore MySQL/MariaDB SQL backups with their native client tools. Database and SSH
@@ -113,11 +122,12 @@
   UTF-16 LE encoding.
 - Choose pretty-printed or compact JSON; dates use ISO 8601 and binary values carry a `base64:`
   prefix.
-- Batch SQL rows into configurable multi-value `INSERT` statements and optionally wrap the file in
-  `BEGIN` / `COMMIT`.
+- Batch SQL rows into configurable multi-value `INSERT` statements where the engine supports them
+  and optionally wrap the file in an engine-appropriate transaction.
 - Let the active driver quote native SQL values and omit generated columns. PostgreSQL preserves
   identity values with `OVERRIDING SYSTEM VALUE`; MySQL/MariaDB can add
-  `ON DUPLICATE KEY UPDATE`.
+  `ON DUPLICATE KEY UPDATE`; Oracle emits compatible single-row statements; SQL Server respects its
+  1,000-row `VALUES` limit.
 - Select the destination through a format-aware native file picker.
 - Follow live row, byte, elapsed-time, and percentage progress for running exports.
 - Cancel a running export without replacing an existing destination file.
@@ -129,6 +139,7 @@
 - Monaco-powered SQL editing and syntax highlighting.
 - Execute the selected SQL or the statement under the cursor.
 - Persist query tabs, save/tag named queries, and keep query history.
+- Open existing `.sql` files and save the active editor through native file dialogs.
 - Execute SQL batches and inspect multiple result sets independently.
 - Supply typed query variables without string-concatenating values into SQL.
 - Format SQL and apply configurable safety/style lint rules.
@@ -146,10 +157,12 @@
   and transaction failures.
 - Paginate query results in 100-row client pages and cap interactive results at 1,000 rows with a
   visible truncation warning.
+- Turn a loaded query result into a compact bar, line, or scatter chart without rerunning SQL.
 - Schema-aware completion for schemas, tables, columns, and aliases.
 - Context-aware suggestions after `FROM`, `JOIN`, `WHERE`, `SET`, and qualified names such as
   `customer.`.
-- Function, keyword, and snippet catalogs for PostgreSQL, MySQL, and SQLite dialects.
+- Function, keyword, and snippet catalogs for PostgreSQL, MySQL/MariaDB, SQLite, Oracle, and SQL
+  Server dialects.
 - Lazy column metadata loading, including tables that were not part of the initial metadata warm-up.
 - Independent editor models for every query tab, without duplicate completion providers.
 
@@ -168,17 +181,20 @@
 - Keyboard focus traps, skip navigation, live status announcements, and reduced-motion support.
 - Headless end-to-end coverage for connect, edit, export, truncate, and drop workflows.
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.4/9.7 LTS with legacy 8.0
-  compatibility, and MariaDB 10.11/11.4/11.8/12.3 LTS.
+  compatibility, MariaDB 10.11/11.4/11.8/12.3 LTS, SQL Server 2022/2025, and the current Oracle
+  Database Free image.
 - Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
   attestations. Platform signing is optional and never required for preview builds.
 
 ## Database support
 
-| Engine          | Connect/query | Object explorer                             | Maintenance / admin                     | CI integration                   |
-| --------------- | ------------- | ------------------------------------------- | --------------------------------------- | -------------------------------- |
-| PostgreSQL      | Available     | Full capability-based explorer              | Sync, backup, roles/grants, activity    | 14-18                            |
-| MySQL / MariaDB | Available     | Databases, tables, views, routines/triggers | Sync, backup, users/grants, activity    | 8.4/9.7 + legacy 8.0; 10.11-12.3 |
-| SQLite          | Available     | Attached DBs, tables, views, triggers       | Sync and built-in online backup/restore | Bundled engine                   |
+| Engine          | Core data workflows | Object explorer                                       | Maintenance / admin                      | CI integration                    |
+| --------------- | ------------------- | ----------------------------------------------------- | ---------------------------------------- | --------------------------------- |
+| PostgreSQL      | Available           | Full capability-based explorer                        | Sync, backup, roles/grants, activity     | 14-18                             |
+| MySQL / MariaDB | Available           | Databases, tables, views, routines/triggers           | Sync, backup, users/grants, activity     | 8.4/9.7 + legacy 8.0; 10.11-12.3  |
+| SQLite          | Available           | Attached DBs, tables, views, triggers                 | Sync and built-in online backup/restore  | Bundled engine                    |
+| Oracle Database | Beta                | Schemas, tables, views, MVs, routines, triggers       | Schema/data sync; no native backup/admin | Current Free image, weekly/manual |
+| SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences | Schema/data sync; no native backup/admin | 2022 and 2025                     |
 
 ## Known gaps
 
@@ -192,10 +208,22 @@ Other important limitations include:
 - PostgreSQL backup/restore requires compatible `pg_dump` and `pg_restore` executables in `PATH`.
   MySQL/MariaDB backup/restore similarly requires `mysqldump`/`mariadb-dump` and
   `mysql`/`mariadb`.
-- Role/user management and the activity monitor are server features and are not exposed for
+- Native backup/restore, security administration, and activity monitoring are not yet exposed for
+  Oracle or SQL Server. Role/user management and the activity monitor are also not applicable to
   SQLite.
+- Oracle beta connections currently use a host, port, service name, and optional PEM TLS material;
+  TNS aliases and wallet-based authentication are not yet modeled. SQL Server beta connections use
+  SQL authentication; Microsoft Entra ID and platform-integrated authentication are not yet
+  exposed.
+- Oracle `INSERT` export rejects inline RAW values larger than 2,000 bytes instead of generating a
+  script that Oracle cannot execute. Use CSV/JSON export for those rows.
 - Schema sync currently automates table, column, and index changes. Complex constraint drift is
   reported for manual review instead of generating unsafe SQL.
+- Data sync compares at most 10,000 rows per side and requires a complete, non-truncated comparison
+  before apply. It is intended for reviewed operational subsets, not bulk replication.
+- SQL Server table DDL reconstructs common columns, identity/computed metadata, key constraints,
+  checks, and foreign keys. Advanced temporal, ledger, memory-optimized, partition, compression,
+  masking, and encryption options still require native tooling and manual review.
 - SSH host verification is deliberately strict. Rolling Thunder does not silently trust a host on
   first use; add it to `known_hosts` or pin the SHA256 host-key fingerprint.
 - Linux desktop packages currently target WebKitGTK 4.1 and require compatible GTK/WebKit runtime
@@ -217,7 +245,7 @@ Maintainer guardrails for runtime policy, trust boundaries, and semantic colors 
 - **Frontend:** Svelte 5 and TypeScript
 - **UI:** Tailwind CSS, Melt UI, and Lucide
 - **SQL editor:** Monaco Editor
-- **Database drivers:** PostgreSQL, MySQL/MariaDB, and pure-Go SQLite
+- **Database drivers:** PostgreSQL, MySQL/MariaDB, pure-Go SQLite, Oracle, and SQL Server
 
 ## Getting started
 
@@ -280,8 +308,8 @@ cd ..
 wails build -m -nocolour
 ```
 
-See [docs/TESTING.md](docs/TESTING.md) for live PostgreSQL/MySQL/MariaDB integration variables and
-the full manual release matrix.
+See [docs/TESTING.md](docs/TESTING.md) for live database integration variables and the full manual
+release matrix.
 
 ## Security, privacy, and releases
 
@@ -293,9 +321,10 @@ the full manual release matrix.
 
 ## Roadmap
 
-Milestones 1-6 cover reliable data workflows, the complete object explorer, multi-engine drivers,
-power-user query tooling, release readiness, and reviewed administration/portability workflows.
-See [ROADMAP.md](ROADMAP.md) for acceptance criteria and shipped scope.
+Milestones 1-7 cover reliable data workflows, the complete object explorer, multi-engine drivers,
+power-user query tooling, release readiness, reviewed administration/portability workflows, and
+Oracle/SQL Server beta support. See [ROADMAP.md](ROADMAP.md) for acceptance criteria, limitations,
+and shipped scope.
 
 ## Contributing
 

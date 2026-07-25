@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	connectionStorageVersion      = 4
+	connectionStorageVersion      = 5
 	sshPasswordCredentialSuffix   = ":ssh-password"
 	sshPassphraseCredentialSuffix = ":ssh-key-passphrase"
 )
@@ -198,8 +198,7 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 	for index := range connections {
 		connection := &connections[index]
 		normalizedConfig := database.NormalizeConfigMetadata(connection.Config)
-		if connection.Config.Environment != normalizedConfig.Environment ||
-			connection.Config.Color != normalizedConfig.Color {
+		if !database.ConfigMetadataEqual(connection.Config, normalizedConfig) {
 			connection.Config = normalizedConfig
 			needsRewrite = true
 		}

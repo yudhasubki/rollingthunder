@@ -135,6 +135,7 @@ func (s *SQLite) Connect(ctx context.Context) error {
 	s.conn = conn
 	s.path = path
 	s.journalMode = strings.ToUpper(journalMode)
+	s.ctx = context.WithoutCancel(ctx)
 	return nil
 }
 
@@ -1026,16 +1027,6 @@ func writeSQLiteInsertStream(
 	return database.ExportStats{Rows: sink.rows}, nil
 }
 
-func validateSQLiteFragment(value, label string) error {
-	if strings.ContainsRune(value, '\x00') {
-		return fmt.Errorf("%s contains a NUL byte", label)
-	}
-	if database.HasTopLevelStatementSeparator(value) {
-		return fmt.Errorf("%s must not contain another SQL statement", label)
-	}
-	return nil
-}
-
 func (s *SQLite) CreateTable(
 	table database.Table,
 	columns []database.ColumnDefinition,
@@ -1058,7 +1049,10 @@ func (s *SQLite) CreateTable(
 		if dataType == "" {
 			return fmt.Errorf("data type is required for column %q", name)
 		}
-		if err := validateSQLiteFragment(dataType, "column data type"); err != nil {
+		if err := database.ValidateDDLFragment(
+			dataType,
+			"column data type",
+		); err != nil {
 			return err
 		}
 		definition := quoteSQLiteIdentifier(name) + " " + dataType
@@ -1066,7 +1060,10 @@ func (s *SQLite) CreateTable(
 			definition += " NOT NULL"
 		}
 		if strings.TrimSpace(column.Default) != "" {
-			if err := validateSQLiteFragment(column.Default, "column default"); err != nil {
+			if err := database.ValidateDDLFragment(
+				column.Default,
+				"column default",
+			); err != nil {
 				return err
 			}
 			definition += " DEFAULT " + strings.TrimSpace(column.Default)

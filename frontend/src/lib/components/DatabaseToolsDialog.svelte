@@ -1,11 +1,20 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Activity, ArchiveRestore, Blocks, DatabaseBackup, ShieldCheck, X } from 'lucide-svelte';
+	import {
+		Activity,
+		ArchiveRestore,
+		Blocks,
+		DatabaseBackup,
+		Rows3,
+		ShieldCheck,
+		X
+	} from 'lucide-svelte';
 	import { focusTrap } from '$lib/actions/focusTrap';
 	import SchemaMigrationPanel from '$lib/components/database-tools/SchemaMigrationPanel.svelte';
 	import BackupRestorePanel from '$lib/components/database-tools/BackupRestorePanel.svelte';
 	import SecurityPanel from '$lib/components/database-tools/SecurityPanel.svelte';
 	import ActivityPanel from '$lib/components/database-tools/ActivityPanel.svelte';
+	import DataSyncPanel from '$lib/components/database-tools/DataSyncPanel.svelte';
 
 	interface Props {
 		open: boolean;
@@ -13,7 +22,7 @@
 	}
 
 	let { open, onClose }: Props = $props();
-	let activeTool = $state<'schema' | 'backup' | 'security' | 'activity'>('schema');
+	let activeTool = $state<'schema' | 'data' | 'backup' | 'security' | 'activity'>('schema');
 	let heading = $state<HTMLHeadingElement | null>(null);
 
 	$effect(() => {
@@ -26,6 +35,7 @@
 
 	const tools = [
 		{ id: 'schema', label: 'Schema sync', icon: Blocks },
+		{ id: 'data', label: 'Data sync', icon: Rows3 },
 		{ id: 'backup', label: 'Backup', icon: DatabaseBackup },
 		{ id: 'security', label: 'Security', icon: ShieldCheck },
 		{ id: 'activity', label: 'Activity', icon: Activity }
@@ -100,6 +110,8 @@
 			<div class="flex min-h-0 flex-1">
 				{#if activeTool === 'schema'}
 					<SchemaMigrationPanel />
+				{:else if activeTool === 'data'}
+					<DataSyncPanel />
 				{:else if activeTool === 'backup'}
 					<BackupRestorePanel />
 				{:else if activeTool === 'security'}

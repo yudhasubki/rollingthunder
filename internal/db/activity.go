@@ -67,8 +67,11 @@ func (s *Service) CancelDatabaseSession(
 			"Review the session details and explicitly confirm the action.",
 		)
 	}
-	driver, release, err := s.driverFor(request.ConnectionID)
+	driver, release, err := s.writeDriverFor(request.ConnectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[database.CancelSessionResult]()
+		}
 		return serviceError[database.CancelSessionResult](err.Error())
 	}
 	defer release()

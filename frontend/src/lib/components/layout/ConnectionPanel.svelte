@@ -9,6 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { getContextMenuPosition } from '$lib/utils/contextMenu';
 	import { fly } from 'svelte/transition';
+	import { providerOption } from '$lib/config/application';
 
 	// Refresh on mount
 	$effect(() => {
@@ -82,7 +83,7 @@
 					: 'hover:border-border border-transparent hover:bg-[var(--surface-hover)]'}"
 				onclick={() => handleSwitch(conn.id)}
 				oncontextmenu={(e) => handleContextMenu(e, conn.id)}
-				title="{conn.driver === 'sqlite' ? 'SQLite' : conn.driver} · {connectionEndpoint(conn)}"
+				title="{providerOption(conn.driver).name} · {connectionEndpoint(conn)}"
 			>
 				<div class="flex h-7 w-7 items-center justify-center rounded-md">
 					<Database class="h-4 w-4 {conn.isActive ? 'text-foreground' : 'text-muted-foreground'}" />
@@ -135,7 +136,9 @@
 						>{contextMenuConnection.name || contextMenuConnection.database}</span
 					>
 					<span class="rt-context-meta"
-						>{contextMenuConnection.driver} · {connectionEndpoint(contextMenuConnection)}</span
+						>{providerOption(contextMenuConnection.driver).name} · {connectionEndpoint(
+							contextMenuConnection
+						)}</span
 					>
 				</span>
 			</div>

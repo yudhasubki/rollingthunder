@@ -6,6 +6,8 @@ import {db} from '../models';
 import {diagnostics} from '../models';
 import {context} from '../models';
 
+export function ApplyDataSync(arg1:database.ApplyDataSyncRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_DataSyncResult_>;
+
 export function ApplyDatabaseObjectChange(arg1:string,arg2:database.ApplyObjectChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectChangeResult_>;
 
 export function ApplyDatabaseRestore(arg1:database.ApplyRestoreRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_RestoreResult_>;
@@ -45,6 +47,8 @@ export function ClearConnectionPassword(arg1:string):Promise<response.BaseRespon
 export function ClearConnectionSSHCredentials(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function ClearDiagnostics():Promise<response.BaseResponse_bool_>;
+
+export function CloseSQLFile(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function CommitTransaction(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
 
@@ -92,6 +96,8 @@ export function GetConnectionHealth(arg1:string):Promise<response.BaseResponse_r
 
 export function GetConnectionHealths():Promise<response.BaseResponse___rollingthunder_pkg_database_ConnectionHealth_>;
 
+export function GetConnectionWriteAccess(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_ConnectionWriteAccess_>;
+
 export function GetDataTypes(arg1:string):Promise<response.BaseResponse___rollingthunder_pkg_database_DataType_>;
 
 export function GetDatabaseActivity(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_DatabaseActivity_>;
@@ -124,6 +130,10 @@ export function InsertRow(arg1:string,arg2:database.Table,arg3:Record<string, an
 
 export function InspectImportFile(arg1:database.ImportPreviewRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ImportPreview_>;
 
+export function OpenSQLFile():Promise<response.BaseResponse_rollingthunder_internal_db_SQLWorkspaceFile_>;
+
+export function PreviewDataSync(arg1:database.DataSyncRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_DataSyncPreview_>;
+
 export function PreviewDatabaseObjectChange(arg1:string,arg2:database.ObjectChangeRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_ObjectChangePreview_>;
 
 export function PreviewDatabaseRestore(arg1:database.RestorePreviewRequest):Promise<response.BaseResponse_rollingthunder_pkg_database_RestorePreview_>;
@@ -139,6 +149,10 @@ export function RecordFrontendError(arg1:diagnostics.FrontendReport):Promise<res
 export function RollbackTransaction(arg1:string):Promise<response.BaseResponse_rollingthunder_internal_db_TransactionInfo_>;
 
 export function SaveConnection(arg1:database.Config):Promise<response.BaseResponse_rollingthunder_internal_db_SavedConnection_>;
+
+export function SaveSQLFile(arg1:db.SaveSQLFileRequest):Promise<response.BaseResponse_rollingthunder_internal_db_SQLWorkspaceFile_>;
+
+export function SetConnectionWriteAccess(arg1:db.SetConnectionWriteAccessRequest):Promise<response.BaseResponse_rollingthunder_internal_db_ConnectionWriteAccess_>;
 
 export function Shutdown(arg1:context.Context):Promise<void>;
 

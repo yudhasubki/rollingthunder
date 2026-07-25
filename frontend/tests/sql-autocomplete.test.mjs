@@ -35,6 +35,16 @@ SELECT * FROM audit_log AS event WHERE event.`;
 	assert.equal(statement.text.trim(), 'SELECT * FROM audit_log AS event WHERE event.');
 });
 
+test('does not split or complete inside Oracle alternative-quoted strings', () => {
+	const sql = `SELECT q'[still inside; FROM ghost]' AS value FROM dual;
+SELECT * FROM audit_log`;
+	const statement = getStatementAtCursor(sql, sql.length);
+
+	assert.equal(statement.text.trim(), 'SELECT * FROM audit_log');
+	assert.equal(isCursorInCommentOrString("SELECT q'[unfinished"), true);
+	assert.doesNotMatch(removeSqlNoise(`SELECT q'{DROP TABLE users}' FROM dual`), /DROP TABLE/);
+});
+
 test('does not split quoted identifiers or comments on semicolons', () => {
 	const sql =
 		'SELECT * FROM "odd;table"; -- ignored ; delimiter\nSELECT * FROM `next;table`; SELECT * FROM [last;table]';
@@ -132,6 +142,8 @@ test('normalizes supported database engine names', () => {
 	assert.equal(normalizeSqlDialect('CockroachDB'), 'postgresql');
 	assert.equal(normalizeSqlDialect('MariaDB'), 'mysql');
 	assert.equal(normalizeSqlDialect('sqlite3'), 'sqlite');
+	assert.equal(normalizeSqlDialect('Oracle Database 26ai'), 'oracle');
+	assert.equal(normalizeSqlDialect('Microsoft SQL Server 2022'), 'sqlserver');
 	assert.equal(normalizeSqlDialect('unknown'), 'generic');
 });
 
@@ -139,6 +151,8 @@ test('keeps engine-specific function catalogs isolated', () => {
 	const postgresFunctions = getSqlDialectDefinition('postgres').functions.map(({ name }) => name);
 	const mysqlFunctions = getSqlDialectDefinition('mysql').functions.map(({ name }) => name);
 	const sqliteFunctions = getSqlDialectDefinition('sqlite').functions.map(({ name }) => name);
+	const oracleFunctions = getSqlDialectDefinition('oracle').functions.map(({ name }) => name);
+	const sqlServerFunctions = getSqlDialectDefinition('sqlserver').functions.map(({ name }) => name);
 
 	assert.ok(postgresFunctions.includes('DATE_TRUNC'));
 	assert.ok(!postgresFunctions.includes('DATE_FORMAT'));
@@ -146,6 +160,10 @@ test('keeps engine-specific function catalogs isolated', () => {
 	assert.ok(!mysqlFunctions.includes('DATE_TRUNC'));
 	assert.ok(sqliteFunctions.includes('STRFTIME'));
 	assert.ok(!sqliteFunctions.includes('DATE_FORMAT'));
+	assert.ok(oracleFunctions.includes('NVL'));
+	assert.ok(!oracleFunctions.includes('GETDATE'));
+	assert.ok(sqlServerFunctions.includes('GETDATE'));
+	assert.ok(!sqlServerFunctions.includes('SYSDATE'));
 });
 
 test('quotes unsafe identifiers with the active engine rules', () => {
@@ -153,4 +171,6 @@ test('quotes unsafe identifiers with the active engine rules', () => {
 	assert.equal(quoteSqlIdentifier('order item', 'postgres'), '"order item"');
 	assert.equal(quoteSqlIdentifier('order`item', 'mysql'), '`order``item`');
 	assert.equal(quoteSqlIdentifier('order"item', 'sqlite'), '"order""item"');
+	assert.equal(quoteSqlIdentifier('order"item', 'oracle'), '"order""item"');
+	assert.equal(quoteSqlIdentifier('order]item', 'sqlserver'), '[order]]item]');
 });

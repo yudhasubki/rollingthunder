@@ -16,7 +16,8 @@
 	import {
 		APPLICATION,
 		CONNECTION_DEFAULTS,
-		connectionEnvironmentOption
+		connectionEnvironmentOption,
+		providerOption
 	} from '$lib/config/application';
 	import {
 		BACKEND_RESTART_MESSAGE,
@@ -118,15 +119,8 @@
 	}
 
 	function providerName(profile: db.SavedConnection): string {
-		switch (profile.config.driver || CONNECTION_DEFAULTS.provider) {
-			case 'mysql':
-			case 'mariadb':
-				return 'MySQL / MariaDB';
-			case 'sqlite':
-				return 'SQLite';
-			default:
-				return 'PostgreSQL';
-		}
+		if (profile.config.driver === 'mariadb') return 'MySQL / MariaDB';
+		return providerOption(profile.config.driver).name;
 	}
 
 	function profileSecurity(profile: db.SavedConnection): string {

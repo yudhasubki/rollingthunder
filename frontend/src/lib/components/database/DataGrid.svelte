@@ -21,7 +21,8 @@
 		PanelRightOpen,
 		Rows3,
 		X,
-		Download
+		Download,
+		Columns3
 	} from 'lucide-svelte';
 	import { database } from '$lib/wailsjs/go/models';
 	import DataCellValue from '$lib/components/database/DataCellValue.svelte';
@@ -127,9 +128,25 @@
 	let resizeStartX = 0;
 	let resizeStartWidth = 0;
 	let resizePointerId: number | null = null;
+	let hiddenColumns = $state<Set<string>>(new Set());
+	let columnMenuOpen = $state(false);
+	let gridSurface: HTMLDivElement | null = null;
+	let selectingCells = false;
+	let selectionAnchor = $state<{ row: number; column: number } | null>(null);
+	let selectionFocus = $state<{ row: number; column: number } | null>(null);
 
 	const rowNumberWidth = 64;
 	const actionColumnWidth = 36;
+	const visibleColumns = $derived(columns.filter((column) => !hiddenColumns.has(column.name)));
+	const selectedCellRange = $derived.by(() => {
+		if (!selectionAnchor || !selectionFocus) return null;
+		return {
+			startRow: Math.min(selectionAnchor.row, selectionFocus.row),
+			endRow: Math.max(selectionAnchor.row, selectionFocus.row),
+			startColumn: Math.min(selectionAnchor.column, selectionFocus.column),
+			endColumn: Math.max(selectionAnchor.column, selectionFocus.column)
+		};
+	});
 	const allDisplayRowsSelected = $derived(
 		displayData.length > 0 && exportSelectedRowIndexes.length === displayData.length
 	);
@@ -145,7 +162,7 @@
 	const tablePixelWidth = $derived(
 		rowNumberWidth +
 			actionColumnWidth +
-			columns.reduce((total, column) => total + getColumnWidth(column), 0)
+			visibleColumns.reduce((total, column) => total + getColumnWidth(column), 0)
 	);
 
 	function handleSortClick(event: MouseEvent, column: string) {
@@ -230,6 +247,8 @@
 
 		previousData = currentData;
 		selectedRowIndex = null;
+		selectionAnchor = null;
+		selectionFocus = null;
 		updateExportSelection([]);
 		closeRowDetails(false);
 	});
@@ -330,6 +349,198 @@
 		stageDataInsert(tabId, newRow);
 	}
 
+	function toggleColumnVisibility(columnName: string) {
+		const next = new Set(hiddenColumns);
+		if (next.has(columnName)) {
+			next.delete(columnName);
+		} else {
+			if (visibleColumns.length <= 1) {
+				updateStatus('Keep at least one column visible.', 'warn');
+				return;
+			}
+			next.add(columnName);
+		}
+		hiddenColumns = next;
+		selectionAnchor = null;
+		selectionFocus = null;
+	}
+
+	function showAllColumns() {
+		hiddenColumns = new Set();
+	}
+
+	function isCellSelected(row: number, column: number): boolean {
+		const range = selectedCellRange;
+		return Boolean(
+			range &&
+				row >= range.startRow &&
+				row <= range.endRow &&
+				column >= range.startColumn &&
+				column <= range.endColumn
+		);
+	}
+
+	function selectCell(event: PointerEvent, row: number, column: number) {
+		if (event.button !== 0) return;
+		event.stopPropagation();
+		gridSurface?.focus({ preventScroll: true });
+		if (event.shiftKey && selectionAnchor) {
+			selectionFocus = { row, column };
+		} else {
+			selectionAnchor = { row, column };
+			selectionFocus = { row, column };
+		}
+		selectedRowIndex = row;
+		selectingCells = true;
+	}
+
+	function extendCellSelection(row: number, column: number) {
+		if (!selectingCells || !selectionAnchor) return;
+		selectionFocus = { row, column };
+		selectedRowIndex = row;
+	}
+
+	function finishCellSelection() {
+		selectingCells = false;
+	}
+
+	function handleGridKeydown(event: KeyboardEvent) {
+		if (editingCell || !selectionFocus || visibleColumns.length === 0 || displayData.length === 0)
+			return;
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+			event.preventDefault();
+			selectionAnchor = { row: 0, column: 0 };
+			selectionFocus = {
+				row: displayData.length - 1,
+				column: visibleColumns.length - 1
+			};
+			return;
+		}
+		const movement: Record<string, [number, number]> = {
+			ArrowUp: [-1, 0],
+			ArrowDown: [1, 0],
+			ArrowLeft: [0, -1],
+			ArrowRight: [0, 1]
+		};
+		const delta = movement[event.key];
+		if (delta) {
+			event.preventDefault();
+			const next = {
+				row: Math.max(0, Math.min(displayData.length - 1, selectionFocus.row + delta[0])),
+				column: Math.max(0, Math.min(visibleColumns.length - 1, selectionFocus.column + delta[1]))
+			};
+			if (!event.shiftKey) selectionAnchor = next;
+			selectionFocus = next;
+			selectedRowIndex = next.row;
+			return;
+		}
+		if (event.key === 'Enter' && !readonly) {
+			event.preventDefault();
+			const column = visibleColumns[selectionFocus.column];
+			const row = displayData[selectionFocus.row];
+			if (column && row) startEdit(row, selectionFocus.row, column.name);
+		} else if (event.key === 'Escape') {
+			selectionAnchor = null;
+			selectionFocus = null;
+		}
+	}
+
+	function clipboardCellValue(value: unknown): string {
+		if (value === null || value === undefined) return '';
+		const rendered = typeof value === 'object' ? JSON.stringify(value) : String(value);
+		return rendered.replaceAll('\t', ' ').replaceAll('\r', ' ').replaceAll('\n', ' ');
+	}
+
+	function handleGridCopy(event: ClipboardEvent) {
+		if (editingCell || !selectedCellRange || !event.clipboardData) return;
+		const range = selectedCellRange;
+		const lines: string[] = [];
+		for (let rowIndex = range.startRow; rowIndex <= range.endRow; rowIndex++) {
+			const row = displayData[rowIndex];
+			if (!row) continue;
+			const values: string[] = [];
+			for (let columnIndex = range.startColumn; columnIndex <= range.endColumn; columnIndex++) {
+				const column = visibleColumns[columnIndex];
+				values.push(column ? clipboardCellValue(row[column.name]) : '');
+			}
+			lines.push(values.join('\t'));
+		}
+		event.preventDefault();
+		event.clipboardData.setData('text/plain', lines.join('\n'));
+		updateStatus(
+			`Copied ${range.endRow - range.startRow + 1} × ${range.endColumn - range.startColumn + 1} cells`,
+			'success'
+		);
+	}
+
+	function createBlankRow(): Record<string, any> {
+		const row: Record<string, any> = { _isNew: true };
+		for (const column of columns) {
+			row[column.name] =
+				column.is_autoinc || column.is_generated || column.default ? undefined : null;
+		}
+		return row;
+	}
+
+	function handleGridPaste(event: ClipboardEvent) {
+		if (editingCell || !event.clipboardData || !selectionAnchor) return;
+		event.preventDefault();
+		if (readonly) {
+			updateStatus('This result is read-only, so pasted cells were not staged.', 'warn');
+			return;
+		}
+		const text = event.clipboardData.getData('text/plain').replaceAll('\r\n', '\n');
+		const lines = text.split('\n');
+		if (lines.at(-1) === '') lines.pop();
+		const matrix = lines.map((line) => line.split('\t'));
+		if (matrix.length === 0) return;
+		const start = selectedCellRange
+			? { row: selectedCellRange.startRow, column: selectedCellRange.startColumn }
+			: selectionAnchor;
+
+		let skippedUnsafeRow = false;
+		for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
+			const targetRowIndex = start.row + rowOffset;
+			const sourceValues = matrix[rowOffset];
+			const current = displayData[targetRowIndex];
+			if (current && !current._isNew && primaryKeyColumns.length === 0) {
+				skippedUnsafeRow = true;
+				continue;
+			}
+			const next = current ? { ...current } : createBlankRow();
+			let changed = false;
+			for (let columnOffset = 0; columnOffset < sourceValues.length; columnOffset++) {
+				const column = visibleColumns[start.column + columnOffset];
+				if (!column || column.is_generated) continue;
+				next[column.name] = sourceValues[columnOffset];
+				changed = true;
+			}
+			if (!changed) continue;
+			if (!current) {
+				stageDataInsert(tabId, next);
+			} else if (current._isNew) {
+				updateStagedInsert(tabId, current, next);
+			} else {
+				stageDataUpdate(tabId, current, next, primaryKeyColumns);
+			}
+		}
+		selectionFocus = {
+			row: start.row + matrix.length - 1,
+			column: Math.min(
+				visibleColumns.length - 1,
+				start.column + Math.max(...matrix.map((row) => row.length)) - 1
+			)
+		};
+		if (skippedUnsafeRow) {
+			updateStatus('Existing rows without a primary key were skipped during paste.', 'warn');
+			return;
+		}
+		updateStatus(
+			`Pasted ${matrix.length} row${matrix.length === 1 ? '' : 's'} as staged changes`,
+			'success'
+		);
+	}
+
 	function deleteSelectedRow() {
 		if (selectedRowIndex !== null && displayData[selectedRowIndex]) {
 			const row = displayData[selectedRowIndex];
@@ -417,8 +628,14 @@
 
 <svelte:window
 	onpointermove={handleResizePointerMove}
-	onpointerup={finishColumnResize}
-	onpointercancel={finishColumnResize}
+	onpointerup={(event) => {
+		finishColumnResize(event);
+		finishCellSelection();
+	}}
+	onpointercancel={(event) => {
+		finishColumnResize(event);
+		finishCellSelection();
+	}}
 />
 
 <div class="flex h-full min-h-0 flex-col">
@@ -507,6 +724,18 @@
 					</button>
 				{/if}
 				<button
+					class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium"
+					onclick={() => (columnMenuOpen = !columnMenuOpen)}
+					aria-expanded={columnMenuOpen}
+					title="Choose visible columns"
+				>
+					<Columns3 class="h-3 w-3" />
+					Columns
+					<span class="text-muted-foreground font-mono text-[8px]"
+						>{visibleColumns.length}/{columns.length}</span
+					>
+				</button>
+				<button
 					class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2.5 text-[9px] font-medium disabled:pointer-events-none disabled:opacity-40"
 					disabled={selectedRowIndex === null}
 					onclick={(event) => openSelectedRowDetails(event.currentTarget)}
@@ -538,8 +767,51 @@
 			</div>
 		</div>
 
+		{#if columnMenuOpen}
+			<div class="flex shrink-0 items-center gap-2 overflow-x-auto border-b px-3 py-2">
+				<span class="text-muted-foreground shrink-0 text-[8px] font-bold tracking-wide uppercase">
+					Visible
+				</span>
+				{#each columns as column (column.name)}
+					<label
+						class="flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-[8px] font-semibold {hiddenColumns.has(
+							column.name
+						)
+							? 'text-muted-foreground bg-[var(--surface-sunken)]'
+							: 'bg-[var(--surface-raised)]'}"
+					>
+						<input
+							type="checkbox"
+							class="accent-primary h-3 w-3"
+							checked={!hiddenColumns.has(column.name)}
+							onchange={() => toggleColumnVisibility(column.name)}
+						/>
+						<span class="font-mono">{column.name}</span>
+					</label>
+				{/each}
+				{#if hiddenColumns.size > 0}
+					<button
+						type="button"
+						class="rt-toolbar-button h-6 shrink-0 px-2 text-[8px] font-semibold"
+						onclick={showAllColumns}
+					>
+						Show all
+					</button>
+				{/if}
+			</div>
+		{/if}
+
 		<!-- Data Grid -->
-		<div class="data-grid-scroll min-h-0 flex-1 overflow-auto">
+		<div
+			bind:this={gridSurface}
+			class="data-grid-scroll min-h-0 flex-1 overflow-auto outline-none"
+			tabindex="0"
+			role="grid"
+			aria-label={`${gridTitle}. Use arrow keys to move, Shift plus arrows to select, and copy or paste tab-separated cells.`}
+			onkeydown={handleGridKeydown}
+			oncopy={handleGridCopy}
+			onpaste={handleGridPaste}
+		>
 			<table
 				class="data-grid-table caption-bottom border-separate border-spacing-0 text-xs"
 				style="width: max(100%, {tablePixelWidth}px); table-layout: fixed;"
@@ -566,7 +838,7 @@
 								<span aria-hidden="true">#</span>
 							</span>
 						</th>
-						{#each columns as col (col.name)}
+						{#each visibleColumns as col (col.name)}
 							{@const sortIndex = getSortIndex(col.name)}
 							<th
 								class="column-header-cell text-muted-foreground relative h-9 border-r border-b p-0 text-left align-middle tracking-normal normal-case"
@@ -646,7 +918,7 @@
 				<tbody>
 					{#if loading}
 						<tr class="hover:!bg-transparent">
-							<td colspan={columns.length + 2} class="h-44 px-6 text-center">
+							<td colspan={visibleColumns.length + 2} class="h-44 px-6 text-center">
 								<div class="mx-auto flex max-w-sm flex-col items-center">
 									<span
 										class="bg-primary/10 text-primary flex h-10 w-10 items-center justify-center rounded-lg"
@@ -663,7 +935,10 @@
 						</tr>
 					{:else if displayData.length === 0}
 						<tr>
-							<td colspan={columns.length + 2} class="text-muted-foreground h-32 text-center">
+							<td
+								colspan={visibleColumns.length + 2}
+								class="text-muted-foreground h-32 text-center"
+							>
 								<div class="mx-auto flex max-w-xs flex-col items-center">
 									<span
 										class="bg-muted flex h-8 w-8 items-center justify-center rounded-md opacity-80"
@@ -719,10 +994,16 @@
 										</button>
 									</span>
 								</td>
-								{#each columns as col (col.name)}
+								{#each visibleColumns as col, columnIndex (col.name)}
 									<td
-										class="h-10 overflow-hidden border-r border-b p-0 align-middle"
+										class="h-10 overflow-hidden border-r border-b p-0 align-middle {isCellSelected(
+											rowIndex,
+											columnIndex
+										)
+											? 'cell-selected'
+											: ''}"
 										style="width: {getColumnWidth(col)}px;"
+										onpointerenter={() => extendCellSelection(rowIndex, columnIndex)}
 									>
 										{#if editingCell?.rowIndex === rowIndex && editingCell?.colName === col.name}
 											<input
@@ -735,7 +1016,14 @@
 										{:else}
 											<button
 												type="button"
-												class="hover:bg-accent/45 flex h-10 w-full min-w-0 items-center overflow-hidden px-3 text-left transition-colors"
+												class="hover:bg-accent/45 flex h-10 w-full min-w-0 items-center overflow-hidden px-3 text-left transition-colors {isCellSelected(
+													rowIndex,
+													columnIndex
+												)
+													? 'bg-accent/40'
+													: ''}"
+												onpointerdown={(event) => selectCell(event, rowIndex, columnIndex)}
+												onclick={(event) => event.stopPropagation()}
 												ondblclick={() =>
 													!readonly && !col.is_generated && startEdit(row, rowIndex, col.name)}
 												title={readonly
@@ -957,6 +1245,10 @@
 		background: color-mix(in oklab, var(--surface-sunken) 62%, var(--surface-raised));
 	}
 
+	.data-grid-table td.cell-selected {
+		box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 72%, transparent);
+	}
+
 	.data-grid-table .frozen-edge {
 		position: -webkit-sticky;
 		position: sticky;
@@ -999,15 +1291,15 @@
 	}
 
 	.data-grid-table tbody tr.row-added .frozen-edge {
-		background: color-mix(in oklab, var(--color-green-500) 10%, var(--surface-raised));
+		background: color-mix(in oklab, var(--success) 10%, var(--surface-raised));
 	}
 
 	.data-grid-table tbody tr.row-updated .frozen-edge {
-		background: color-mix(in oklab, var(--color-yellow-500) 10%, var(--surface-raised));
+		background: color-mix(in oklab, var(--warning) 10%, var(--surface-raised));
 	}
 
 	.data-grid-table tbody tr.row-deleted .frozen-edge {
-		background: color-mix(in oklab, var(--color-red-500) 10%, var(--surface-raised));
+		background: color-mix(in oklab, var(--danger) 10%, var(--surface-raised));
 	}
 
 	.data-grid-table tbody tr.data-row:hover {

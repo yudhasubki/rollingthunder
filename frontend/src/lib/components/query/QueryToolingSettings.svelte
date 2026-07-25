@@ -2,6 +2,7 @@
 	import { Settings2, X } from 'lucide-svelte';
 	import { queryToolingStore } from '$lib/stores/queryTooling.svelte';
 	import { focusTrap } from '$lib/actions/focusTrap';
+	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
 
 	interface Props {
 		open: boolean;
@@ -10,6 +11,16 @@
 	}
 
 	let { open, onClose, onChanged = () => {} }: Props = $props();
+
+	const keywordCaseOptions = [
+		{ value: 'upper', label: 'UPPERCASE' },
+		{ value: 'lower', label: 'lowercase' },
+		{ value: 'preserve', label: 'Preserve' }
+	];
+	const indentSizeOptions = [
+		{ value: '2', label: '2 spaces' },
+		{ value: '4', label: '4 spaces' }
+	];
 
 	function updateLint(patch: Parameters<typeof queryToolingStore.updateLint>[0]): void {
 		queryToolingStore.updateLint(patch);
@@ -58,36 +69,35 @@
 					<div class="mt-2 grid grid-cols-2 gap-3">
 						<label>
 							<span class="text-muted-foreground mb-1 block text-[8px]">Keyword case</span>
-							<select
-								class="rt-input h-8 w-full px-2 text-[9px]"
+							<FilterCombobox
+								options={keywordCaseOptions}
 								value={queryToolingStore.format.keywordCase}
-								onchange={(event) => {
+								onChange={(value) => {
 									queryToolingStore.updateFormat({
-										keywordCase: event.currentTarget.value as 'upper' | 'lower' | 'preserve'
+										keywordCase: value as 'upper' | 'lower' | 'preserve'
 									});
 									onChanged();
 								}}
-							>
-								<option value="upper">UPPERCASE</option>
-								<option value="lower">lowercase</option>
-								<option value="preserve">Preserve</option>
-							</select>
+								searchable={false}
+								triggerClass="h-8 px-2 text-[9px]"
+								id="query-tooling-keyword-case"
+							/>
 						</label>
 						<label>
 							<span class="text-muted-foreground mb-1 block text-[8px]">Indent</span>
-							<select
-								class="rt-input h-8 w-full px-2 text-[9px]"
-								value={queryToolingStore.format.indentSize}
-								onchange={(event) => {
+							<FilterCombobox
+								options={indentSizeOptions}
+								value={String(queryToolingStore.format.indentSize)}
+								onChange={(value) => {
 									queryToolingStore.updateFormat({
-										indentSize: Number(event.currentTarget.value) as 2 | 4
+										indentSize: Number(value) as 2 | 4
 									});
 									onChanged();
 								}}
-							>
-								<option value="2">2 spaces</option>
-								<option value="4">4 spaces</option>
-							</select>
+								searchable={false}
+								triggerClass="h-8 px-2 text-[9px]"
+								id="query-tooling-indent-size"
+							/>
 						</label>
 					</div>
 				</section>

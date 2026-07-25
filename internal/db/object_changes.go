@@ -112,8 +112,11 @@ func (s *Service) ApplyDatabaseObjectChange(
 		)
 	}
 
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[database.ObjectChangeResult]()
+		}
 		return serviceError[database.ObjectChangeResult](err.Error())
 	}
 	defer release()

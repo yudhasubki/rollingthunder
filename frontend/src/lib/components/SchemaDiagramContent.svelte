@@ -18,7 +18,11 @@
 		Plus,
 		RefreshCw,
 		Table2,
-		Workflow
+		Workflow,
+		Download,
+		GripVertical,
+		Search,
+		ChevronsUpDown
 	} from 'lucide-svelte';
 
 	interface Props {
@@ -69,23 +73,50 @@
 	let totalCount = $state(0);
 	let zoom = $state(0.9);
 	let viewport: HTMLDivElement;
+	let searchQuery = $state('');
+	let showAllColumns = $state(false);
+	let tablePositions = $state<Record<string, { x: number; y: number }>>({});
+	let highlightedTable = $state('');
+	let dragging:
+		| {
+				table: string;
+				startX: number;
+				startY: number;
+				originX: number;
+				originY: number;
+		  }
+		| undefined;
+	const layoutStorageKey = $derived(`rollingthunder.diagram-layout:${connectionId}:${schema}`);
+	const visibleTables = $derived(
+		searchQuery.trim()
+			? tables.filter((table) =>
+					table.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+				)
+			: tables
+	);
 
 	const positionedTables = $derived.by<PositionedTable[]>(() => {
 		const rowBottoms: number[] = [];
 
-		return tables.map((table, index) => {
+		return visibleTables.map((table, index) => {
 			const column = index % columnsPerRow;
 			const row = Math.floor(index / columnsPerRow);
-			const visibleColumns = table.columns.slice(0, 8);
+			const visibleColumns = showAllColumns ? table.columns : table.columns.slice(0, 8);
 			const hiddenColumnCount = Math.max(0, table.columns.length - visibleColumns.length);
 			const height = 56 + visibleColumns.length * columnHeight + (hiddenColumnCount > 0 ? 27 : 0);
 			const previousRowBottom = row === 0 ? canvasPadding : rowBottoms[row - 1] + verticalGap;
-			const y = previousRowBottom;
+			const automatic = {
+				x: canvasPadding + column * (nodeWidth + horizontalGap),
+				y: previousRowBottom
+			};
+			const saved = tablePositions[table.name];
+			const x = saved?.x ?? automatic.x;
+			const y = saved?.y ?? automatic.y;
 			rowBottoms[row] = Math.max(rowBottoms[row] || 0, y + height);
 
 			return {
 				...table,
-				x: canvasPadding + column * (nodeWidth + horizontalGap),
+				x,
 				y,
 				height,
 				visibleColumns,
@@ -97,9 +128,9 @@
 	const canvasWidth = $derived(
 		Math.max(
 			920,
-			canvasPadding * 2 +
-				Math.min(columnsPerRow, Math.max(positionedTables.length, 1)) * nodeWidth +
-				(Math.min(columnsPerRow, Math.max(positionedTables.length, 1)) - 1) * horizontalGap
+			positionedTables.length
+				? Math.max(...positionedTables.map((table) => table.x + nodeWidth)) + canvasPadding
+				: 920
 		)
 	);
 
@@ -160,8 +191,152 @@
 	});
 
 	onMount(() => {
+		loadSavedLayout();
 		void loadDiagram();
 	});
+
+	function loadSavedLayout() {
+		try {
+			const raw = localStorage.getItem(layoutStorageKey);
+			if (!raw) return;
+			const parsed = JSON.parse(raw);
+			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+			const sanitized: Record<string, { x: number; y: number }> = {};
+			for (const [name, position] of Object.entries(parsed)) {
+				if (
+					!name ||
+					name.length > 256 ||
+					!position ||
+					typeof position !== 'object' ||
+					Array.isArray(position)
+				) {
+					continue;
+				}
+				const candidate = position as { x?: unknown; y?: unknown };
+				if (
+					typeof candidate.x !== 'number' ||
+					typeof candidate.y !== 'number' ||
+					!Number.isFinite(candidate.x) ||
+					!Number.isFinite(candidate.y) ||
+					candidate.x < 0 ||
+					candidate.y < 0 ||
+					candidate.x > 1_000_000 ||
+					candidate.y > 1_000_000
+				) {
+					continue;
+				}
+				sanitized[name] = {
+					x: Math.round(candidate.x),
+					y: Math.round(candidate.y)
+				};
+			}
+			tablePositions = sanitized;
+		} catch {
+			tablePositions = {};
+		}
+	}
+
+	function saveLayout() {
+		try {
+			if (Object.keys(tablePositions).length === 0) {
+				localStorage.removeItem(layoutStorageKey);
+			} else {
+				localStorage.setItem(layoutStorageKey, JSON.stringify(tablePositions));
+			}
+		} catch {
+			// Layout persistence is optional when browser storage is unavailable.
+		}
+	}
+
+	function resetLayout() {
+		tablePositions = {};
+		saveLayout();
+		void tick().then(fitDiagram);
+		updateStatus('Schema diagram layout reset', 'success');
+	}
+
+	function startTableDrag(event: PointerEvent, table: PositionedTable) {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+		dragging = {
+			table: table.name,
+			startX: event.clientX,
+			startY: event.clientY,
+			originX: table.x,
+			originY: table.y
+		};
+		(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+	}
+
+	function moveTable(event: PointerEvent) {
+		if (!dragging) return;
+		const x = Math.max(16, Math.round(dragging.originX + (event.clientX - dragging.startX) / zoom));
+		const y = Math.max(16, Math.round(dragging.originY + (event.clientY - dragging.startY) / zoom));
+		tablePositions = {
+			...tablePositions,
+			[dragging.table]: { x, y }
+		};
+	}
+
+	function finishTableDrag() {
+		if (!dragging) return;
+		dragging = undefined;
+		saveLayout();
+	}
+
+	function escapeXML(value: string): string {
+		return value
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&apos;');
+	}
+
+	function exportDiagramSVG() {
+		const styles = getComputedStyle(document.documentElement);
+		const color = (token: string, fallback: string) =>
+			escapeXML(styles.getPropertyValue(token).trim() || fallback);
+		const palette = {
+			background: color('--background', 'whitesmoke'),
+			foreground: color('--foreground', 'black'),
+			muted: color('--muted-foreground', 'gray'),
+			border: color('--border', 'lightgray'),
+			raised: color('--surface-raised', 'white'),
+			sunken: color('--surface-sunken', 'whitesmoke')
+		};
+		const relationSVG = relations
+			.map(
+				(relation) =>
+					`<path d="${relation.path}" fill="none" stroke="${palette.muted}" stroke-width="1.5"/>`
+			)
+			.join('');
+		const tableSVG = positionedTables
+			.map((table) => {
+				const rows = table.visibleColumns
+					.map((column, index) => {
+						const y = table.y + 75 + index * columnHeight;
+						const marker = column.is_primary
+							? 'PK'
+							: getForeignRelation(column, schema)
+								? 'FK'
+								: '';
+						return `<text x="${table.x + 12}" y="${y}" font-family="monospace" font-size="9" fill="${palette.muted}">${marker}</text><text x="${table.x + 36}" y="${y}" font-family="monospace" font-size="10" fill="${palette.foreground}">${escapeXML(column.name)}</text><text x="${table.x + nodeWidth - 10}" y="${y}" text-anchor="end" font-family="monospace" font-size="8" fill="${palette.muted}">${escapeXML(getColumnTypeLabel(column))}</text>`;
+					})
+					.join('');
+				return `<g><rect x="${table.x}" y="${table.y}" width="${nodeWidth}" height="${table.height}" rx="8" fill="${palette.raised}" stroke="${palette.border}"/><rect x="${table.x}" y="${table.y}" width="${nodeWidth}" height="56" rx="8" fill="${palette.sunken}"/><text x="${table.x + 14}" y="${table.y + 33}" font-family="sans-serif" font-size="12" font-weight="700" fill="${palette.foreground}">${escapeXML(table.name)}</text>${rows}</g>`;
+			})
+			.join('');
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}"><rect width="100%" height="100%" fill="${palette.background}"/>${relationSVG}${tableSVG}</svg>`;
+		const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `${schema || 'schema'}-diagram.svg`;
+		link.click();
+		URL.revokeObjectURL(url);
+		updateStatus('Schema diagram exported as SVG', 'success');
+	}
 
 	async function loadDiagram() {
 		loading = true;
@@ -240,6 +415,12 @@
 	}
 </script>
 
+<svelte:window
+	onpointermove={moveTable}
+	onpointerup={finishTableDrag}
+	onpointercancel={finishTableDrag}
+/>
+
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)]">
 	<div
 		class="flex h-11 shrink-0 items-center justify-between border-b bg-[var(--surface-raised)] px-3"
@@ -252,7 +433,7 @@
 				<div class="flex items-center gap-2">
 					<h2 class="truncate text-[11px] font-bold">{schema} schema diagram</h2>
 					<span class="text-muted-foreground rounded border px-1.5 py-0.5 text-[8px] font-semibold">
-						{tables.length} tables
+						{positionedTables.length}{searchQuery ? ` / ${tables.length}` : ''} tables
 					</span>
 					<span class="text-muted-foreground rounded border px-1.5 py-0.5 text-[8px] font-semibold">
 						{relations.length} relations
@@ -265,6 +446,17 @@
 		</div>
 
 		<div class="flex items-center gap-1">
+			<div class="relative mr-1">
+				<Search
+					class="text-muted-foreground pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2"
+				/>
+				<input
+					type="search"
+					class="rt-input h-7 w-36 pr-2 pl-7 text-[9px]"
+					placeholder="Find table"
+					bind:value={searchQuery}
+				/>
+			</div>
 			<button
 				type="button"
 				class="rt-toolbar-button h-7 w-7"
@@ -294,6 +486,33 @@
 				aria-label="Fit diagram"
 			>
 				<Maximize2 class="h-3.5 w-3.5" />
+			</button>
+			<button
+				type="button"
+				class="rt-toolbar-button h-7 w-7"
+				onclick={() => (showAllColumns = !showAllColumns)}
+				title={showAllColumns ? 'Collapse long tables' : 'Show every column'}
+				aria-label={showAllColumns ? 'Collapse long tables' : 'Show every column'}
+			>
+				<ChevronsUpDown class="h-3.5 w-3.5" />
+			</button>
+			<button
+				type="button"
+				class="rt-toolbar-button h-7 px-2 text-[8px] font-semibold"
+				onclick={resetLayout}
+				title="Reset table positions"
+			>
+				Auto layout
+			</button>
+			<button
+				type="button"
+				class="rt-toolbar-button h-7 w-7"
+				onclick={exportDiagramSVG}
+				disabled={positionedTables.length === 0}
+				title="Export visible diagram as SVG"
+				aria-label="Export diagram as SVG"
+			>
+				<Download class="h-3.5 w-3.5" />
 			</button>
 			<div class="mx-1 h-4 border-l"></div>
 			<button
@@ -356,12 +575,18 @@
 					</button>
 				</div>
 			</div>
-		{:else if tables.length === 0}
+		{:else if tables.length === 0 || positionedTables.length === 0}
 			<div class="absolute inset-0 flex items-center justify-center">
 				<div class="text-muted-foreground text-center">
 					<Database class="mx-auto h-7 w-7 opacity-50" />
-					<p class="mt-2 text-[11px] font-bold">No tables in {schema}</p>
-					<p class="mt-1 text-[9px]">Create a table to start mapping this schema.</p>
+					<p class="mt-2 text-[11px] font-bold">
+						{tables.length === 0 ? `No tables in ${schema}` : 'No matching tables'}
+					</p>
+					<p class="mt-1 text-[9px]">
+						{tables.length === 0
+							? 'Create a table to start mapping this schema.'
+							: 'Clear the table search to restore the full diagram.'}
+					</p>
 				</div>
 			</div>
 		{:else}
@@ -394,7 +619,16 @@
 								d={relation.path}
 								fill="none"
 								stroke="color-mix(in oklab, var(--primary) 72%, var(--border))"
-								stroke-width="1.5"
+								stroke-width={highlightedTable &&
+								(relation.sourceTable === highlightedTable ||
+									relation.targetTable === highlightedTable)
+									? 2.5
+									: 1.5}
+								opacity={highlightedTable &&
+								relation.sourceTable !== highlightedTable &&
+								relation.targetTable !== highlightedTable
+									? 0.18
+									: 1}
 								marker-end="url(#relation-arrow)"
 							/>
 							<circle cx={relation.startX} cy={relation.startY} r="3" fill="var(--primary)" />
@@ -403,28 +637,46 @@
 
 					{#each positionedTables as table (table.name)}
 						<article
-							class="absolute z-10 overflow-hidden rounded-lg border bg-[var(--surface-raised)] shadow-md"
+							class="absolute z-10 overflow-hidden rounded-lg border bg-[var(--surface-raised)] shadow-md transition-shadow {highlightedTable ===
+							table.name
+								? 'ring-primary/30 ring-2'
+								: ''}"
 							style="left: {table.x}px; top: {table.y}px; width: {nodeWidth}px; height: {table.height}px;"
+							onpointerenter={() => (highlightedTable = table.name)}
+							onpointerleave={() => {
+								if (!dragging) highlightedTable = '';
+							}}
 						>
-							<button
-								type="button"
-								class="flex h-14 w-full items-center gap-2.5 border-b bg-[var(--surface-sunken)] px-3 text-left hover:bg-[var(--surface-hover)]"
-								onclick={() => openTable(table.name)}
-								title="Open {schema}.{table.name}"
-							>
-								<span
-									class="bg-primary/10 text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+							<div class="flex h-14 items-center border-b bg-[var(--surface-sunken)]">
+								<button
+									type="button"
+									class="text-muted-foreground flex h-full w-7 shrink-0 cursor-grab items-center justify-center hover:text-[var(--foreground)] active:cursor-grabbing"
+									onpointerdown={(event) => startTableDrag(event, table)}
+									title="Drag table"
+									aria-label="Drag {table.name}"
 								>
-									<Table2 class="h-3.5 w-3.5" />
-								</span>
-								<span class="min-w-0 flex-1">
-									<span class="block truncate text-[10px] font-bold">{table.name}</span>
-									<span class="text-muted-foreground mt-0.5 block text-[8px]"
-										>{table.columns.length} columns</span
+									<GripVertical class="h-3.5 w-3.5" />
+								</button>
+								<button
+									type="button"
+									class="flex h-full min-w-0 flex-1 items-center gap-2.5 pr-3 text-left hover:bg-[var(--surface-hover)]"
+									onclick={() => openTable(table.name)}
+									title="Open {schema}.{table.name}"
+								>
+									<span
+										class="bg-primary/10 text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
 									>
-								</span>
-								<Columns3 class="text-muted-foreground h-3.5 w-3.5" />
-							</button>
+										<Table2 class="h-3.5 w-3.5" />
+									</span>
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-[10px] font-bold">{table.name}</span>
+										<span class="text-muted-foreground mt-0.5 block text-[8px]"
+											>{table.columns.length} columns</span
+										>
+									</span>
+									<Columns3 class="text-muted-foreground h-3.5 w-3.5" />
+								</button>
+							</div>
 
 							<div>
 								{#each table.visibleColumns as column (column.name)}

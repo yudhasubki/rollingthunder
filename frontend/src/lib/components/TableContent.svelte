@@ -32,6 +32,7 @@
 		type FilterOperator
 	} from '$lib/table/filters';
 	import { updateStatus } from '$lib/stores/status.svelte';
+	import { connectionStore } from '$lib/stores/connectionStore.svelte';
 	import {
 		CountCollectionData,
 		GetCollectionData,
@@ -86,6 +87,14 @@
 	let capabilities = $state<database.Capabilities | null>(null);
 	let changeIntent = $state<StructuralChangeIntent | null>(null);
 	let changeReference = $state<database.ObjectReference | null>(null);
+	const writeBlocked = $derived(
+		Boolean(
+			connectionStore.connections.find((connection) => connection.id === tab.connectionId)
+				?.readOnly &&
+				!connectionStore.connections.find((connection) => connection.id === tab.connectionId)
+					?.writeUnlocked
+		)
+	);
 	const primaryKeyCount = $derived(columns.filter((column) => column.is_primary).length);
 	const relationCount = $derived(
 		columns.filter((column) => getColumnRelation(column) !== null).length
@@ -506,6 +515,13 @@
 		intent: StructuralChangeIntent,
 		reference: database.ObjectReference | null = null
 	) {
+		if (writeBlocked) {
+			updateStatus(
+				'This connection is read-only. Temporarily unlock writes from the connection menu first.',
+				'info'
+			);
+			return;
+		}
 		changeReference = reference;
 		changeIntent = intent;
 	}
@@ -1077,6 +1093,7 @@
 					onExport={openExportDialog}
 					onSelectionChange={handleExportSelection}
 					{exporting}
+					readonly={writeBlocked}
 					detailTitle={tab.schema && tab.table ? `${tab.schema}.${tab.table}` : 'Table row'}
 					loading={isLoadingData}
 					loadingTitle={dataLoadingTitle}

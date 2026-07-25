@@ -98,7 +98,7 @@ func TestSavedConnectionStoresPasswordOutsideProfileFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "super-secret-value") ||
-		!strings.Contains(string(data), `"version": 4`) {
+		!strings.Contains(string(data), `"version": 5`) {
 		t.Fatalf("profile file = %s", data)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -331,7 +331,7 @@ func TestLegacyPlaintextPasswordMigratesBeforeProfileRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(migrated), "legacy-password") ||
-		!strings.Contains(string(migrated), `"version": 4`) {
+		!strings.Contains(string(migrated), `"version": 5`) {
 		t.Fatalf("migrated profile file = %s", migrated)
 	}
 }
@@ -355,7 +355,7 @@ func TestLegacyProfileWithoutPasswordStillMigratesToVersionedEnvelope(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(migrated), `"version": 4`) {
+	if !strings.Contains(string(migrated), `"version": 5`) {
 		t.Fatalf("legacy profile was not versioned: %s", migrated)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -438,15 +438,48 @@ func TestVersionThreeProfileMigratesToSemanticEnvironment(t *testing.T) {
 	if config.Color != "" {
 		t.Fatalf("legacy color was exposed: %q", config.Color)
 	}
+	if config.AccessMode != database.ConnectionAccessReadWrite {
+		t.Fatalf("access mode = %q", config.AccessMode)
+	}
 	migrated, err := os.ReadFile(service.connectionStorage.FilePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(migrated)
-	if !strings.Contains(text, `"version": 4`) ||
+	if !strings.Contains(text, `"version": 5`) ||
 		!strings.Contains(text, `"environment": "unclassified"`) ||
+		!strings.Contains(text, `"accessMode": "read-write"`) ||
 		strings.Contains(text, "#ff00ff") {
 		t.Fatalf("migrated profile file = %s", migrated)
+	}
+}
+
+func TestVersionFourProductionProfileDefaultsToReadOnly(t *testing.T) {
+	service, _ := credentialTestService(t)
+	legacy := `{"version":4,"connections":[{"id":"production","config":{"name":"Production","driver":"postgres","environment":"production","folder":"  Core  ","tags":["Critical","critical","Billing"]}}]}`
+	if err := os.WriteFile(
+		service.connectionStorage.FilePath,
+		[]byte(legacy),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := service.GetSavedConnections()
+	if len(loaded.Errors) > 0 || len(loaded.Data) != 1 {
+		t.Fatalf("GetSavedConnections() = %+v", loaded)
+	}
+	config := loaded.Data[0].Config
+	if config.AccessMode != database.ConnectionAccessReadOnly {
+		t.Fatalf("access mode = %q", config.AccessMode)
+	}
+	if config.Folder != "Core" {
+		t.Fatalf("folder = %q", config.Folder)
+	}
+	if len(config.Tags) != 2 ||
+		config.Tags[0] != "Critical" ||
+		config.Tags[1] != "Billing" {
+		t.Fatalf("tags = %#v", config.Tags)
 	}
 }
 

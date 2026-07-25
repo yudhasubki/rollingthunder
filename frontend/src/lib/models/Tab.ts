@@ -14,6 +14,10 @@ export interface Tab {
 	parentSchema?: string;
 	parentName?: string;
 	sql?: string;
+	sqlFileToken?: string;
+	sqlFilePath?: string;
+	sqlFileName?: string;
+	sqlFileSavedContent?: string;
 	savedQueryId?: string;
 	status?: string;
 	level?: 'info' | 'warn' | 'error';

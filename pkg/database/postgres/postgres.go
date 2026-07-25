@@ -148,6 +148,7 @@ func (p *Postgres) Connect(ctx context.Context) error {
 
 	p.pool = pool
 	p.conn = sqlx.NewDb(stdlib.OpenDBFromPool(pool), "pgx")
+	p.ctx = context.WithoutCancel(ctx)
 	return nil
 }
 
@@ -317,6 +318,7 @@ func (p *Postgres) getCollectionStructures(table database.Table) (Columns, error
 			c.is_identity,
 			c.identity_generation,
 			c.is_generated,
+			c.generation_expression,
 			EXISTS (
 				SELECT 1
 				FROM information_schema.table_constraints tc
@@ -357,14 +359,14 @@ func (p *Postgres) GetCollectionStructures(table database.Table) (database.Struc
 	out := make(database.Structures, 0, len(rows))
 	for _, r := range rows {
 		info := database.Structure{
-			Name:      r.ColumnName,
-			Length:    r.MaxLength,
-			Nullable:  r.IsNullable == "YES",
-			Default:   r.ColumnDefault,
-			IsAutoInc: isAutoIncrementColumn(r),
+			Name:     r.ColumnName,
+			Length:   r.MaxLength,
+			Nullable: r.IsNullable == "YES",
+			Default:  r.ColumnDefault,
 		}
 
 		applyColumnType(&info, r)
+		applyColumnGeneration(&info, r)
 		applyColumnConstraints(&info, r.IsPrimary, constraints)
 		out = append(out, info)
 	}
@@ -392,6 +394,23 @@ func applyColumnType(info *database.Structure, column Column) {
 		if column.UDTName != "" {
 			typeName := column.UDTName
 			info.TypeName = &typeName
+		}
+	}
+}
+
+func applyColumnGeneration(info *database.Structure, column Column) {
+	info.IsAutoInc = isAutoIncrementColumn(column)
+	info.IsGenerated = strings.EqualFold(column.IsGenerated, "ALWAYS")
+	switch {
+	case column.Generation != nil &&
+		strings.TrimSpace(*column.Generation) != "":
+		info.Generation = strings.TrimSpace(*column.Generation)
+	case strings.EqualFold(column.IsIdentity, "YES"):
+		info.Generation = "IDENTITY"
+		if column.IdentityMode != nil &&
+			strings.TrimSpace(*column.IdentityMode) != "" {
+			info.Generation += " " +
+				strings.ToUpper(strings.TrimSpace(*column.IdentityMode))
 		}
 	}
 }
@@ -487,9 +506,9 @@ func structuresFromColumns(columns Columns) database.Structures {
 			Default:        column.ColumnDefault,
 			IsPrimary:      column.IsPrimary,
 			IsPrimaryLabel: primaryLabel,
-			IsAutoInc:      isAutoIncrementColumn(column),
 		}
 		applyColumnType(&structure, column)
+		applyColumnGeneration(&structure, column)
 		structures = append(structures, structure)
 	}
 	return structures
@@ -936,13 +955,11 @@ func (p *Postgres) ExportTable(
 
 // CreateTable creates a new table in the database
 func (p *Postgres) CreateTable(table database.Table, columns []database.ColumnDefinition) error {
-	// Validate table name
 	if strings.TrimSpace(table.Name) == "" {
 		return errors.New("table name is required")
 	}
-	// Validate schema
-	schema := table.Schema
-	if strings.TrimSpace(schema) == "" {
+	schema := strings.TrimSpace(table.Schema)
+	if schema == "" {
 		schema = "public"
 	}
 
@@ -950,23 +967,38 @@ func (p *Postgres) CreateTable(table database.Table, columns []database.ColumnDe
 		return errors.New("at least one column is required")
 	}
 
-	var colDefs []string
-	var primaryKeys []string
+	colDefs := make([]string, 0, len(columns)+1)
+	primaryKeys := make([]string, 0)
 
 	for _, col := range columns {
-		// Skip columns with empty names
-		if strings.TrimSpace(col.Name) == "" {
+		name := strings.TrimSpace(col.Name)
+		dataType := strings.TrimSpace(col.Type)
+		if name == "" {
 			continue
 		}
-
-		def := fmt.Sprintf(`"%s" %s`, strings.TrimSpace(col.Name), col.Type)
+		if dataType == "" {
+			return fmt.Errorf("data type is required for column %q", name)
+		}
+		if err := database.ValidateDDLFragment(
+			dataType,
+			"column data type",
+		); err != nil {
+			return err
+		}
+		def := quotePostgresIdentifier(name) + " " + dataType
 
 		if !col.Nullable {
 			def += " NOT NULL"
 		}
 
-		if col.Default != "" {
-			def += fmt.Sprintf(" DEFAULT %s", col.Default)
+		if strings.TrimSpace(col.Default) != "" {
+			if err := database.ValidateDDLFragment(
+				col.Default,
+				"column default",
+			); err != nil {
+				return err
+			}
+			def += " DEFAULT " + strings.TrimSpace(col.Default)
 		}
 
 		if col.Unique {
@@ -974,23 +1006,29 @@ func (p *Postgres) CreateTable(table database.Table, columns []database.ColumnDe
 		}
 
 		if col.PrimaryKey {
-			primaryKeys = append(primaryKeys, fmt.Sprintf(`"%s"`, strings.TrimSpace(col.Name)))
+			primaryKeys = append(
+				primaryKeys,
+				quotePostgresIdentifier(name),
+			)
 		}
 
 		colDefs = append(colDefs, def)
 	}
 
-	// Validate we have at least one valid column
 	if len(colDefs) == 0 {
 		return errors.New("at least one column with a name is required")
 	}
 
-	// Add primary key constraint if any
 	if len(primaryKeys) > 0 {
-		colDefs = append(colDefs, fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(primaryKeys, ", ")))
+		colDefs = append(
+			colDefs,
+			"PRIMARY KEY ("+strings.Join(primaryKeys, ", ")+")",
+		)
 	}
 
-	query := fmt.Sprintf(`CREATE TABLE "%s"."%s" (%s)`, schema, strings.TrimSpace(table.Name), strings.Join(colDefs, ", "))
+	query := "CREATE TABLE " +
+		quotePostgresQualifiedIdentifier(schema, strings.TrimSpace(table.Name)) +
+		" (" + strings.Join(colDefs, ", ") + ")"
 
 	_, err := p.conn.Exec(query)
 	if err != nil {
@@ -1006,12 +1044,13 @@ func (p *Postgres) DropTable(table database.Table) error {
 		return errors.New("table name is required")
 	}
 
-	schema := table.Schema
-	if strings.TrimSpace(schema) == "" {
+	schema := strings.TrimSpace(table.Schema)
+	if schema == "" {
 		schema = "public"
 	}
 
-	query := fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schema, strings.TrimSpace(table.Name))
+	query := "DROP TABLE IF EXISTS " +
+		quotePostgresQualifiedIdentifier(schema, strings.TrimSpace(table.Name))
 	_, err := p.conn.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to drop table: %v", err)
@@ -1026,12 +1065,14 @@ func (p *Postgres) TruncateTable(table database.Table) error {
 		return errors.New("table name is required")
 	}
 
-	schema := table.Schema
-	if strings.TrimSpace(schema) == "" {
+	schema := strings.TrimSpace(table.Schema)
+	if schema == "" {
 		schema = "public"
 	}
 
-	query := fmt.Sprintf(`TRUNCATE TABLE "%s"."%s" CASCADE`, schema, strings.TrimSpace(table.Name))
+	query := "TRUNCATE TABLE " +
+		quotePostgresQualifiedIdentifier(schema, strings.TrimSpace(table.Name)) +
+		" CASCADE"
 	_, err := p.conn.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to truncate table: %v", err)
@@ -1110,8 +1151,8 @@ func (p *Postgres) GetTableDDL(table database.Table) (string, error) {
 		return "", errors.New("table name is required")
 	}
 
-	schema := table.Schema
-	if strings.TrimSpace(schema) == "" {
+	schema := strings.TrimSpace(table.Schema)
+	if schema == "" {
 		schema = "public"
 	}
 
@@ -1125,42 +1166,57 @@ func (p *Postgres) GetTableDDL(table database.Table) (string, error) {
 		return "", errors.New("table has no columns")
 	}
 
-	var ddl strings.Builder
-	ddl.WriteString(fmt.Sprintf("CREATE TABLE \"%s\".\"%s\" (\n", schema, table.Name))
-
-	var primaryKeys []string
-	for i, col := range columns {
-		// Column name and type
-		ddl.WriteString(fmt.Sprintf("    \"%s\" %s", col.Name, col.DataType))
-
-		// NOT NULL constraint
+	definitions := make([]string, 0, len(columns)+1)
+	primaryKeys := make([]string, 0)
+	for _, col := range columns {
+		definition := quotePostgresIdentifier(col.Name) + " " + col.DataType
+		switch {
+		case col.IsGenerated:
+			if strings.TrimSpace(col.Generation) == "" {
+				return "", fmt.Errorf(
+					"generated column %q has no stored expression",
+					col.Name,
+				)
+			}
+			definition += " GENERATED ALWAYS AS (" +
+				strings.TrimSpace(col.Generation) + ") STORED"
+		case strings.HasPrefix(col.Generation, "IDENTITY"):
+			mode := strings.TrimSpace(strings.TrimPrefix(
+				col.Generation,
+				"IDENTITY",
+			))
+			if mode == "" {
+				mode = "BY DEFAULT"
+			}
+			definition += " GENERATED " + mode + " AS IDENTITY"
+		}
 		if !col.Nullable {
-			ddl.WriteString(" NOT NULL")
+			definition += " NOT NULL"
 		}
-
-		// DEFAULT value (skip auto-increment defaults)
-		if col.Default != nil && *col.Default != "" && !col.IsAutoInc {
-			ddl.WriteString(fmt.Sprintf(" DEFAULT %s", *col.Default))
+		if col.Default != nil &&
+			strings.TrimSpace(*col.Default) != "" &&
+			!strings.HasPrefix(col.Generation, "IDENTITY") &&
+			!col.IsGenerated {
+			definition += " DEFAULT " + strings.TrimSpace(*col.Default)
 		}
-
-		// Track primary keys
+		if col.IsUnique && !col.IsPrimary {
+			definition += " UNIQUE"
+		}
+		definitions = append(definitions, definition)
 		if col.IsPrimary {
-			primaryKeys = append(primaryKeys, fmt.Sprintf("\"%s\"", col.Name))
+			primaryKeys = append(
+				primaryKeys,
+				quotePostgresIdentifier(col.Name),
+			)
 		}
-
-		// Add comma if not last column and no primary key following
-		if i < len(columns)-1 || len(primaryKeys) > 0 {
-			ddl.WriteString(",")
-		}
-		ddl.WriteString("\n")
 	}
-
-	// Add PRIMARY KEY constraint
 	if len(primaryKeys) > 0 {
-		ddl.WriteString(fmt.Sprintf("    PRIMARY KEY (%s)\n", strings.Join(primaryKeys, ", ")))
+		definitions = append(
+			definitions,
+			"PRIMARY KEY ("+strings.Join(primaryKeys, ", ")+")",
+		)
 	}
-
-	ddl.WriteString(");")
-
-	return ddl.String(), nil
+	return "CREATE TABLE " +
+		quotePostgresQualifiedIdentifier(schema, strings.TrimSpace(table.Name)) +
+		" (\n    " + strings.Join(definitions, ",\n    ") + "\n);", nil
 }

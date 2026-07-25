@@ -18,20 +18,21 @@ import (
 
 // Connection represents an active database connection
 type Connection struct {
-	ID           string           `json:"id"`
-	ProfileID    string           `json:"profileId,omitempty"`
-	Name         string           `json:"name"`
-	Driver       database.Driver  `json:"-"`
-	Config       database.Config  `json:"-"`
-	Tunnel       connectionTunnel `json:"-"`
-	EndpointHost string           `json:"-"`
-	EndpointPort string           `json:"-"`
-	Environment  string           `json:"environment"`
-	ConnectedAt  time.Time        `json:"connectedAt"`
-	mu           sync.RWMutex
-	healthMu     sync.RWMutex
-	health       database.ConnectionHealth
-	closed       bool
+	ID            string           `json:"id"`
+	ProfileID     string           `json:"profileId,omitempty"`
+	Name          string           `json:"name"`
+	Driver        database.Driver  `json:"-"`
+	Config        database.Config  `json:"-"`
+	Tunnel        connectionTunnel `json:"-"`
+	EndpointHost  string           `json:"-"`
+	EndpointPort  string           `json:"-"`
+	Environment   string           `json:"environment"`
+	ConnectedAt   time.Time        `json:"connectedAt"`
+	mu            sync.RWMutex
+	healthMu      sync.RWMutex
+	health        database.ConnectionHealth
+	writeUnlocked bool
+	closed        bool
 }
 
 // effectiveConfig keeps the profile endpoint available to the UI while
@@ -53,16 +54,19 @@ func (connection *Connection) effectiveConfig() database.Config {
 
 // ConnectionInfo is the public info about a connection (without driver)
 type ConnectionInfo struct {
-	ID          string                    `json:"id"`
-	ProfileID   string                    `json:"profileId,omitempty"`
-	Name        string                    `json:"name"`
-	Driver      string                    `json:"driver"`
-	Database    string                    `json:"database"`
-	Host        string                    `json:"host"`
-	Environment string                    `json:"environment"`
-	SSHTunnel   bool                      `json:"sshTunnel"`
-	IsActive    bool                      `json:"isActive"`
-	Health      database.ConnectionHealth `json:"health"`
+	ID            string                    `json:"id"`
+	ProfileID     string                    `json:"profileId,omitempty"`
+	Name          string                    `json:"name"`
+	Driver        string                    `json:"driver"`
+	Database      string                    `json:"database"`
+	Host          string                    `json:"host"`
+	Environment   string                    `json:"environment"`
+	AccessMode    string                    `json:"accessMode"`
+	ReadOnly      bool                      `json:"readOnly"`
+	WriteUnlocked bool                      `json:"writeUnlocked"`
+	SSHTunnel     bool                      `json:"sshTunnel"`
+	IsActive      bool                      `json:"isActive"`
+	Health        database.ConnectionHealth `json:"health"`
 }
 
 type Service struct {
@@ -75,10 +79,13 @@ type Service struct {
 	sqliteSaveDialog    saveFileDialogFunc
 	importOpenDialog    openFileDialogFunc
 	restoreOpenDialog   openFileDialogFunc
+	sqlOpenDialog       openFileDialogFunc
 	importFiles         map[string]importFileGrant
 	importFileMu        sync.RWMutex
 	restoreFiles        map[string]restoreFileGrant
 	restoreFileMu       sync.RWMutex
+	sqlFiles            map[string]sqlFileGrant
+	sqlFileMu           sync.RWMutex
 	exportJobs          map[string]*exportJob
 	exportMu            sync.RWMutex
 	maintenanceJobs     map[string]*maintenanceJob
@@ -131,8 +138,10 @@ func NewServiceWithDiagnosticsAndVersion(
 		sqliteSaveDialog:   defaultSaveFileDialog,
 		importOpenDialog:   defaultOpenFileDialog,
 		restoreOpenDialog:  defaultOpenFileDialog,
+		sqlOpenDialog:      defaultOpenFileDialog,
 		importFiles:        make(map[string]importFileGrant),
 		restoreFiles:       make(map[string]restoreFileGrant),
+		sqlFiles:           make(map[string]sqlFileGrant),
 		exportJobs:         make(map[string]*exportJob),
 		maintenanceJobs:    make(map[string]*maintenanceJob),
 		lookPath:           defaultExecutableLookup,
@@ -454,8 +463,11 @@ func (s *Service) GetCollectionData(connectionID string, table database.Table) r
 
 // InsertRow inserts a new row into the table
 func (s *Service) InsertRow(connectionID string, table database.Table, data map[string]interface{}) response.BaseResponse[bool] {
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[bool]()
+		}
 		return serviceError[bool](err.Error())
 	}
 	defer release()
@@ -472,8 +484,11 @@ func (s *Service) InsertRow(connectionID string, table database.Table, data map[
 
 // UpdateRow updates an existing row in the table
 func (s *Service) UpdateRow(connectionID string, table database.Table, data map[string]interface{}, primaryKey string) response.BaseResponse[bool] {
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[bool]()
+		}
 		return serviceError[bool](err.Error())
 	}
 	defer release()
@@ -490,8 +505,11 @@ func (s *Service) UpdateRow(connectionID string, table database.Table, data map[
 
 // DeleteRow deletes a row from the table
 func (s *Service) DeleteRow(connectionID string, table database.Table, primaryKey string, primaryValue interface{}) response.BaseResponse[bool] {
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[bool]()
+		}
 		return serviceError[bool](err.Error())
 	}
 	defer release()
@@ -508,8 +526,11 @@ func (s *Service) DeleteRow(connectionID string, table database.Table, primaryKe
 
 // CreateTable creates a new table in the database
 func (s *Service) CreateTable(connectionID string, table database.Table, columns []database.ColumnDefinition) response.BaseResponse[bool] {
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[bool]()
+		}
 		return serviceError[bool](err.Error())
 	}
 	defer release()
@@ -540,8 +561,11 @@ func (s *Service) GetDataTypes(connectionID string) response.BaseResponse[[]data
 
 // DropTable drops a table from the database
 func (s *Service) DropTable(connectionID string, table database.Table) response.BaseResponse[bool] {
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[bool]()
+		}
 		return serviceError[bool](err.Error())
 	}
 	defer release()
@@ -558,8 +582,11 @@ func (s *Service) DropTable(connectionID string, table database.Table) response.
 
 // TruncateTable removes all rows from a table
 func (s *Service) TruncateTable(connectionID string, table database.Table) response.BaseResponse[bool] {
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[bool]()
+		}
 		return serviceError[bool](err.Error())
 	}
 	defer release()
@@ -630,18 +657,22 @@ func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo]
 	snapshots := make([]connectionSnapshot, 0, len(s.connections))
 	for _, conn := range s.connections {
 		conn.mu.RLock()
+		writeAccess := connectionWriteAccessLocked(conn)
 		snapshot := connectionSnapshot{
 			info: ConnectionInfo{
-				ID:          conn.ID,
-				ProfileID:   conn.ProfileID,
-				Name:        conn.Name,
-				Driver:      conn.Config.Driver,
-				Database:    conn.Config.Db,
-				Host:        conn.Config.Host,
-				Environment: conn.Environment,
-				SSHTunnel:   conn.Config.SSHEnabled,
-				IsActive:    conn.ID == activeID,
-				Health:      conn.healthSnapshot(),
+				ID:            conn.ID,
+				ProfileID:     conn.ProfileID,
+				Name:          conn.Name,
+				Driver:        conn.Config.Driver,
+				Database:      conn.Config.Db,
+				Host:          conn.Config.Host,
+				Environment:   conn.Environment,
+				AccessMode:    writeAccess.AccessMode,
+				ReadOnly:      !writeAccess.WriteEnabled,
+				WriteUnlocked: writeAccess.TemporaryUnlock,
+				SSHTunnel:     conn.Config.SSHEnabled,
+				IsActive:      conn.ID == activeID,
+				Health:        conn.healthSnapshot(),
 			},
 			connectedAt: conn.ConnectedAt,
 		}

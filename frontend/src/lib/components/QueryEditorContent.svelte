@@ -18,7 +18,11 @@
 		ListChecks,
 		LocateFixed,
 		Settings2,
-		WandSparkles
+		WandSparkles,
+		FolderOpen,
+		Save,
+		BarChart3,
+		Table2
 	} from 'lucide-svelte';
 	import {
 		BeginTransaction,
@@ -27,8 +31,11 @@
 		ExecuteQuery,
 		ExplainQuery,
 		ExportQueryResults,
-		RollbackTransaction
+		OpenSQLFile,
+		RollbackTransaction,
+		SaveSQLFile
 	} from '$lib/wailsjs/go/db/Service';
+	import { createServiceError } from '$lib/errors/service';
 	import { updateStatus, addConsoleLog } from '$lib/stores/status.svelte';
 	import {
 		addQueryToHistory,
@@ -54,7 +61,7 @@
 		createInitialExportProgress,
 		startExportProgressPolling
 	} from '$lib/export/progress';
-	import { database } from '$lib/wailsjs/go/models';
+	import { database, db } from '$lib/wailsjs/go/models';
 	import type * as Monaco from 'monaco-editor';
 	import { tabsStore } from '$lib/stores/tabs.svelte';
 	import type { Tab } from '$lib/models/Tab';
@@ -62,6 +69,7 @@
 	import QueryVariablesDialog from '$lib/components/query/QueryVariablesDialog.svelte';
 	import SavedQueriesDrawer from '$lib/components/query/SavedQueriesDrawer.svelte';
 	import QueryToolingSettings from '$lib/components/query/QueryToolingSettings.svelte';
+	import QueryResultChart from '$lib/components/query/QueryResultChart.svelte';
 	import { extractQueryVariableNames, type QueryVariableInput } from '$lib/query/variables';
 	import { formatSql, lintSql } from '$lib/sql/tooling';
 	import { queryToolingStore } from '$lib/stores/queryTooling.svelte';
@@ -88,6 +96,13 @@
 	let focusRegistration: Monaco.IDisposable | null = null;
 	let connectionSwitchHandler: (() => void) | null = null;
 	let destroyed = false;
+	let currentSql = $state(tab.sql || '');
+	let sqlFileToken = $state(tab.sqlFileToken || '');
+	let sqlFilePath = $state(tab.sqlFilePath || '');
+	let sqlFileName = $state(tab.sqlFileName || '');
+	let sqlFileSavedContent = $state(tab.sqlFileSavedContent ?? tab.sql ?? '');
+	let sqlFileBusy = $state(false);
+	const sqlFileDirty = $derived(Boolean(sqlFileName) && currentSql !== sqlFileSavedContent);
 
 	let isRunning = $state(false);
 	let queryCancelling = $state(false);
@@ -102,6 +117,7 @@
 	let queryResultLimit = $state(0);
 	let resultPage = $state(0);
 	let resultColumns = $state<database.Structure[]>([]);
+	let resultView = $state<'grid' | 'chart'>('grid');
 	let errorMessage = $state<string>('');
 	let errorCode = $state<string>('');
 	let errorHint = $state<string>('');
@@ -161,8 +177,10 @@
 		completionRegistration = registerSqlCompletionProvider(monaco);
 
 		// Get initial SQL from tab if present
-		const initialSql =
-			tab.sql || '-- Press Ctrl+Space for schema-aware suggestions\n\nSELECT * FROM ';
+		const initialSql = tab.sqlFileToken
+			? (tab.sql ?? '')
+			: tab.sql || '-- Press Ctrl+Space for schema-aware suggestions\n\nSELECT * FROM ';
+		currentSql = initialSql;
 
 		const editorTheme = document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs';
 		const modelUri = monaco.Uri.parse(
@@ -207,7 +225,8 @@
 		});
 
 		contentChangeRegistration = editor.onDidChangeModelContent(() => {
-			tabsStore.updateTab(tab.id, { sql: editor?.getValue() || '' });
+			currentSql = editor?.getValue() || '';
+			tabsStore.updateTab(tab.id, { sql: currentSql });
 			scheduleLint();
 		});
 		focusRegistration = editor.onDidFocusEditorText(() => {
@@ -369,6 +388,69 @@
 		updateStatus('SQL formatted with the active dialect settings', 'success');
 	}
 
+	async function openSQLWorkspaceFile() {
+		if (sqlFileBusy) return;
+		sqlFileBusy = true;
+		try {
+			const response = await OpenSQLFile();
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not open SQL file');
+			}
+			if (!response.data?.token) return;
+			const file = response.data;
+			const newTabID = tabsStore.newQueryTabWithContent(tab.connectionId, file.content, file.name);
+			tabsStore.updateTab(newTabID, {
+				sqlFileToken: file.token,
+				sqlFilePath: file.path,
+				sqlFileName: file.name,
+				sqlFileSavedContent: file.content
+			});
+			updateStatus(`Opened ${file.name}`, 'success');
+		} catch (error: any) {
+			updateStatus(error?.message || 'Could not open SQL file', 'error');
+		} finally {
+			sqlFileBusy = false;
+		}
+	}
+
+	async function saveSQLWorkspaceFile(saveAs = false) {
+		if (sqlFileBusy) return;
+		sqlFileBusy = true;
+		try {
+			const content = editor?.getValue() ?? currentSql;
+			const response = await SaveSQLFile(
+				new db.SaveSQLFileRequest({
+					token: sqlFileToken,
+					content,
+					saveAs,
+					suggestedName: sqlFileName || `${tab.title || 'query'}.sql`
+				})
+			);
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not save SQL file');
+			}
+			if (!response.data?.token) return;
+			const file = response.data;
+			sqlFileToken = file.token;
+			sqlFilePath = file.path;
+			sqlFileName = file.name;
+			sqlFileSavedContent = content;
+			tabsStore.updateTab(tab.id, {
+				title: file.name,
+				sql: content,
+				sqlFileToken: file.token,
+				sqlFilePath: file.path,
+				sqlFileName: file.name,
+				sqlFileSavedContent: content
+			});
+			updateStatus(`Saved ${file.name}`, 'success');
+		} catch (error: any) {
+			updateStatus(error?.message || 'Could not save SQL file', 'error');
+		} finally {
+			sqlFileBusy = false;
+		}
+	}
+
 	function findIdentifierReferences() {
 		if (!editor || !editorModel) return;
 		const position = editor.getPosition();
@@ -431,6 +513,7 @@
 		resultPage = 0;
 		selectedRows = [];
 		selectedRowIndexes = [];
+		resultView = 'grid';
 		executedQuery = result.statement;
 		const columnNames =
 			result.columns?.length > 0
@@ -1031,6 +1114,14 @@
 <svelte:window
 	onkeydown={(event) => {
 		if (event.key === 'Escape' && unsafeQueryPending) cancelUnsafeMutation();
+		if (tabsStore.activeTab?.id !== tab.id || !(event.metaKey || event.ctrlKey)) return;
+		if (event.key.toLowerCase() === 's') {
+			event.preventDefault();
+			void saveSQLWorkspaceFile(event.shiftKey);
+		} else if (event.key.toLowerCase() === 'o') {
+			event.preventDefault();
+			void openSQLWorkspaceFile();
+		}
 	}}
 />
 
@@ -1087,6 +1178,31 @@
 			>
 				<Bookmark class="h-3 w-3" />
 				Saved
+			</button>
+			<span class="bg-border mx-0.5 h-4 w-px"></span>
+			<button
+				class="rt-toolbar-button h-7 w-7 cursor-pointer"
+				onclick={() => void openSQLWorkspaceFile()}
+				disabled={sqlFileBusy}
+				title="Open SQL file (⌘O)"
+				aria-label="Open SQL file"
+			>
+				<FolderOpen class="h-3.5 w-3.5" />
+			</button>
+			<button
+				class="rt-toolbar-button h-7 cursor-pointer gap-1.5 px-2 text-[9px]"
+				onclick={(event) => void saveSQLWorkspaceFile(event.shiftKey)}
+				disabled={sqlFileBusy}
+				title="Save SQL file (⌘S). Shift-click for Save As."
+			>
+				{#if sqlFileBusy}
+					<Loader2 class="h-3 w-3 animate-spin" />
+				{:else}
+					<Save class="h-3 w-3" />
+				{/if}
+				<span class="max-w-24 truncate">
+					{sqlFileName ? `${sqlFileName}${sqlFileDirty ? ' •' : ''}` : 'Save file'}
+				</span>
 			</button>
 			<button
 				class="rt-toolbar-button h-7 w-7 cursor-pointer"
@@ -1331,11 +1447,39 @@
 					{/if}
 				{/if}
 			</h4>
-			{#if executedQuery && !errorMessage}
-				<span class="text-muted-foreground max-w-md truncate font-mono text-[9px]">
-					{executedQuery.split('\n')[0]}…
-				</span>
-			{/if}
+			<div class="flex min-w-0 items-center gap-2">
+				{#if !explainPlan && queryResults.length > 0}
+					<div class="flex h-7 items-center rounded-md border bg-[var(--surface-sunken)] p-0.5">
+						<button
+							type="button"
+							class="flex h-6 items-center gap-1.5 rounded px-2 text-[8px] font-semibold {resultView ===
+							'grid'
+								? 'bg-[var(--surface-raised)] shadow-sm'
+								: 'text-muted-foreground'}"
+							onclick={() => (resultView = 'grid')}
+						>
+							<Table2 class="h-3 w-3" />
+							Grid
+						</button>
+						<button
+							type="button"
+							class="flex h-6 items-center gap-1.5 rounded px-2 text-[8px] font-semibold {resultView ===
+							'chart'
+								? 'bg-[var(--surface-raised)] shadow-sm'
+								: 'text-muted-foreground'}"
+							onclick={() => (resultView = 'chart')}
+						>
+							<BarChart3 class="h-3 w-3" />
+							Chart
+						</button>
+					</div>
+				{/if}
+				{#if executedQuery && !errorMessage}
+					<span class="text-muted-foreground max-w-56 truncate font-mono text-[9px]">
+						{executedQuery.split('\n')[0]}…
+					</span>
+				{/if}
+			</div>
 		</div>
 
 		{#if !explainPlan && queryResultSets.length > 1}
@@ -1409,21 +1553,25 @@
 					</div>
 				{/if}
 				<div class="min-h-0 flex-1 overflow-hidden">
-					<DataGrid
-						tabId={tab.id}
-						columns={resultColumns}
-						data={visibleQueryResults}
-						totalRows={queryResults.length}
-						currentPage={resultPage}
-						pageSize={QUERY_RESULT_PAGE_SIZE}
-						onPageChange={(page) => (resultPage = page)}
-						onExport={openExportDialog}
-						onSelectionChange={handleExportSelection}
-						{exporting}
-						gridTitle="Query results"
-						detailTitle="Query result"
-						readonly={true}
-					/>
+					{#if resultView === 'chart'}
+						<QueryResultChart data={queryResults} columns={resultColumns} />
+					{:else}
+						<DataGrid
+							tabId={tab.id}
+							columns={resultColumns}
+							data={visibleQueryResults}
+							totalRows={queryResults.length}
+							currentPage={resultPage}
+							pageSize={QUERY_RESULT_PAGE_SIZE}
+							onPageChange={(page) => (resultPage = page)}
+							onExport={openExportDialog}
+							onSelectionChange={handleExportSelection}
+							{exporting}
+							gridTitle="Query results"
+							detailTitle="Query result"
+							readonly={true}
+						/>
+					{/if}
 				</div>
 			</div>
 		{:else}

@@ -71,6 +71,36 @@ func TestSplitSQLStatementsKeepsRoutineDefinitionsIntact(t *testing.T) {
 	}
 }
 
+func TestSplitSQLStatementsKeepsOracleAndTSQLBlocksIntact(t *testing.T) {
+	for _, query := range []string{
+		`BEGIN
+			INSERT INTO audit_log(message) VALUES (q'[created; safely]');
+			UPDATE counters SET value = value + 1;
+		END;`,
+		`DECLARE @value int = 1;
+			SELECT @value;
+			SET @value = @value + 1;`,
+		`BEGIN TRY
+			SELECT 1;
+		END TRY
+		BEGIN CATCH
+			THROW;
+		END CATCH;`,
+		`CREATE OR REPLACE PACKAGE report_api AS
+			PROCEDURE refresh_report;
+			FUNCTION status RETURN VARCHAR2;
+		END report_api;`,
+	} {
+		statements, err := SplitSQLStatements(query)
+		if err != nil {
+			t.Fatalf("SplitSQLStatements() error = %v", err)
+		}
+		if len(statements) != 1 || statements[0] == "" {
+			t.Fatalf("block was split: %#v", statements)
+		}
+	}
+}
+
 func TestBindQueryVariablesUsesDriverPlaceholders(t *testing.T) {
 	query := `
 		SELECT {{tenant_id}}, '{{ignored}}'
@@ -106,6 +136,23 @@ func TestBindQueryVariablesRejectsMissingValues(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("BindQueryVariables() accepted a missing value")
+	}
+}
+
+func TestBindQueryVariablesIgnoresOracleAlternativeQuotes(t *testing.T) {
+	query := `SELECT q'[{{ignored}}; DROP TABLE users]' AS value, {{actual}} FROM dual`
+	bound, args, err := BindQueryVariables(
+		query,
+		queryTestDialect{style: PlaceholderDollar},
+		[]QueryVariable{{Name: "actual", Value: 7}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(args) != 1 || args[0] != 7 ||
+		!strings.Contains(bound, "q'[{{ignored}}; DROP TABLE users]'") ||
+		!strings.Contains(bound, "$1") {
+		t.Fatalf("bound = %q, args = %#v", bound, args)
 	}
 }
 

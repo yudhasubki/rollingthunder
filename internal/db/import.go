@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -612,6 +613,32 @@ func importColumnType(engine string, inferred string) string {
 		default:
 			return "TEXT"
 		}
+	case "oracle":
+		switch inferred {
+		case "integer":
+			return "NUMBER(19)"
+		case "number":
+			return "BINARY_DOUBLE"
+		case "boolean":
+			return "NUMBER(1)"
+		case "datetime":
+			return "TIMESTAMP WITH TIME ZONE"
+		default:
+			return "CLOB"
+		}
+	case "sqlserver":
+		switch inferred {
+		case "integer":
+			return "BIGINT"
+		case "number":
+			return "FLOAT"
+		case "boolean":
+			return "BIT"
+		case "datetime":
+			return "DATETIMEOFFSET"
+		default:
+			return "NVARCHAR(MAX)"
+		}
 	default:
 		switch inferred {
 		case "integer", "boolean":
@@ -678,6 +705,9 @@ func coerceImportedValue(value interface{}, inferred string) (interface{}, error
 		if err != nil {
 			return nil, fmt.Errorf("expected number, got %q", text)
 		}
+		if math.IsNaN(number) || math.IsInf(number, 0) {
+			return nil, fmt.Errorf("expected finite number, got %q", text)
+		}
 		return number, nil
 	case "boolean":
 		value, err := strconv.ParseBool(strings.TrimSpace(text))
@@ -685,9 +715,35 @@ func coerceImportedValue(value interface{}, inferred string) (interface{}, error
 			return nil, fmt.Errorf("expected boolean, got %q", text)
 		}
 		return value, nil
+	case "datetime":
+		value, err := time.Parse(time.RFC3339, strings.TrimSpace(text))
+		if err != nil {
+			return nil, fmt.Errorf("expected RFC 3339 date/time, got %q", text)
+		}
+		return value, nil
 	default:
 		return text, nil
 	}
+}
+
+func importBatchRowLimit(engine string, columnCount int) int {
+	if columnCount <= 0 {
+		return 1
+	}
+	parameterLimit := 0
+	switch strings.ToLower(engine) {
+	case database.DriverSQLServer:
+		// SQL Server accepts at most 2,100 parameters per batch. Keep
+		// headroom for driver- or statement-level parameters.
+		parameterLimit = 2_000
+	case database.DriverSQLite:
+		// Stay below modern SQLite's default 32,766 variable limit.
+		parameterLimit = 32_000
+	}
+	if parameterLimit == 0 {
+		return importBatchSize
+	}
+	return max(1, min(importBatchSize, parameterLimit/columnCount))
 }
 
 func flushImportRows(
@@ -708,6 +764,7 @@ func flushImportRows(
 	}
 	args := make([]interface{}, 0, len(rows)*len(columns))
 	valueGroups := make([]string, 0, len(rows))
+	engine := strings.ToLower(driver.Capabilities().Engine)
 	position := 1
 	for rowIndex, row := range rows {
 		placeholders := make([]string, len(columns))
@@ -721,15 +778,43 @@ func flushImportRows(
 					err,
 				)
 			}
+			if engine == database.DriverOracle &&
+				column.InferredType == "boolean" {
+				if boolean, ok := value.(bool); ok {
+					if boolean {
+						value = int64(1)
+					} else {
+						value = int64(0)
+					}
+				}
+			}
 			args = append(args, value)
 			placeholders[columnIndex] = driver.Placeholder(position)
 			position++
 		}
-		valueGroups = append(valueGroups, "("+strings.Join(placeholders, ", ")+")")
+		valueGroups = append(
+			valueGroups,
+			"("+strings.Join(placeholders, ", ")+")",
+		)
 	}
-	query := "INSERT INTO " + qualifiedImportTable(driver, schema, table) +
-		" (" + strings.Join(columnSQL, ", ") + ") VALUES " +
-		strings.Join(valueGroups, ", ")
+	target := qualifiedImportTable(driver, schema, table)
+	query := ""
+	if engine == database.DriverOracle {
+		into := make([]string, 0, len(valueGroups))
+		for _, values := range valueGroups {
+			into = append(
+				into,
+				"  INTO "+target+" ("+
+					strings.Join(columnSQL, ", ")+") VALUES "+values,
+			)
+		}
+		query = "INSERT ALL\n" + strings.Join(into, "\n") +
+			"\nSELECT 1 FROM dual"
+	} else {
+		query = "INSERT INTO " + target +
+			" (" + strings.Join(columnSQL, ", ") + ") VALUES " +
+			strings.Join(valueGroups, ", ")
+	}
 	_, err := transaction.ExecuteQuery(ctx, query, database.QueryOptions{
 		Args: args,
 	})
@@ -770,24 +855,27 @@ func (s *Service) ImportData(
 			"Review included columns, target names, and inferred types.",
 		)
 	}
-	connection, release, err := s.pinnedConnection(request.ConnectionID)
+	driver, release, err := s.writeDriverFor(request.ConnectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[database.ImportResult]()
+		}
 		return serviceError[database.ImportResult](err.Error())
 	}
 	defer release()
 
-	transactional, ok := connection.Driver.(database.TransactionalDriver)
+	transactional, ok := driver.(database.TransactionalDriver)
 	if !ok {
 		return serviceErrorWithCode[database.ImportResult](
 			http.StatusNotImplemented,
 			errorCodeDatabaseOperationFailed,
 			"Import is not supported",
 			"The active driver does not support transactional imports.",
-			"Use a supported PostgreSQL, MySQL, MariaDB, or SQLite connection.",
+			"Use a supported PostgreSQL, MySQL, MariaDB, SQLite, Oracle, or SQL Server connection.",
 		)
 	}
 	if !request.CreateTable {
-		structures, structureErr := connection.Driver.GetCollectionStructures(database.Table{
+		structures, structureErr := driver.GetCollectionStructures(database.Table{
 			Schema: request.Schema,
 			Name:   request.Table,
 		})
@@ -823,7 +911,7 @@ func (s *Service) ImportData(
 	}
 	warnings := make([]string, 0, 1)
 	tableCreated := false
-	capabilities := connection.Driver.Capabilities()
+	capabilities := driver.Capabilities()
 	if request.CreateTable && !capabilities.TransactionalDDL {
 		definitions := make([]database.ColumnDefinition, 0, len(columns))
 		for _, column := range columns {
@@ -833,7 +921,7 @@ func (s *Service) ImportData(
 				Nullable: column.Nullable,
 			})
 		}
-		if err := connection.Driver.CreateTable(
+		if err := driver.CreateTable(
 			database.Table{Schema: request.Schema, Name: request.Table},
 			definitions,
 		); err != nil {
@@ -860,7 +948,7 @@ func (s *Service) ImportData(
 	if request.CreateTable && capabilities.TransactionalDDL {
 		if _, err := transaction.ExecuteQuery(
 			ctx,
-			buildImportCreateStatement(connection.Driver, request.Schema, request.Table, columns),
+			buildImportCreateStatement(driver, request.Schema, request.Table, columns),
 			database.QueryOptions{},
 		); err != nil {
 			return serviceError[database.ImportResult](err.Error())
@@ -869,7 +957,8 @@ func (s *Service) ImportData(
 	}
 
 	inserted := 0
-	batch := make([]map[string]interface{}, 0, importBatchSize)
+	batchSize := importBatchRowLimit(capabilities.Engine, len(columns))
+	batch := make([]map[string]interface{}, 0, batchSize)
 	for {
 		row, readErr := reader.Next()
 		if errors.Is(readErr, io.EOF) {
@@ -885,13 +974,13 @@ func (s *Service) ImportData(
 			)
 		}
 		batch = append(batch, row)
-		if len(batch) < importBatchSize {
+		if len(batch) < batchSize {
 			continue
 		}
 		if err := flushImportRows(
 			ctx,
 			transaction,
-			connection.Driver,
+			driver,
 			request.Schema,
 			request.Table,
 			columns,
@@ -911,7 +1000,7 @@ func (s *Service) ImportData(
 	if err := flushImportRows(
 		ctx,
 		transaction,
-		connection.Driver,
+		driver,
 		request.Schema,
 		request.Table,
 		columns,

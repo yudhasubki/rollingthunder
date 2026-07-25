@@ -10,12 +10,15 @@ type PlaceholderStyle string
 const (
 	PlaceholderDollar   PlaceholderStyle = "dollar"
 	PlaceholderQuestion PlaceholderStyle = "question"
+	PlaceholderColon    PlaceholderStyle = "colon"
+	PlaceholderAt       PlaceholderStyle = "at"
 )
 
 type PaginationStyle string
 
 const (
 	PaginationLimitOffset PaginationStyle = "limit_offset"
+	PaginationOffsetFetch PaginationStyle = "offset_fetch"
 )
 
 // Dialect describes the SQL primitives that must be owned by a database
@@ -86,7 +89,10 @@ func (capabilities Capabilities) Validate() error {
 		return fmt.Errorf("dialect identifier quotes are required")
 	}
 	switch capabilities.Dialect.PlaceholderStyle {
-	case PlaceholderDollar, PlaceholderQuestion:
+	case PlaceholderDollar,
+		PlaceholderQuestion,
+		PlaceholderColon,
+		PlaceholderAt:
 	default:
 		return fmt.Errorf(
 			"unsupported placeholder style %q",
@@ -94,7 +100,7 @@ func (capabilities Capabilities) Validate() error {
 		)
 	}
 	switch capabilities.Dialect.PaginationStyle {
-	case PaginationLimitOffset:
+	case PaginationLimitOffset, PaginationOffsetFetch:
 	default:
 		return fmt.Errorf(
 			"unsupported pagination style %q",

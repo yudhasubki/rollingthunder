@@ -155,3 +155,99 @@ jobs:
           RT_DATABASE_PASSWORD: rolling
           RT_DATABASE_NAME: rolling
         run: go test ./integration -run TestMySQLCompatibleDriverWorkflow -count=1 -v
+
+  sql-server:
+    name: SQL Server ${{ matrix.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RT_INTEGRATION_SQLSERVER: "1"
+      RT_DATABASE_HOST: 127.0.0.1
+      RT_DATABASE_PORT: "1433"
+      RT_DATABASE_USER: sa
+      RT_DATABASE_PASSWORD: "RollingThunder_2026!"
+      RT_DATABASE_NAME: master
+      RT_DATABASE_SCHEMA: dbo
+      RT_DATABASE_SSL_MODE: disable
+      ROLLINGTHUNDER_SQLSERVER_TEST_HOST: 127.0.0.1
+      ROLLINGTHUNDER_SQLSERVER_TEST_PORT: "1433"
+      ROLLINGTHUNDER_SQLSERVER_TEST_USER: sa
+      ROLLINGTHUNDER_SQLSERVER_TEST_PASSWORD: "RollingThunder_2026!"
+      ROLLINGTHUNDER_SQLSERVER_TEST_DATABASE: master
+      ROLLINGTHUNDER_SQLSERVER_TEST_SSL_MODE: disable
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["2022", "2025"]
+    services:
+      database:
+        image: mcr.microsoft.com/mssql/server:${{ matrix.version }}-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "RollingThunder_2026!"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'RollingThunder_2026!' -C -Q 'SELECT 1' -b -o /dev/null"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+          --health-start-period 20s
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run SQL Server workflow
+        run: go test ./integration -run TestSQLServerDriverWorkflow -count=1 -v
+
+      - name: Run SQL Server driver conformance
+        run: go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v
+
+  oracle:
+    name: Oracle Database Free
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      RT_INTEGRATION_ORACLE: "1"
+      RT_DATABASE_HOST: 127.0.0.1
+      RT_DATABASE_PORT: "1521"
+      RT_DATABASE_USER: system
+      RT_DATABASE_PASSWORD: "RollingThunder_2026"
+      RT_DATABASE_NAME: FREEPDB1
+      RT_DATABASE_SCHEMA: SYSTEM
+      RT_DATABASE_SSL_MODE: disable
+      ROLLINGTHUNDER_ORACLE_TEST_HOST: 127.0.0.1
+      ROLLINGTHUNDER_ORACLE_TEST_PORT: "1521"
+      ROLLINGTHUNDER_ORACLE_TEST_USER: system
+      ROLLINGTHUNDER_ORACLE_TEST_PASSWORD: "RollingThunder_2026"
+      ROLLINGTHUNDER_ORACLE_TEST_SERVICE: FREEPDB1
+      ROLLINGTHUNDER_ORACLE_TEST_SSL_MODE: disable
+    services:
+      database:
+        image: container-registry.oracle.com/database/free:latest-lite
+        env:
+          ORACLE_PWD: "RollingThunder_2026"
+        ports:
+          - 1521:1521
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run Oracle workflow
+        run: go test ./integration -run TestOracleDriverWorkflow -count=1 -v
+
+      - name: Run Oracle driver conformance
+        run: go test ./pkg/database/oracle -run TestOracleLiveConformance -count=1 -v

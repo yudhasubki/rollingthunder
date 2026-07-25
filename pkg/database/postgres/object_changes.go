@@ -364,7 +364,10 @@ func buildPostgresIndexChange(change database.IndexChange) (string, error) {
 	if len(columns) == 0 {
 		return "", fmt.Errorf("at least one index column is required")
 	}
-	if err := validatePostgresFragment(change.Where, "partial-index predicate"); err != nil {
+	if err := database.ValidateDDLFragment(
+		change.Where,
+		"partial-index predicate",
+	); err != nil {
 		return "", err
 	}
 	unique := ""
@@ -406,10 +409,16 @@ func buildPostgresColumnChange(
 	quotedColumn := quotePostgresIdentifier(activeName)
 
 	if strings.TrimSpace(change.DataType) != "" {
-		if err := validatePostgresFragment(change.DataType, "column data type"); err != nil {
+		if err := database.ValidateDDLFragment(
+			change.DataType,
+			"column data type",
+		); err != nil {
 			return nil, err
 		}
-		if err := validatePostgresFragment(change.Using, "column conversion expression"); err != nil {
+		if err := database.ValidateDDLFragment(
+			change.Using,
+			"column conversion expression",
+		); err != nil {
 			return nil, err
 		}
 		statement := fmt.Sprintf(
@@ -436,7 +445,10 @@ func buildPostgresColumnChange(
 		))
 	}
 	if change.Default != nil {
-		if err := validatePostgresFragment(*change.Default, "column default"); err != nil {
+		if err := database.ValidateDDLFragment(
+			*change.Default,
+			"column default",
+		); err != nil {
 			return nil, err
 		}
 		statements = append(statements, fmt.Sprintf(
@@ -467,10 +479,10 @@ func buildPostgresAddColumn(
 		)
 	}
 	column := change.Column
-	if err := validatePostgresFragment(column.Type, "column data type"); err != nil {
+	if err := database.ValidateDDLFragment(column.Type, "column data type"); err != nil {
 		return "", err
 	}
-	if err := validatePostgresFragment(column.Default, "column default"); err != nil {
+	if err := database.ValidateDDLFragment(column.Default, "column default"); err != nil {
 		return "", err
 	}
 	statement := fmt.Sprintf(
@@ -531,7 +543,10 @@ func buildPostgresConstraintChange(
 	}
 
 	definition := strings.TrimSpace(change.Definition)
-	if err := validatePostgresFragment(definition, "constraint definition"); err != nil {
+	if err := database.ValidateDDLFragment(
+		definition,
+		"constraint definition",
+	); err != nil {
 		return "", false, err
 	}
 	keywords := database.LeadingSQLKeywords(definition, 2)

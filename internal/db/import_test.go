@@ -4,12 +4,38 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"rollingthunder/pkg/database"
+	oracledriver "rollingthunder/pkg/database/oracle"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+type importCaptureTransaction struct {
+	query   string
+	options database.QueryOptions
+}
+
+func (transaction *importCaptureTransaction) ExecuteQuery(
+	_ context.Context,
+	query string,
+	options database.QueryOptions,
+) (database.QueryResult, error) {
+	transaction.query = query
+	transaction.options = options
+	return database.QueryResult{}, nil
+}
+
+func (transaction *importCaptureTransaction) Commit() error {
+	return nil
+}
+
+func (transaction *importCaptureTransaction) Rollback() error {
+	return nil
+}
 
 func newSQLiteImportService(t *testing.T) (*Service, string) {
 	t.Helper()
@@ -110,6 +136,107 @@ func TestCSVImportPreviewAndCreateTable(t *testing.T) {
 	}
 	if len(result.Data.Rows) != 2 || result.Data.Rows[1]["name"] != "Linus" {
 		t.Fatalf("rows = %+v", result.Data.Rows)
+	}
+}
+
+func TestOracleAndSQLServerImportTypes(t *testing.T) {
+	tests := []struct {
+		engine   string
+		inferred string
+		want     string
+	}{
+		{database.DriverOracle, "integer", "NUMBER(19)"},
+		{database.DriverOracle, "boolean", "NUMBER(1)"},
+		{database.DriverOracle, "datetime", "TIMESTAMP WITH TIME ZONE"},
+		{database.DriverOracle, "text", "CLOB"},
+		{database.DriverSQLServer, "number", "FLOAT"},
+		{database.DriverSQLServer, "datetime", "DATETIMEOFFSET"},
+		{database.DriverSQLServer, "text", "NVARCHAR(MAX)"},
+	}
+	for _, test := range tests {
+		if got := importColumnType(test.engine, test.inferred); got != test.want {
+			t.Errorf(
+				"importColumnType(%q, %q) = %q, want %q",
+				test.engine,
+				test.inferred,
+				got,
+				test.want,
+			)
+		}
+	}
+}
+
+func TestImportCoercionUsesPortableFiniteValues(t *testing.T) {
+	value, err := coerceImportedValue(
+		"2026-07-25T03:04:05+09:00",
+		"datetime",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, ok := value.(time.Time)
+	if !ok || parsed.Format(time.RFC3339) != "2026-07-25T03:04:05+09:00" {
+		t.Fatalf("datetime value = %#v", value)
+	}
+	if _, err := coerceImportedValue("NaN", "number"); err == nil {
+		t.Fatal("non-finite imported number was accepted")
+	}
+}
+
+func TestImportBatchSizeRespectsDriverParameterLimits(t *testing.T) {
+	if got := importBatchRowLimit(database.DriverSQLServer, 250); got != 8 {
+		t.Fatalf("SQL Server batch rows = %d, want 8", got)
+	}
+	if got := importBatchRowLimit(database.DriverSQLServer, 2); got != importBatchSize {
+		t.Fatalf("small SQL Server batch rows = %d", got)
+	}
+	if got := importBatchRowLimit(database.DriverPostgres, 250); got != importBatchSize {
+		t.Fatalf("PostgreSQL batch rows = %d", got)
+	}
+}
+
+func TestOracleImportUsesInsertAllAndNumericBooleans(t *testing.T) {
+	transaction := &importCaptureTransaction{}
+	driver := oracledriver.NewOracle(
+		context.Background(),
+		oracledriver.Config{},
+	)
+	err := flushImportRows(
+		context.Background(),
+		transaction,
+		driver,
+		"APP",
+		"FLAGS",
+		[]database.ImportColumn{
+			{
+				SourceName:   "id",
+				TargetName:   "ID",
+				InferredType: "integer",
+				Included:     true,
+			},
+			{
+				SourceName:   "enabled",
+				TargetName:   "ENABLED",
+				InferredType: "boolean",
+				Included:     true,
+			},
+		},
+		[]map[string]interface{}{
+			{"id": "1", "enabled": "true"},
+			{"id": "2", "enabled": "false"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("flush Oracle import: %v", err)
+	}
+	if !strings.HasPrefix(transaction.query, "INSERT ALL\n") ||
+		!strings.Contains(transaction.query, "\nSELECT 1 FROM dual") {
+		t.Fatalf("Oracle import query = %q", transaction.query)
+	}
+	if len(transaction.options.Args) != 4 ||
+		transaction.options.Args[1] != int64(1) ||
+		transaction.options.Args[3] != int64(0) {
+		t.Fatalf("Oracle import args = %#v", transaction.options.Args)
 	}
 }
 

@@ -87,6 +87,7 @@ func buildPostgresInsertMutation(
 	columns := make([]string, 0, len(data))
 	placeholders := make([]string, 0, len(data))
 	args := make([]interface{}, 0, len(data))
+	overrideIdentity := false
 	for _, structure := range structures {
 		value, exists := data[structure.Name]
 		if !exists {
@@ -97,6 +98,13 @@ func buildPostgresInsertMutation(
 		}
 		columns = append(columns, quotePostgresIdentifier(structure.Name))
 		args = append(args, value)
+		if structure.IsAutoInc &&
+			strings.EqualFold(
+				strings.TrimSpace(structure.Generation),
+				"IDENTITY ALWAYS",
+			) {
+			overrideIdentity = true
+		}
 		placeholders = append(
 			placeholders,
 			fmt.Sprintf("$%d", len(args)),
@@ -109,15 +117,13 @@ func buildPostgresInsertMutation(
 			SQL: fmt.Sprintf("INSERT INTO %s DEFAULT VALUES", target),
 		}, nil
 	}
-	return postgresMutation{
-		SQL: fmt.Sprintf(
-			"INSERT INTO %s (%s) VALUES (%s)",
-			target,
-			strings.Join(columns, ", "),
-			strings.Join(placeholders, ", "),
-		),
-		Args: args,
-	}, nil
+	query := "INSERT INTO " + target +
+		" (" + strings.Join(columns, ", ") + ")"
+	if overrideIdentity {
+		query += " OVERRIDING SYSTEM VALUE"
+	}
+	query += " VALUES (" + strings.Join(placeholders, ", ") + ")"
+	return postgresMutation{SQL: query, Args: args}, nil
 }
 
 func buildPostgresUpdateMutation(

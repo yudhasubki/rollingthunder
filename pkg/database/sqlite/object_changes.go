@@ -133,7 +133,10 @@ func buildSQLiteIndexChange(
 	if len(columns) == 0 {
 		return "", fmt.Errorf("at least one index column is required")
 	}
-	if err := validateSQLiteFragment(change.Where, "partial-index predicate"); err != nil {
+	if err := database.ValidateDDLFragment(
+		change.Where,
+		"partial-index predicate",
+	); err != nil {
 		return "", err
 	}
 	unique := ""
@@ -175,10 +178,10 @@ func buildSQLiteAddColumn(
 			"SQLite requires a non-NULL default when adding a required column to an existing table",
 		)
 	}
-	if err := validateSQLiteFragment(column.Type, "column data type"); err != nil {
+	if err := database.ValidateDDLFragment(column.Type, "column data type"); err != nil {
 		return "", err
 	}
-	if err := validateSQLiteFragment(column.Default, "column default"); err != nil {
+	if err := database.ValidateDDLFragment(column.Default, "column default"); err != nil {
 		return "", err
 	}
 	statement := fmt.Sprintf(

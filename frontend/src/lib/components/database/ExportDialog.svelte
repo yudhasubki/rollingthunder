@@ -68,11 +68,16 @@
 	let includeTransaction = $state(true);
 	let upsert = $state(false);
 	let wasOpen = false;
-	const sqlBatchOptions = [
-		{ value: '100', label: '100 rows' },
-		{ value: '500', label: '500 rows' },
-		{ value: '1000', label: '1,000 rows' }
-	];
+	const isOracle = $derived(engine.toLowerCase().includes('oracle'));
+	const sqlBatchOptions = $derived(
+		isOracle
+			? [{ value: '1', label: '1 row per INSERT' }]
+			: [
+					{ value: '100', label: '100 rows' },
+					{ value: '500', label: '500 rows' },
+					{ value: '1000', label: '1,000 rows' }
+				]
+	);
 	const csvEncodingOptions = [
 		{ value: 'utf-8', label: 'UTF-8' },
 		{ value: 'utf-8-bom', label: 'UTF-8 with BOM' },
@@ -98,7 +103,7 @@
 			includeHeader = true;
 			nullValue = '';
 			prettyJSON = true;
-			sqlBatchSize = 100;
+			sqlBatchSize = isOracle ? 1 : 100;
 			includeTransaction = true;
 			upsert = false;
 		}
@@ -205,7 +210,7 @@
 							? csvEncodingOptions.find((option) => option.value === csvEncoding)?.label
 							: format === 'json'
 								? 'Unicode'
-								: 'PostgreSQL'}
+								: engine || 'SQL'}
 					</span>
 				</div>
 				<div class="grid gap-2 {source === 'table' ? 'grid-cols-3' : 'grid-cols-2'}">
@@ -495,7 +500,7 @@
 								<span>
 									<span class="block text-[9px] font-semibold">Wrap in transaction</span>
 									<span class="text-muted-foreground mt-1 block text-[8px] leading-relaxed">
-										Add BEGIN and COMMIT.
+										{isOracle ? 'Use SET TRANSACTION and COMMIT.' : 'Add BEGIN and COMMIT.'}
 									</span>
 								</span>
 							</label>

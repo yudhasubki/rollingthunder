@@ -123,6 +123,32 @@
 		{ value: 'first', label: 'First column' },
 		{ value: 'after', label: 'After a column' }
 	];
+	const indexMethodOptions = $derived.by(() => {
+		switch (capabilities?.engine) {
+			case 'postgres':
+				return ['btree', 'hash', 'gist', 'gin', 'spgist', 'brin'].map((value) => ({
+					value,
+					label: value.toUpperCase()
+				}));
+			case 'mysql':
+				return [
+					{ value: 'BTREE', label: 'B-tree' },
+					{ value: 'HASH', label: 'Hash' }
+				];
+			case 'oracle':
+				return [
+					{ value: 'BTREE', label: 'B-tree' },
+					{ value: 'BITMAP', label: 'Bitmap' }
+				];
+			case 'sqlserver':
+				return [
+					{ value: 'NONCLUSTERED', label: 'Nonclustered' },
+					{ value: 'CLUSTERED', label: 'Clustered' }
+				];
+			default:
+				return [{ value: '', label: 'Engine default' }];
+		}
+	});
 
 	$effect(() => {
 		if (!open || !intent) return;
@@ -155,10 +181,38 @@
 		parentTableName = tableName;
 		indexColumns = '';
 		indexUnique = false;
-		indexMethod = capabilities?.engine === 'sqlite' ? '' : 'btree';
+		switch (capabilities?.engine) {
+			case 'mysql':
+			case 'oracle':
+				indexMethod = 'BTREE';
+				break;
+			case 'sqlserver':
+				indexMethod = 'NONCLUSTERED';
+				break;
+			case 'sqlite':
+				indexMethod = '';
+				break;
+			default:
+				indexMethod = 'btree';
+		}
 		indexWhere = '';
 		addColumnName = 'new_column';
-		addColumnType = capabilities?.engine === 'postgres' ? 'text' : 'TEXT';
+		switch (capabilities?.engine) {
+			case 'oracle':
+				addColumnType = 'VARCHAR2(255)';
+				break;
+			case 'sqlserver':
+				addColumnType = 'nvarchar(255)';
+				break;
+			case 'mysql':
+				addColumnType = 'VARCHAR(255)';
+				break;
+			case 'postgres':
+				addColumnType = 'text';
+				break;
+			default:
+				addColumnType = 'TEXT';
+		}
 		addColumnNullable = true;
 		addColumnDefault = '';
 		addColumnUnique = false;
@@ -607,7 +661,7 @@
 							>
 								<input
 									type="checkbox"
-									class="mt-0.5 h-3.5 w-3.5 accent-red-600"
+									class="mt-0.5 h-3.5 w-3.5 accent-[var(--danger)]"
 									bind:checked={destructiveConfirmed}
 								/>
 								<span>
@@ -697,10 +751,13 @@
 								</label>
 								<label>
 									<span class="text-[9px] font-bold">Method</span>
-									<input
-										class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
-										bind:value={indexMethod}
-										placeholder="btree"
+									<FilterCombobox
+										id="structural-index-method"
+										options={indexMethodOptions}
+										value={indexMethod}
+										onChange={(value) => (indexMethod = value)}
+										searchable={false}
+										triggerClass="mt-1.5 h-9 px-2 font-mono text-[10px]"
 									/>
 								</label>
 								<label class="flex items-end pb-2">
@@ -709,16 +766,18 @@
 										Unique index
 									</span>
 								</label>
-								<label class="sm:col-span-2">
-									<span class="text-[9px] font-bold"
-										>Predicate <span class="text-muted-foreground">(optional)</span></span
-									>
-									<input
-										class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
-										bind:value={indexWhere}
-										placeholder="deleted_at IS NULL"
-									/>
-								</label>
+								{#if capabilities?.engine !== 'mysql' && capabilities?.engine !== 'oracle'}
+									<label class="sm:col-span-2">
+										<span class="text-[9px] font-bold"
+											>Predicate <span class="text-muted-foreground">(optional)</span></span
+										>
+										<input
+											class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
+											bind:value={indexWhere}
+											placeholder="deleted_at IS NULL"
+										/>
+									</label>
+								{/if}
 							</section>
 						{:else if intent === 'add-column'}
 							<section
@@ -850,18 +909,20 @@
 										placeholder={selectedColumnMetadata?.data_type || 'text'}
 									/>
 								</label>
-								<label class="sm:col-span-2">
-									<span class="text-[9px] font-bold"
-										>USING expression <span class="text-muted-foreground"
-											>(for type conversion)</span
-										></span
-									>
-									<input
-										class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
-										bind:value={columnUsing}
-										placeholder={`${selectedColumn}::text`}
-									/>
-								</label>
+								{#if capabilities?.engine === 'postgres'}
+									<label class="sm:col-span-2">
+										<span class="text-[9px] font-bold"
+											>USING expression <span class="text-muted-foreground"
+												>(for type conversion)</span
+											></span
+										>
+										<input
+											class="rt-input mt-1.5 h-9 w-full px-3 font-mono text-[10px]"
+											bind:value={columnUsing}
+											placeholder={`${selectedColumn}::text`}
+										/>
+									</label>
+								{/if}
 								<div>
 									<label class="text-[9px] font-bold" for="alter-column-nullability"
 										>Nullability</label

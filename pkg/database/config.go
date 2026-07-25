@@ -2,32 +2,46 @@ package database
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
 
 const (
-	DriverPostgres = "postgres"
-	DriverMySQL    = "mysql"
-	DriverSQLite   = "sqlite"
+	DriverPostgres  = "postgres"
+	DriverMySQL     = "mysql"
+	DriverMariaDB   = "mariadb"
+	DriverSQLite    = "sqlite"
+	DriverOracle    = "oracle"
+	DriverSQLServer = "sqlserver"
 
-	DefaultHost         = "127.0.0.1"
-	DefaultPostgresPort = "5432"
-	DefaultMySQLPort    = "3306"
-	DefaultSSHPort      = "22"
-	DefaultSSLMode      = "disable"
+	DefaultHost          = "127.0.0.1"
+	DefaultPostgresPort  = "5432"
+	DefaultMySQLPort     = "3306"
+	DefaultOraclePort    = "1521"
+	DefaultSQLServerPort = "1433"
+	DefaultSSHPort       = "22"
+	DefaultSSLMode       = "disable"
 
 	ConnectionEnvironmentUnclassified = "unclassified"
 	ConnectionEnvironmentDevelopment  = "development"
 	ConnectionEnvironmentStaging      = "staging"
 	ConnectionEnvironmentProduction   = "production"
+
+	ConnectionAccessReadWrite = "read-write"
+	ConnectionAccessReadOnly  = "read-only"
+
+	MaxConnectionTags = 32
 )
 
 type Config struct {
 	// Connection metadata
-	Name        string `json:"name"`        // Connection display name
-	Environment string `json:"environment"` // Operational risk classification
-	Driver      string `json:"driver"`      // postgres, mysql, sqlite
+	Name        string   `json:"name"`        // Connection display name
+	Environment string   `json:"environment"` // Operational risk classification
+	AccessMode  string   `json:"accessMode"`  // read-write, read-only
+	Folder      string   `json:"folder,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Driver      string   `json:"driver"` // postgres, mysql, sqlite, oracle, sqlserver
 
 	// Color is retained only to decode profiles written before environment
 	// classifications were introduced. New profiles never persist or render it.
@@ -82,12 +96,69 @@ func NormalizeConnectionEnvironment(value string) string {
 	}
 }
 
+// NormalizeConnectionAccessMode defaults production profiles to read-only.
+// Existing non-production profiles remain read-write when the field is absent.
+func NormalizeConnectionAccessMode(value, environment string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case ConnectionAccessReadOnly:
+		return ConnectionAccessReadOnly
+	case ConnectionAccessReadWrite:
+		return ConnectionAccessReadWrite
+	default:
+		if NormalizeConnectionEnvironment(environment) == ConnectionEnvironmentProduction {
+			return ConnectionAccessReadOnly
+		}
+		return ConnectionAccessReadWrite
+	}
+}
+
+func NormalizeConnectionTags(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, min(len(values), MaxConnectionTags))
+	seen := make(map[string]struct{}, min(len(values), MaxConnectionTags))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, value)
+		if len(normalized) == MaxConnectionTags {
+			break
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
 // NormalizeConfigMetadata removes deprecated presentation-only data and makes
 // the operational classification safe to consume throughout the application.
 func NormalizeConfigMetadata(config Config) Config {
 	config.Environment = NormalizeConnectionEnvironment(config.Environment)
+	config.AccessMode = NormalizeConnectionAccessMode(
+		config.AccessMode,
+		config.Environment,
+	)
+	config.Folder = strings.TrimSpace(config.Folder)
+	config.Tags = NormalizeConnectionTags(config.Tags)
 	config.Color = ""
 	return config
+}
+
+func ConfigMetadataEqual(left, right Config) bool {
+	return left.Environment == right.Environment &&
+		left.AccessMode == right.AccessMode &&
+		left.Folder == right.Folder &&
+		slices.Equal(left.Tags, right.Tags) &&
+		left.Color == right.Color
 }
 
 func validateConfigText(name, value string, maxBytes int) error {
@@ -125,6 +196,7 @@ func (config Config) ValidateSafety() error {
 		maxBytes int
 	}{
 		{"connection name", config.Name, 256},
+		{"connection folder", config.Folder, 256},
 		{"driver", config.Driver, 32},
 		{"database host", config.Host, 255},
 		{"database user", config.User, 256},
@@ -144,6 +216,33 @@ func (config Config) ValidateSafety() error {
 		if err := validateConfigText(field.name, field.value, field.maxBytes); err != nil {
 			return err
 		}
+	}
+	if len(config.Tags) > MaxConnectionTags {
+		return fmt.Errorf(
+			"connection profile supports at most %d tags",
+			MaxConnectionTags,
+		)
+	}
+	for _, tag := range config.Tags {
+		if err := validateConfigText("connection tag", tag, 64); err != nil {
+			return err
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(config.AccessMode)) {
+	case "", ConnectionAccessReadOnly, ConnectionAccessReadWrite:
+	default:
+		return fmt.Errorf("connection access mode is not supported")
+	}
+	switch strings.ToLower(strings.TrimSpace(config.Driver)) {
+	case "",
+		DriverPostgres,
+		DriverMySQL,
+		DriverMariaDB,
+		DriverSQLite,
+		DriverOracle,
+		DriverSQLServer:
+	default:
+		return fmt.Errorf("database driver is not supported")
 	}
 	if err := validateConfigPort("database port", config.Port); err != nil {
 		return err

@@ -98,6 +98,7 @@ func (m *MySQL) Connect(ctx context.Context) error {
 	} else {
 		m.engine = "MySQL"
 	}
+	m.ctx = context.WithoutCancel(ctx)
 	return nil
 }
 
@@ -1033,16 +1034,6 @@ func writeMySQLInsertStream(
 	return database.ExportStats{Rows: sink.rows}, nil
 }
 
-func validateMySQLFragment(value, label string) error {
-	if strings.ContainsRune(value, '\x00') {
-		return fmt.Errorf("%s contains a NUL byte", label)
-	}
-	if database.HasTopLevelStatementSeparator(value) {
-		return fmt.Errorf("%s must not contain another SQL statement", label)
-	}
-	return nil
-}
-
 func (m *MySQL) CreateTable(
 	table database.Table,
 	columns []database.ColumnDefinition,
@@ -1065,7 +1056,10 @@ func (m *MySQL) CreateTable(
 		if dataType == "" {
 			return fmt.Errorf("data type is required for column %q", name)
 		}
-		if err := validateMySQLFragment(dataType, "column data type"); err != nil {
+		if err := database.ValidateDDLFragment(
+			dataType,
+			"column data type",
+		); err != nil {
 			return err
 		}
 		definition := quoteMySQLIdentifier(name) + " " + dataType
@@ -1073,7 +1067,10 @@ func (m *MySQL) CreateTable(
 			definition += " NOT NULL"
 		}
 		if strings.TrimSpace(column.Default) != "" {
-			if err := validateMySQLFragment(column.Default, "column default"); err != nil {
+			if err := database.ValidateDDLFragment(
+				column.Default,
+				"column default",
+			); err != nil {
 				return err
 			}
 			definition += " DEFAULT " + strings.TrimSpace(column.Default)

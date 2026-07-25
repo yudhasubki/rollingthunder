@@ -27,7 +27,7 @@
 	import { BACKEND_RESTART_MESSAGE, hasBackendMethod } from '$lib/wails/backendCompatibility';
 	import { addConsoleLog, updateStatus } from '$lib/stores/status.svelte';
 	import FilterCombobox from '$lib/components/ui/FilterCombobox.svelte';
-	import { UI_RUNTIME } from '$lib/config/application';
+	import { UI_RUNTIME, providerOption } from '$lib/config/application';
 
 	let connectionId = $state('');
 	let capabilities = $state<database.BackupCapabilities | null>(null);
@@ -53,7 +53,7 @@
 	const connectionOptions = $derived(
 		connections.map((item) => ({
 			value: item.id,
-			label: `${item.name || item.database} · ${item.driver} · ${item.database}`
+			label: `${item.name || item.database} · ${providerOption(item.driver).name} · ${item.database}`
 		}))
 	);
 	const backupScopeOptions = [

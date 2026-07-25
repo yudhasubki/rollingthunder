@@ -147,8 +147,11 @@ func (s *Service) ApplySecurityChange(
 			"Generate and review the redacted SQL preview before applying it.",
 		)
 	}
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[database.SecurityChangeResult]()
+		}
 		return serviceError[database.SecurityChangeResult](err.Error())
 	}
 	defer release()

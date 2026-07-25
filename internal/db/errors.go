@@ -11,6 +11,8 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
+	mssql "github.com/microsoft/go-mssqldb"
+	oraclenetwork "github.com/sijms/go-ora/v2/network"
 	modernsqlite "modernc.org/sqlite"
 )
 
@@ -35,6 +37,11 @@ const (
 	errorCodeTransactionFailed          = "TRANSACTION_FAILED"
 	errorCodeTransactionControl         = "TRANSACTION_CONTROL_REQUIRES_MODE"
 	errorCodeUnsafeMutation             = "UNFILTERED_MUTATION_REQUIRES_CONFIRMATION"
+	errorCodeReadOnlyConnection         = "READ_ONLY_CONNECTION"
+	errorCodeSQLFileFailed              = "SQL_FILE_FAILED"
+	errorCodeDataSyncFailed             = "DATA_SYNC_FAILED"
+	errorCodeDataSyncReview             = "DATA_SYNC_REVIEW_REQUIRED"
+	errorCodeDataSyncUnsupported        = "DATA_SYNC_UNSUPPORTED"
 	errorCodeTableChangesFailed         = "TABLE_CHANGES_FAILED"
 	errorCodeTableChangesUnsupported    = "TABLE_CHANGES_UNSUPPORTED"
 	errorCodeCapabilityInvalid          = "DRIVER_CAPABILITY_INVALID"
@@ -157,6 +164,66 @@ func connectionFailure[T any](
 				"Database access denied",
 				mysqlError.Message,
 				"Grant access to the selected database or choose a database available to this account.",
+			)
+		}
+	}
+
+	var oracleError *oraclenetwork.OracleError
+	if errors.As(connectErr, &oracleError) {
+		switch oracleError.ErrCode {
+		case 1017, 28000, 28001, 28002, 28040, 28041:
+			return serviceErrorWithCode[T](
+				http.StatusUnauthorized,
+				errorCodeAuthenticationFailed,
+				"Authentication failed",
+				"Oracle Database rejected the account or authentication method.",
+				"Verify the username, password, account status, and authentication protocol supported by the server.",
+			)
+		case 12514:
+			return serviceErrorWithCode[T](
+				http.StatusNotFound,
+				errorCodeDatabaseNotFound,
+				"Oracle service not found",
+				"The Oracle listener does not know the requested service name.",
+				"Check the service name (for example FREEPDB1) and listener registration.",
+			)
+		case 12154:
+			return serviceErrorWithCode[T](
+				http.StatusBadRequest,
+				errorCodeConnectionFailed,
+				"Oracle service could not be resolved",
+				oracleError.Error(),
+				"Use a valid Oracle service name and verify the host, port, and listener configuration.",
+			)
+		case 12505, 12506, 12516, 12519, 12520, 12541, 12564:
+			return serviceErrorWithCode[T](
+				http.StatusBadGateway,
+				errorCodeConnectionRefused,
+				"Oracle listener rejected the connection",
+				oracleError.Error(),
+				"Check that the Oracle listener is running, the service is registered, and a handler is available.",
+			)
+		}
+	}
+
+	var sqlServerError mssql.Error
+	if errors.As(connectErr, &sqlServerError) {
+		switch sqlServerError.Number {
+		case 18452, 18456:
+			return serviceErrorWithCode[T](
+				http.StatusUnauthorized,
+				errorCodeAuthenticationFailed,
+				"Authentication failed",
+				sqlServerError.Message,
+				"Verify SQL Server authentication is enabled and check the username, password, and login state.",
+			)
+		case 4060:
+			return serviceErrorWithCode[T](
+				http.StatusNotFound,
+				errorCodeDatabaseNotFound,
+				"Database unavailable",
+				sqlServerError.Message,
+				"Check the database name and confirm this login has permission to open it.",
 			)
 		}
 	}
@@ -343,6 +410,98 @@ func queryFailure[T any](
 				"Lock conflict",
 				detail,
 				"Retry the transaction after competing work completes; keep transactions short.",
+			)
+		}
+	}
+
+	var oracleError *oraclenetwork.OracleError
+	if errors.As(queryErr, &oracleError) {
+		detail := oracleError.Error()
+		switch oracleError.ErrCode {
+		case 1013:
+			return serviceErrorWithCode[T](
+				499,
+				errorCodeQueryCancelled,
+				"Query cancelled",
+				"Oracle query execution cancelled.",
+				"Run the query again when you are ready.",
+			)
+		case 1, 1400, 1438, 2290, 2291, 2292, 12899:
+			return serviceErrorWithCode[T](
+				http.StatusConflict,
+				errorCodeQueryConstraint,
+				"Constraint violation",
+				detail,
+				"Review primary keys, foreign keys, checks, required columns, value precision, and column lengths.",
+			)
+		case 1031:
+			return serviceErrorWithCode[T](
+				http.StatusForbidden,
+				errorCodeQueryPermission,
+				"Permission denied",
+				detail,
+				"Grant the required Oracle object or system privilege, or use an authorized role.",
+			)
+		case 54, 60:
+			return serviceErrorWithCode[T](
+				http.StatusConflict,
+				errorCodeQueryFailed,
+				"Lock conflict",
+				detail,
+				"Retry after competing work completes and keep the transaction short.",
+			)
+		default:
+			if (oracleError.ErrCode >= 900 && oracleError.ErrCode <= 999) ||
+				oracleError.ErrCode == 6550 {
+				return serviceErrorWithCode[T](
+					http.StatusBadRequest,
+					errorCodeQuerySyntax,
+					"Oracle query or identifier error",
+					detail,
+					"Check Oracle SQL or PL/SQL syntax, quoted identifiers, and schema-qualified object names.",
+				)
+			}
+		}
+	}
+
+	var sqlServerError mssql.Error
+	if errors.As(queryErr, &sqlServerError) {
+		detail := sqlServerError.Message
+		if sqlServerError.LineNo > 0 {
+			detail = fmt.Sprintf("%s (line %d)", detail, sqlServerError.LineNo)
+		}
+		switch sqlServerError.Number {
+		case 2601, 2627, 515, 547:
+			return serviceErrorWithCode[T](
+				http.StatusConflict,
+				errorCodeQueryConstraint,
+				"Constraint violation",
+				detail,
+				"Review primary keys, foreign keys, unique values, checks, and required columns.",
+			)
+		case 229, 230, 297:
+			return serviceErrorWithCode[T](
+				http.StatusForbidden,
+				errorCodeQueryPermission,
+				"Permission denied",
+				detail,
+				"Grant the required SQL Server permission or use an authorized database role.",
+			)
+		case 102, 156, 207, 208, 2812:
+			return serviceErrorWithCode[T](
+				http.StatusBadRequest,
+				errorCodeQuerySyntax,
+				"T-SQL query or identifier error",
+				detail,
+				"Check T-SQL syntax, bracket-quoted identifiers, and schema-qualified object names.",
+			)
+		case 1205, 1222:
+			return serviceErrorWithCode[T](
+				http.StatusConflict,
+				errorCodeQueryFailed,
+				"Lock conflict",
+				detail,
+				"Retry the transaction after competing work completes and keep transactions short.",
 			)
 		}
 	}

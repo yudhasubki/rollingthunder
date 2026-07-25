@@ -295,7 +295,7 @@ func (m *MySQL) buildMySQLColumnChange(
 		if dataType == "" {
 			dataType = current.DataType
 		}
-		if err := validateMySQLFragment(dataType, "column data type"); err != nil {
+		if err := database.ValidateDDLFragment(dataType, "column data type"); err != nil {
 			return nil, err
 		}
 		nullable := current.Nullable
@@ -315,7 +315,10 @@ func (m *MySQL) buildMySQLColumnChange(
 		}
 		switch {
 		case change.Default != nil:
-			if err := validateMySQLFragment(*change.Default, "column default"); err != nil {
+			if err := database.ValidateDDLFragment(
+				*change.Default,
+				"column default",
+			); err != nil {
 				return nil, err
 			}
 			definition += " DEFAULT " + strings.TrimSpace(*change.Default)
@@ -338,10 +341,10 @@ func buildMySQLAddColumn(
 	change database.AddColumnChange,
 ) (string, error) {
 	column := change.Column
-	if err := validateMySQLFragment(column.Type, "column data type"); err != nil {
+	if err := database.ValidateDDLFragment(column.Type, "column data type"); err != nil {
 		return "", err
 	}
-	if err := validateMySQLFragment(column.Default, "column default"); err != nil {
+	if err := database.ValidateDDLFragment(column.Default, "column default"); err != nil {
 		return "", err
 	}
 	statement := fmt.Sprintf(
@@ -383,7 +386,7 @@ func buildMySQLDropColumn(change database.DropColumnChange) string {
 
 func validateMySQLConstraintDefinition(value string) error {
 	value = strings.TrimSpace(value)
-	if err := validateMySQLFragment(value, "constraint definition"); err != nil {
+	if err := database.ValidateDDLFragment(value, "constraint definition"); err != nil {
 		return err
 	}
 	keywords := database.LeadingSQLKeywords(value, 2)

@@ -31,8 +31,9 @@ export const TIME = Object.freeze({
 	millisecondsPerSecond: 1_000
 });
 
-export type ProviderId = 'postgres' | 'mysql' | 'sqlite';
+export type ProviderId = 'postgres' | 'mysql' | 'sqlite' | 'oracle' | 'sqlserver';
 export type ConnectionEnvironment = 'unclassified' | 'development' | 'staging' | 'production';
+export type ConnectionAccessMode = 'read-write' | 'read-only';
 
 export const DATABASE_PROVIDERS: ReadonlyArray<{
 	id: ProviderId;
@@ -41,6 +42,8 @@ export const DATABASE_PROVIDERS: ReadonlyArray<{
 	defaultPort: string;
 	defaultDatabase: string;
 	defaultUser: string;
+	databaseLabel: string;
+	supportsClientCertificates: boolean;
 	available: boolean;
 	mark: string;
 }> = [
@@ -51,6 +54,8 @@ export const DATABASE_PROVIDERS: ReadonlyArray<{
 		defaultPort: '5432',
 		defaultDatabase: 'postgres',
 		defaultUser: 'postgres',
+		databaseLabel: 'Database name',
+		supportsClientCertificates: true,
 		available: true,
 		mark: 'PG'
 	},
@@ -61,6 +66,8 @@ export const DATABASE_PROVIDERS: ReadonlyArray<{
 		defaultPort: '3306',
 		defaultDatabase: 'app',
 		defaultUser: 'root',
+		databaseLabel: 'Database name',
+		supportsClientCertificates: true,
 		available: true,
 		mark: 'MY'
 	},
@@ -71,8 +78,34 @@ export const DATABASE_PROVIDERS: ReadonlyArray<{
 		defaultPort: '',
 		defaultDatabase: '',
 		defaultUser: '',
+		databaseLabel: 'SQLite file path',
+		supportsClientCertificates: false,
 		available: true,
 		mark: 'SQ'
+	},
+	{
+		id: 'oracle',
+		name: 'Oracle Database',
+		description: 'Oracle schemas, objects, table data, and SQL tools.',
+		defaultPort: '1521',
+		defaultDatabase: 'FREEPDB1',
+		defaultUser: 'system',
+		databaseLabel: 'Service name',
+		supportsClientCertificates: true,
+		available: true,
+		mark: 'OR'
+	},
+	{
+		id: 'sqlserver',
+		name: 'SQL Server',
+		description: 'Microsoft SQL Server schemas, objects, and T-SQL tools.',
+		defaultPort: '1433',
+		defaultDatabase: 'master',
+		defaultUser: 'sa',
+		databaseLabel: 'Database name',
+		supportsClientCertificates: false,
+		available: true,
+		mark: 'MS'
 	}
 ];
 
@@ -81,8 +114,26 @@ export const CONNECTION_DEFAULTS = Object.freeze({
 	sshPort: '22',
 	sslMode: 'disable',
 	provider: 'postgres' as ProviderId,
-	environment: 'unclassified' as ConnectionEnvironment
+	environment: 'unclassified' as ConnectionEnvironment,
+	accessMode: 'read-write' as ConnectionAccessMode
 });
+
+export const CONNECTION_ACCESS_MODES: ReadonlyArray<{
+	value: ConnectionAccessMode;
+	label: string;
+	description: string;
+}> = [
+	{
+		value: 'read-write',
+		label: 'Read & write',
+		description: 'Allow reviewed data and schema changes.'
+	},
+	{
+		value: 'read-only',
+		label: 'Read only',
+		description: 'Block every database mutation until temporarily unlocked.'
+	}
+];
 
 export const SSL_OPTIONS = Object.freeze([
 	{ value: 'disable', label: 'Disable' },
@@ -146,9 +197,26 @@ export function connectionEnvironmentOption(value?: string) {
 	return CONNECTION_ENVIRONMENTS.find((option) => option.value === normalized)!;
 }
 
+export function normalizeConnectionAccessMode(
+	value?: string,
+	environment?: string
+): ConnectionAccessMode {
+	const normalized = value?.trim().toLowerCase();
+	if (normalized === 'read-only' || normalized === 'read-write') return normalized;
+	return normalizeConnectionEnvironment(environment) === 'production'
+		? 'read-only'
+		: CONNECTION_DEFAULTS.accessMode;
+}
+
 export function providerOption(value?: string) {
+	const normalized =
+		value?.trim().toLowerCase() === 'mariadb'
+			? 'mysql'
+			: value?.trim().toLowerCase() === 'postgresql'
+				? 'postgres'
+				: value?.trim().toLowerCase();
 	return (
-		DATABASE_PROVIDERS.find((provider) => provider.id === value) ??
+		DATABASE_PROVIDERS.find((provider) => provider.id === normalized) ??
 		DATABASE_PROVIDERS.find((provider) => provider.id === CONNECTION_DEFAULTS.provider)!
 	);
 }

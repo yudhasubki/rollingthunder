@@ -30,8 +30,11 @@ func (s *Service) ApplyTableChanges(
 		)
 	}
 
-	driver, release, err := s.driverFor(connectionID)
+	driver, release, err := s.writeDriverFor(connectionID)
 	if err != nil {
+		if err == errConnectionReadOnly {
+			return readOnlyConnectionError[database.TableChangeResult]()
+		}
 		return serviceErrorWithCode[database.TableChangeResult](
 			http.StatusNotFound,
 			errorCodeTableChangesFailed,

@@ -3,11 +3,14 @@ package db
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"rollingthunder/pkg/database"
+	oracledriver "rollingthunder/pkg/database/oracle"
 	sqlitedriver "rollingthunder/pkg/database/sqlite"
+	sqlserverdriver "rollingthunder/pkg/database/sqlserver"
 )
 
 func sqliteMigrationDriver(t *testing.T, path string) *sqlitedriver.SQLite {
@@ -141,5 +144,91 @@ func TestSchemaMigrationRequiresDestructiveOptIn(t *testing.T) {
 	}
 	if destructive.Data.StatementCount != 1 || !destructive.Data.Destructive {
 		t.Fatalf("destructive preview = %+v", destructive.Data)
+	}
+}
+
+func TestRetargetTableDefinitionForOracleAndSQLServer(t *testing.T) {
+	tests := []struct {
+		name       string
+		engine     string
+		driver     database.Driver
+		definition string
+		source     string
+		target     string
+		table      string
+		want       string
+	}{
+		{
+			name:   "oracle",
+			engine: database.DriverOracle,
+			driver: oracledriver.NewOracle(
+				context.Background(),
+				oracledriver.Config{},
+			),
+			definition: `CREATE TABLE "SOURCE"."ORDERS" (` +
+				`"ID" NUMBER NOT NULL);`,
+			source: "SOURCE",
+			target: "TARGET",
+			table:  "ORDERS",
+			want:   `CREATE TABLE "TARGET"."ORDERS"`,
+		},
+		{
+			name:   "sqlserver",
+			engine: database.DriverSQLServer,
+			driver: sqlserverdriver.NewSQLServer(
+				context.Background(),
+				sqlserverdriver.Config{},
+			),
+			definition: `CREATE TABLE [source].[orders] (` +
+				`[id] int NOT NULL);`,
+			source: "source",
+			target: "target",
+			table:  "orders",
+			want:   `CREATE TABLE [target].[orders]`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			definition, supported := retargetTableDefinition(
+				test.driver,
+				test.engine,
+				test.definition,
+				test.source,
+				test.target,
+				test.table,
+			)
+			if !supported || !strings.Contains(definition, test.want) {
+				t.Fatalf(
+					"definition = %q, supported=%t, want %q",
+					definition,
+					supported,
+					test.want,
+				)
+			}
+		})
+	}
+}
+
+func TestGeneratedAndIdentityColumnsStayManualWhenSyntaxWouldBeLost(t *testing.T) {
+	identity := database.Structure{
+		Name:        "id",
+		IsAutoInc:   true,
+		IsGenerated: true,
+	}
+	if canAutomateAddedColumn(identity, database.DriverOracle) {
+		t.Fatal("Oracle identity column was marked safe for generic ADD COLUMN")
+	}
+	if canAutomateAddedColumn(identity, database.DriverSQLServer) {
+		t.Fatal("SQL Server identity column was marked safe for generic ADD COLUMN")
+	}
+	if !canAutomateAddedColumn(identity, database.DriverPostgres) {
+		t.Fatal("PostgreSQL identity/serial column was not recognized")
+	}
+	generated := database.Structure{
+		Name:        "normalized",
+		IsGenerated: true,
+	}
+	if canAutomateAddedColumn(generated, database.DriverMySQL) {
+		t.Fatal("MySQL generated expression was marked safe without its expression")
 	}
 }

@@ -12,6 +12,7 @@ type Column struct {
 	IsIdentity    string  `db:"is_identity"`
 	IdentityMode  *string `db:"identity_generation"`
 	IsGenerated   string  `db:"is_generated"`
+	Generation    *string `db:"generation_expression"`
 	IsPrimary     bool    `db:"is_primary"`
 }
 

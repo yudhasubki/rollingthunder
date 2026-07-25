@@ -25,13 +25,16 @@
 	import { focusTrap } from '$lib/actions/focusTrap';
 	import {
 		APPLICATION,
+		CONNECTION_ACCESS_MODES,
 		CONNECTION_DEFAULTS,
 		CONNECTION_ENVIRONMENTS,
 		DATABASE_PROVIDERS,
 		SSH_AUTH_OPTIONS,
 		SSL_OPTIONS,
 		connectionEnvironmentOption,
+		normalizeConnectionAccessMode,
 		normalizeConnectionEnvironment,
+		type ConnectionAccessMode,
 		type ConnectionEnvironment,
 		type ProviderId
 	} from '$lib/config/application';
@@ -82,6 +85,10 @@
 		value,
 		label
 	}));
+	const accessModeOptions = CONNECTION_ACCESS_MODES.map(({ value, label }) => ({
+		value,
+		label
+	}));
 
 	let profiles = $state<db.SavedConnection[]>([]);
 	let searchQuery = $state('');
@@ -117,6 +124,10 @@
 
 	let connectionName = $state('');
 	let connectionEnvironment = $state<ConnectionEnvironment>(CONNECTION_DEFAULTS.environment);
+	let accessMode = $state<ConnectionAccessMode>(CONNECTION_DEFAULTS.accessMode);
+	let accessModeTouched = $state(false);
+	let folder = $state('');
+	let tagsText = $state('');
 	let host = $state(CONNECTION_DEFAULTS.host);
 	let port = $state(
 		DATABASE_PROVIDERS.find((item) => item.id === CONNECTION_DEFAULTS.provider)?.defaultPort ?? ''
@@ -134,12 +145,26 @@
 		searchQuery.trim()
 			? profiles.filter((profile) => {
 					const config = profile.config;
-					return `${config.name} ${config.driver || CONNECTION_DEFAULTS.provider} ${config.host} ${config.db}`
+					return `${config.name} ${config.driver || CONNECTION_DEFAULTS.provider} ${config.host} ${config.db} ${config.folder || ''} ${(config.tags || []).join(' ')}`
 						.toLowerCase()
 						.includes(searchQuery.trim().toLowerCase());
 				})
 			: profiles
 	);
+	const groupedProfiles = $derived.by(() => {
+		const groups = new Map<string, db.SavedConnection[]>();
+		for (const profile of filteredProfiles) {
+			const group = profile.config.folder?.trim() || 'Ungrouped';
+			groups.set(group, [...(groups.get(group) || []), profile]);
+		}
+		return [...groups.entries()]
+			.sort(([left], [right]) => {
+				if (left === 'Ungrouped') return 1;
+				if (right === 'Ungrouped') return -1;
+				return left.localeCompare(right);
+			})
+			.map(([name, items]) => ({ name, items }));
+	});
 
 	const endpoint = $derived(
 		provider === 'sqlite'
@@ -218,6 +243,10 @@
 		editingId = profile.id;
 		connectionName = config.name || '';
 		connectionEnvironment = normalizeConnectionEnvironment(config.environment);
+		accessMode = normalizeConnectionAccessMode(config.accessMode, config.environment);
+		accessModeTouched = true;
+		folder = config.folder || '';
+		tagsText = (config.tags || []).join(', ');
 		const profileProvider = (config.driver as ProviderId) || CONNECTION_DEFAULTS.provider;
 		host = profileProvider === 'sqlite' ? '' : config.host || CONNECTION_DEFAULTS.host;
 		port =
@@ -261,6 +290,10 @@
 		editingId = null;
 		connectionName = '';
 		connectionEnvironment = CONNECTION_DEFAULTS.environment;
+		accessMode = CONNECTION_DEFAULTS.accessMode;
+		accessModeTouched = false;
+		folder = '';
+		tagsText = '';
 		host = CONNECTION_DEFAULTS.host;
 		port =
 			DATABASE_PROVIDERS.find((item) => item.id === CONNECTION_DEFAULTS.provider)?.defaultPort ??
@@ -311,6 +344,12 @@
 		return new database.Config({
 			name: connectionName.trim(),
 			environment: connectionEnvironment,
+			accessMode,
+			folder: folder.trim(),
+			tags: tagsText
+				.split(',')
+				.map((tag) => tag.trim())
+				.filter(Boolean),
 			driver: provider || CONNECTION_DEFAULTS.provider,
 			host: sqlite ? '' : host.trim(),
 			port: sqlite ? '' : port.trim(),
@@ -350,7 +389,10 @@
 			return false;
 		}
 		if (provider !== 'sqlite' && (!host.trim() || !port.trim() || !databaseName.trim())) {
-			showMessage('Host, port, and database are required.', 'error');
+			showMessage(
+				`Host, port, and ${selectedProvider?.databaseLabel.toLowerCase() || 'database'} are required.`,
+				'error'
+			);
 			return false;
 		}
 		if (provider !== 'sqlite' && sshEnabled) {
@@ -391,8 +433,19 @@
 			sshExpanded = false;
 		} else {
 			host ||= CONNECTION_DEFAULTS.host;
+			if (!nextProvider.supportsClientCertificates) {
+				sslCert = '';
+				sslKey = '';
+			}
 		}
 		message = '';
+	}
+
+	function selectEnvironment(value: string) {
+		connectionEnvironment = normalizeConnectionEnvironment(value);
+		if (!accessModeTouched) {
+			accessMode = connectionEnvironment === 'production' ? 'read-only' : 'read-write';
+		}
 	}
 
 	function profileEndpoint(profile: db.SavedConnection): string {
@@ -687,49 +740,68 @@
 								</p>
 							</div>
 						{:else}
-							<div class="space-y-0.5">
-								{#each filteredProfiles as profile (profile.id)}
-									{@const profileProvider =
-										providers.find(
-											(item) => item.id === (profile.config.driver || CONNECTION_DEFAULTS.provider)
-										) ?? providers[0]}
-									{@const profileEnvironment = connectionEnvironmentOption(
-										profile.config.environment
-									)}
-									<button
-										type="button"
-										class="group relative flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors {editingId ===
-										profile.id
-											? 'text-foreground bg-[var(--surface-raised)] shadow-sm'
-											: 'text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]'}"
-										onclick={() => selectProfile(profile)}
-									>
-										{#if editingId === profile.id}
-											<span class="bg-foreground absolute top-2 bottom-2 left-0 w-0.5 rounded-r"
-											></span>
-										{/if}
-										<span
-											class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-[8px] font-bold"
+							<div class="space-y-2">
+								{#each groupedProfiles as group (group.name)}
+									<div>
+										<div
+											class="text-muted-foreground flex items-center gap-2 px-2 py-1 text-[7px] font-bold tracking-[0.1em] uppercase"
 										>
-											{profileProvider.mark}
-										</span>
-										<span class="min-w-0 flex-1">
-											<span class="block truncate text-[10px] font-bold">
-												{profile.config.name || 'Unnamed profile'}
-											</span>
-											<span class="mt-0.5 block truncate font-mono text-[8px]">
-												{profileEndpoint(profile)}
-											</span>
-										</span>
-										<span
-											class="h-1.5 w-1.5 shrink-0 rounded-full {profileEnvironment.dotClass}"
-											title={profileEnvironment.label}
-										></span>
-										{#if isConnected(profile)}
-											<span class="bg-success h-1.5 w-1.5 shrink-0 rounded-full" title="Connected"
-											></span>
-										{/if}
-									</button>
+											<FolderOpen class="h-3 w-3" />
+											<span class="min-w-0 flex-1 truncate">{group.name}</span>
+											<span>{group.items.length}</span>
+										</div>
+										<div class="space-y-0.5">
+											{#each group.items as profile (profile.id)}
+												{@const profileProvider =
+													providers.find(
+														(item) =>
+															item.id === (profile.config.driver || CONNECTION_DEFAULTS.provider)
+													) ?? providers[0]}
+												{@const profileEnvironment = connectionEnvironmentOption(
+													profile.config.environment
+												)}
+												<button
+													type="button"
+													class="group relative flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors {editingId ===
+													profile.id
+														? 'text-foreground bg-[var(--surface-raised)] shadow-sm'
+														: 'text-muted-foreground hover:text-foreground hover:bg-[var(--surface-hover)]'}"
+													onclick={() => selectProfile(profile)}
+												>
+													{#if editingId === profile.id}
+														<span
+															class="bg-foreground absolute top-2 bottom-2 left-0 w-0.5 rounded-r"
+														></span>
+													{/if}
+													<span
+														class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-[8px] font-bold"
+													>
+														{profileProvider.mark}
+													</span>
+													<span class="min-w-0 flex-1">
+														<span class="block truncate text-[10px] font-bold">
+															{profile.config.name || 'Unnamed profile'}
+														</span>
+														<span class="mt-0.5 block truncate font-mono text-[8px]">
+															{profile.config.tags?.[0]
+																? `${profile.config.tags[0]} · ${profileEndpoint(profile)}`
+																: profileEndpoint(profile)}
+														</span>
+													</span>
+													<span
+														class="h-1.5 w-1.5 shrink-0 rounded-full {profileEnvironment.dotClass}"
+														title={profileEnvironment.label}
+													></span>
+													{#if isConnected(profile)}
+														<span
+															class="bg-success h-1.5 w-1.5 shrink-0 rounded-full"
+															title="Connected"
+														></span>
+													{/if}
+												</button>
+											{/each}
+										</div>
+									</div>
 								{/each}
 							</div>
 						{/if}
@@ -877,8 +949,7 @@
 											id="modal-environment"
 											options={environmentOptions}
 											value={connectionEnvironment}
-											onChange={(value) =>
-												(connectionEnvironment = normalizeConnectionEnvironment(value))}
+											onChange={selectEnvironment}
 											searchable={false}
 											disabled={action !== null}
 											triggerClass="h-9 px-3 text-xs"
@@ -887,6 +958,56 @@
 											<span class="h-1.5 w-1.5 rounded-full {selectedEnvironment.dotClass}"></span>
 											{selectedEnvironment.description}
 										</p>
+									</div>
+								</div>
+								<div class="col-span-2 grid grid-cols-2 gap-4">
+									<div>
+										<label for="modal-folder">Folder</label>
+										<input
+											id="modal-folder"
+											bind:value={folder}
+											placeholder="Team or project (optional)"
+											disabled={action !== null}
+										/>
+									</div>
+									<div>
+										<label for="modal-tags">Tags</label>
+										<input
+											id="modal-tags"
+											bind:value={tagsText}
+											placeholder="billing, analytics"
+											disabled={action !== null}
+										/>
+									</div>
+								</div>
+								<div
+									class="col-span-2 grid grid-cols-[minmax(0,1fr)_220px] items-end gap-4 rounded-lg border bg-[var(--surface-sunken)] p-3"
+								>
+									<div>
+										<div class="flex items-center gap-2 text-[10px] font-bold">
+											<ShieldCheck class="h-3.5 w-3.5" />
+											Write protection
+										</div>
+										<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
+											{CONNECTION_ACCESS_MODES.find((option) => option.value === accessMode)
+												?.description}
+											Temporary unlocks reset when the connection closes.
+										</p>
+									</div>
+									<div>
+										<label for="modal-access-mode">Access mode</label>
+										<FilterCombobox
+											id="modal-access-mode"
+											options={accessModeOptions}
+											value={accessMode}
+											onChange={(value) => {
+												accessMode = normalizeConnectionAccessMode(value, connectionEnvironment);
+												accessModeTouched = true;
+											}}
+											searchable={false}
+											disabled={action !== null}
+											triggerClass="h-9 px-3 text-xs"
+										/>
 									</div>
 								</div>
 
@@ -961,7 +1082,7 @@
 											/>
 										</div>
 										<div>
-											<label for="modal-database">Database name</label>
+											<label for="modal-database">{selectedProvider.databaseLabel}</label>
 											<input
 												id="modal-database"
 												bind:value={databaseName}
@@ -1049,24 +1170,26 @@
 												disabled={action !== null}
 											/>
 										</div>
-										<div>
-											<label for="modal-client-cert">Client certificate path</label>
-											<input
-												id="modal-client-cert"
-												bind:value={sslCert}
-												placeholder="/path/to/client.crt"
-												disabled={action !== null}
-											/>
-										</div>
-										<div>
-											<label for="modal-client-key">Client key path</label>
-											<input
-												id="modal-client-key"
-												bind:value={sslKey}
-												placeholder="/path/to/client.key"
-												disabled={action !== null}
-											/>
-										</div>
+										{#if selectedProvider.supportsClientCertificates}
+											<div>
+												<label for="modal-client-cert">Client certificate path</label>
+												<input
+													id="modal-client-cert"
+													bind:value={sslCert}
+													placeholder="/path/to/client.crt"
+													disabled={action !== null}
+												/>
+											</div>
+											<div>
+												<label for="modal-client-key">Client key path</label>
+												<input
+													id="modal-client-key"
+													bind:value={sslKey}
+													placeholder="/path/to/client.key"
+													disabled={action !== null}
+												/>
+											</div>
+										{/if}
 									{/if}
 
 									<div
