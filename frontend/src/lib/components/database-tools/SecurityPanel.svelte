@@ -102,54 +102,126 @@
 		)
 	);
 	const isPostgres = $derived(overview?.engine === 'postgres');
+	const isOracle = $derived(overview?.engine === 'oracle');
+	const usesAccountHost = $derived(!isPostgres && !isOracle);
 	const principalKindOptions = [
 		{ value: 'user', label: 'User / login' },
 		{ value: 'role', label: 'Role' }
 	];
 	const objectTypeOptions = $derived(
-		isPostgres
+		isOracle
 			? [
-					{ value: 'database', label: 'Database' },
-					{ value: 'schema', label: 'Schema' },
+					{ value: 'system', label: 'System' },
 					{ value: 'table', label: 'Table' },
-					{ value: 'all_tables_in_schema', label: 'All tables in schema' },
-					{ value: 'sequence', label: 'Sequence' }
+					{ value: 'view', label: 'View' },
+					{ value: 'materialized view', label: 'Materialized view' },
+					{ value: 'sequence', label: 'Sequence' },
+					{ value: 'procedure', label: 'Procedure' },
+					{ value: 'function', label: 'Function' },
+					{ value: 'package', label: 'Package' },
+					{ value: 'type', label: 'Type' },
+					{ value: 'directory', label: 'Directory' }
 				]
-			: [
-					{ value: 'global', label: 'Global' },
-					{ value: 'database', label: 'Database' },
-					{ value: 'table', label: 'Table' }
-				]
+			: isPostgres
+				? [
+						{ value: 'database', label: 'Database' },
+						{ value: 'schema', label: 'Schema' },
+						{ value: 'table', label: 'Table' },
+						{ value: 'all_tables_in_schema', label: 'All tables in schema' },
+						{ value: 'sequence', label: 'Sequence' }
+					]
+				: [
+						{ value: 'global', label: 'Global' },
+						{ value: 'database', label: 'Database' },
+						{ value: 'table', label: 'Table' }
+					]
 	);
 	const privilegeOptions = $derived(
-		isPostgres
-			? objectType === 'database'
-				? ['CONNECT', 'CREATE', 'TEMPORARY']
-				: objectType === 'schema'
-					? ['USAGE', 'CREATE']
-					: objectType === 'sequence'
-						? ['USAGE', 'SELECT', 'UPDATE', 'ALL']
-						: ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'ALL']
-			: [
-					'SELECT',
-					'INSERT',
-					'UPDATE',
-					'DELETE',
-					'CREATE',
-					'DROP',
-					'ALTER',
-					'INDEX',
-					'REFERENCES',
-					'EXECUTE',
-					'CREATE VIEW',
-					'SHOW VIEW',
-					'TRIGGER',
-					'EVENT',
-					'CREATE ROUTINE',
-					'ALTER ROUTINE',
-					'PROCESS',
-					'ALL'
-				]
+		isOracle
+			? objectType === 'system'
+				? [
+						'ALTER SYSTEM',
+						'ALTER USER',
+						'CREATE ANY INDEX',
+						'CREATE PROCEDURE',
+						'CREATE ROLE',
+						'CREATE SEQUENCE',
+						'CREATE SESSION',
+						'CREATE TABLE',
+						'CREATE TRIGGER',
+						'CREATE TYPE',
+						'CREATE USER',
+						'CREATE VIEW',
+						'DELETE ANY TABLE',
+						'DROP USER',
+						'EXECUTE ANY PROCEDURE',
+						'GRANT ANY ROLE',
+						'INSERT ANY TABLE',
+						'SELECT ANY DICTIONARY',
+						'SELECT ANY TABLE',
+						'UPDATE ANY TABLE'
+					]
+				: objectType === 'table'
+					? [
+							'SELECT',
+							'READ',
+							'INSERT',
+							'UPDATE',
+							'DELETE',
+							'ALTER',
+							'FLASHBACK',
+							'INDEX',
+							'REFERENCES'
+						]
+					: objectType === 'view'
+						? ['SELECT', 'READ', 'INSERT', 'UPDATE', 'DELETE']
+						: objectType === 'materialized view'
+							? ['SELECT', 'READ']
+							: objectType === 'sequence'
+								? ['SELECT', 'ALTER']
+								: objectType === 'type'
+									? ['EXECUTE', 'DEBUG', 'UNDER']
+									: objectType === 'directory'
+										? ['READ', 'WRITE', 'EXECUTE']
+										: ['EXECUTE', 'DEBUG']
+			: isPostgres
+				? objectType === 'database'
+					? ['CONNECT', 'CREATE', 'TEMPORARY']
+					: objectType === 'schema'
+						? ['USAGE', 'CREATE']
+						: objectType === 'sequence'
+							? ['USAGE', 'SELECT', 'UPDATE', 'ALL']
+							: ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'ALL']
+				: [
+						'SELECT',
+						'INSERT',
+						'UPDATE',
+						'DELETE',
+						'CREATE',
+						'DROP',
+						'ALTER',
+						'INDEX',
+						'REFERENCES',
+						'EXECUTE',
+						'CREATE VIEW',
+						'SHOW VIEW',
+						'TRIGGER',
+						'EVENT',
+						'CREATE ROUTINE',
+						'ALTER ROUTINE',
+						'PROCESS',
+						'ALL'
+					]
+	);
+	const needsGrantSchema = $derived(
+		isOracle
+			? objectType !== 'system' && objectType !== 'directory'
+			: objectType !== 'global' && objectType !== 'database'
+	);
+	const needsGrantObject = $derived(
+		isOracle
+			? objectType !== 'system'
+			: objectType === 'database' || objectType === 'table' || objectType === 'sequence'
 	);
 	const privilegeSelectOptions = $derived(
 		privilegeOptions.map((item) => ({ value: item, label: item }))
@@ -263,7 +335,7 @@
 		objectType =
 			existing?.objectType && existing.objectType !== 'statement'
 				? existing.objectType
-				: isPostgres
+				: isPostgres || isOracle
 					? 'table'
 					: 'database';
 		grantSchema = existing?.schema ?? '';
@@ -707,7 +779,7 @@
 								oninput={resetPreview}
 							/>
 						</label>
-						{#if !isPostgres}
+						{#if usesAccountHost}
 							<label>
 								<span class="text-muted-foreground mb-1 block text-[8px]">Host</span>
 								<input
@@ -718,7 +790,7 @@
 								/>
 							</label>
 						{/if}
-						<label class={isPostgres ? 'col-span-2' : ''}>
+						<label class={!usesAccountHost ? 'col-span-2' : ''}>
 							<span class="text-muted-foreground mb-1 block text-[8px]">Kind</span>
 							<FilterCombobox
 								id="security-principal-kind"
@@ -755,7 +827,11 @@
 								This removes the account and its grants.
 							</p>
 							<p class="text-muted-foreground mt-1 text-[7px]">
-								Owned PostgreSQL objects must be reassigned before the role can be dropped.
+								{isPostgres
+									? 'Owned PostgreSQL objects must be reassigned before the role can be dropped.'
+									: isOracle
+										? 'Oracle refuses to drop a user that still owns objects; this workflow never adds CASCADE automatically.'
+										: 'Review owned objects and active grants before removing this account.'}
 							</p>
 						</div>
 					{:else if isPostgres}
@@ -841,9 +917,11 @@
 								triggerClass="h-9 px-2 text-[9px]"
 							/>
 						</label>
-						{#if objectType !== 'global' && objectType !== 'database'}
+						{#if needsGrantSchema}
 							<label>
-								<span class="text-muted-foreground mb-1 block text-[8px]"> Schema / database </span>
+								<span class="text-muted-foreground mb-1 block text-[8px]">
+									{isOracle ? 'Schema' : 'Schema / database'}
+								</span>
 								<input
 									class="rt-input h-9 w-full px-2 text-[9px]"
 									bind:value={grantSchema}
@@ -851,18 +929,15 @@
 								/>
 							</label>
 						{/if}
-						{#if objectType === 'database'}
-							<label class="col-span-2">
-								<span class="text-muted-foreground mb-1 block text-[8px]">Database</span>
-								<input
-									class="rt-input h-9 w-full px-2 text-[9px]"
-									bind:value={grantObject}
-									oninput={resetPreview}
-								/>
-							</label>
-						{:else if objectType === 'table' || objectType === 'sequence'}
-							<label>
-								<span class="text-muted-foreground mb-1 block text-[8px]">Object</span>
+						{#if needsGrantObject}
+							<label class={objectType === 'database' ? 'col-span-2' : ''}>
+								<span class="text-muted-foreground mb-1 block text-[8px]">
+									{objectType === 'database'
+										? 'Database'
+										: objectType === 'directory'
+											? 'Directory'
+											: 'Object'}
+								</span>
 								<input
 									class="rt-input h-9 w-full px-2 text-[9px]"
 									bind:value={grantObject}

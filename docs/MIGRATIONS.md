@@ -8,8 +8,8 @@ must be versioned and migrated explicitly.
 
 | Data                      | Current version | Location                                              | Contains secrets    |
 | ------------------------- | --------------: | ----------------------------------------------------- | ------------------- |
-| Saved connection profiles |               3 | `connections.json` in the OS config directory         | No                  |
-| Database and SSH secrets  |      OS-managed | Keychain, Credential Manager, or Secret Service       | Yes                 |
+| Saved connection profiles |               6 | `connections.json` in the OS config directory         | No                  |
+| Database/SSH/Wallet secrets |    OS-managed | Keychain, Credential Manager, or Secret Service       | Yes                 |
 | Query workspaces          |               1 | Webview local storage, `rollingthunder.workspace`     | Query text          |
 | Named queries             |               1 | Webview local storage, `rollingthunder.saved-queries` | Query text          |
 | Diagnostics preferences   |               1 | `diagnostics.json` in the OS config directory         | No                  |
@@ -22,8 +22,9 @@ The application config directory is normally:
 - Linux: `$XDG_CONFIG_HOME/RollingThunder` or `~/.config/RollingThunder`
 
 Secrets use the credential service `RollingThunder.DatabaseProfiles`. Database passwords use the
-opaque saved-profile ID as their account key; SSH passwords and key passphrases use namespaced keys
-derived from that ID. They are never returned by the saved-profile API.
+opaque saved-profile ID as their account key; SSH passwords, SSH key passphrases, and Oracle Wallet
+passwords use namespaced keys derived from that ID. They are never returned by the saved-profile
+API.
 
 ## Compatibility rules
 
@@ -75,6 +76,20 @@ Version 4 replaces arbitrary profile colors with an operational environment clas
 environment values fail safely to `unclassified`; they are never inferred from an old decorative
 color. Existing credentials remain in the operating-system credential store and are not rewritten
 into profile JSON.
+
+## Version 4 to version 5 saved profiles
+
+Version 5 adds profile folders, normalized tags, and an explicit `read-write` or `read-only` access
+mode. Existing Production profiles without an access mode default to `read-only`; other profiles
+default to `read-write`. This application setting is a guardrail and does not replace database-side
+least privilege.
+
+## Version 5 to version 6 saved profiles
+
+Version 6 adds non-secret Oracle direct/TNS and Wallet metadata plus
+`hasOracleWalletPassword`. Any legacy plaintext `oracleWalletPassword` is moved to the operating
+system credential store under a namespaced profile key before the profile file is atomically
+rewritten. A failed credential-store write leaves the original version-5 file unchanged.
 
 ## Backup before upgrade
 

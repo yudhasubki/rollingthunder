@@ -77,6 +77,8 @@ type Service struct {
 	saveDialog          saveFileDialogFunc
 	sqliteOpenDialog    openFileDialogFunc
 	sqliteSaveDialog    saveFileDialogFunc
+	oracleTNSOpenDialog openFileDialogFunc
+	oracleWalletDialog  openFileDialogFunc
 	importOpenDialog    openFileDialogFunc
 	restoreOpenDialog   openFileDialogFunc
 	sqlOpenDialog       openFileDialogFunc
@@ -132,32 +134,34 @@ func NewServiceWithDiagnosticsAndVersion(
 		diagnosticManager = diagnostics.NewManager()
 	}
 	return &Service{
-		connections:        make(map[string]*Connection),
-		saveDialog:         defaultSaveFileDialog,
-		sqliteOpenDialog:   defaultOpenFileDialog,
-		sqliteSaveDialog:   defaultSaveFileDialog,
-		importOpenDialog:   defaultOpenFileDialog,
-		restoreOpenDialog:  defaultOpenFileDialog,
-		sqlOpenDialog:      defaultOpenFileDialog,
-		importFiles:        make(map[string]importFileGrant),
-		restoreFiles:       make(map[string]restoreFileGrant),
-		sqlFiles:           make(map[string]sqlFileGrant),
-		exportJobs:         make(map[string]*exportJob),
-		maintenanceJobs:    make(map[string]*maintenanceJob),
-		lookPath:           defaultExecutableLookup,
-		commandContext:     defaultCommandFactory,
-		newDriver:          NewDriver,
-		newTunnel:          newSSHTunnel,
-		connectionTimeout:  defaultConnectionTimeout,
-		connectionAttempts: make(map[string]*connectionAttempt),
-		queryAttempts:      make(map[string]*queryAttempt),
-		transactions:       make(map[string]*transactionSession),
-		connectionStorage:  NewConnectionStorage(),
-		credentialStore:    newOperatingSystemCredentialStore(),
-		healthInterval:     defaultHealthMonitorInterval,
-		healthTimeout:      defaultHealthCheckTimeout,
-		diagnostics:        diagnosticManager,
-		updateChecker:      updater.NewChecker(currentVersion),
+		connections:         make(map[string]*Connection),
+		saveDialog:          defaultSaveFileDialog,
+		sqliteOpenDialog:    defaultOpenFileDialog,
+		sqliteSaveDialog:    defaultSaveFileDialog,
+		oracleTNSOpenDialog: defaultOpenFileDialog,
+		oracleWalletDialog:  defaultOpenDirectoryDialog,
+		importOpenDialog:    defaultOpenFileDialog,
+		restoreOpenDialog:   defaultOpenFileDialog,
+		sqlOpenDialog:       defaultOpenFileDialog,
+		importFiles:         make(map[string]importFileGrant),
+		restoreFiles:        make(map[string]restoreFileGrant),
+		sqlFiles:            make(map[string]sqlFileGrant),
+		exportJobs:          make(map[string]*exportJob),
+		maintenanceJobs:     make(map[string]*maintenanceJob),
+		lookPath:            defaultExecutableLookup,
+		commandContext:      defaultCommandFactory,
+		newDriver:           NewDriver,
+		newTunnel:           newSSHTunnel,
+		connectionTimeout:   defaultConnectionTimeout,
+		connectionAttempts:  make(map[string]*connectionAttempt),
+		queryAttempts:       make(map[string]*queryAttempt),
+		transactions:        make(map[string]*transactionSession),
+		connectionStorage:   NewConnectionStorage(),
+		credentialStore:     newOperatingSystemCredentialStore(),
+		healthInterval:      defaultHealthMonitorInterval,
+		healthTimeout:       defaultHealthCheckTimeout,
+		diagnostics:         diagnosticManager,
+		updateChecker:       updater.NewChecker(currentVersion),
 	}
 }
 
@@ -658,6 +662,11 @@ func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo]
 	for _, conn := range s.connections {
 		conn.mu.RLock()
 		writeAccess := connectionWriteAccessLocked(conn)
+		displayHost := conn.Config.Host
+		if conn.Config.Driver == database.DriverOracle &&
+			conn.Config.OracleConnectionMode == "tns" {
+			displayHost = conn.Config.OracleTNSAlias
+		}
 		snapshot := connectionSnapshot{
 			info: ConnectionInfo{
 				ID:            conn.ID,
@@ -665,7 +674,7 @@ func (s *Service) GetActiveConnections() response.BaseResponse[[]ConnectionInfo]
 				Name:          conn.Name,
 				Driver:        conn.Config.Driver,
 				Database:      conn.Config.Db,
-				Host:          conn.Config.Host,
+				Host:          displayHost,
 				Environment:   conn.Environment,
 				AccessMode:    writeAccess.AccessMode,
 				ReadOnly:      writeAccess.AccessMode == database.ConnectionAccessReadOnly,

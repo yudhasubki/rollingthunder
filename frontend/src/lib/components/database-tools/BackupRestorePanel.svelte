@@ -33,6 +33,7 @@
 	let capabilities = $state<database.BackupCapabilities | null>(null);
 	let scope = $state<'full' | 'schema' | 'data'>('full');
 	let schema = $state('');
+	let directory = $state('');
 	let loading = $state(false);
 	let backupRunning = $state(false);
 	let backupJobId = $state('');
@@ -61,6 +62,12 @@
 		{ value: 'schema', label: 'Structure only' },
 		{ value: 'data', label: 'Data only' }
 	];
+	const directoryOptions = $derived(
+		(capabilities?.directories ?? []).map((item) => ({
+			value: item.name,
+			label: item.path ? `${item.name} · ${item.path}` : item.name
+		}))
+	);
 	const connection = $derived(
 		connections.find((candidate) => candidate.id === connectionId) ?? null
 	);
@@ -125,6 +132,14 @@
 				throw createServiceError(response.errors[0], 'Could not inspect backup tooling');
 			}
 			capabilities = response.data ?? null;
+			if (capabilities?.requiresDirectory) {
+				const directories = capabilities.directories ?? [];
+				const preferred =
+					directories.find((item) => item.name === 'DATA_PUMP_DIR') ?? directories[0];
+				directory = preferred?.name ?? '';
+			} else {
+				directory = '';
+			}
 		} catch (loadError: any) {
 			error = loadError?.message ?? 'Could not inspect backup tooling.';
 			capabilities = null;
@@ -148,6 +163,10 @@
 
 	async function startBackup(): Promise<void> {
 		if (!connectionId || backupRunning || restoreRunning || !capabilities?.available) return;
+		if (capabilities.requiresDirectory && !directory) {
+			error = 'Choose an Oracle Data Pump server directory first.';
+			return;
+		}
 		if (!hasBackendMethod('BackupDatabase')) {
 			error = BACKEND_RESTART_MESSAGE;
 			return;
@@ -164,6 +183,7 @@
 					connectionId,
 					jobId: backupJobId,
 					schema: schema.trim(),
+					directory,
 					schemaOnly: scope === 'schema',
 					dataOnly: scope === 'data'
 				})
@@ -205,6 +225,10 @@
 
 	async function chooseRestore(): Promise<void> {
 		if (!connectionId || restoreRunning || backupRunning) return;
+		if (capabilities?.requiresDirectory && !directory) {
+			error = 'Choose an Oracle Data Pump server directory first.';
+			return;
+		}
 		if (!hasBackendMethod('ChooseRestoreFile')) {
 			error = BACKEND_RESTART_MESSAGE;
 			return;
@@ -222,7 +246,8 @@
 			const request = new database.RestorePreviewRequest({
 				connectionId,
 				token: selected.data.token,
-				schema: schema.trim()
+				schema: schema.trim(),
+				directory
 			});
 			const response = await PreviewDatabaseRestore(request);
 			if (response.errors?.length) {
@@ -253,7 +278,8 @@
 			const restore = new database.RestorePreviewRequest({
 				connectionId,
 				token: restoreSelection.token,
-				schema: schema.trim()
+				schema: schema.trim(),
+				directory
 			});
 			const response = await ApplyDatabaseRestore(
 				new database.ApplyRestoreRequest({
@@ -292,7 +318,9 @@
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 	<div
-		class="grid shrink-0 grid-cols-[minmax(220px,1fr)_minmax(180px,0.65fr)_minmax(190px,0.7fr)] gap-3 border-b bg-[var(--surface-sunken)] p-4"
+		class="grid shrink-0 gap-3 border-b bg-[var(--surface-sunken)] p-4"
+		class:grid-cols-[minmax(220px,1fr)_minmax(170px,0.6fr)_minmax(190px,0.7fr)_minmax(220px,0.8fr)]={capabilities?.requiresDirectory}
+		class:grid-cols-[minmax(220px,1fr)_minmax(180px,0.65fr)_minmax(190px,0.7fr)]={!capabilities?.requiresDirectory}
 	>
 		<label>
 			<span class="text-muted-foreground mb-1 block text-[8px]">Connection</span>
@@ -323,14 +351,43 @@
 			/>
 		</label>
 		<label>
-			<span class="text-muted-foreground mb-1 block text-[8px]">Schema filter (optional)</span>
+			<span class="text-muted-foreground mb-1 block text-[8px]">
+				{capabilities?.engine === 'oracle'
+					? 'Application schema (defaults to current)'
+					: 'Schema filter (optional)'}
+			</span>
 			<input
 				class="rt-input h-9 w-full px-2 text-[9px]"
 				bind:value={schema}
 				disabled={capabilities?.engine === 'sqlite' || backupRunning || restoreRunning}
-				placeholder={capabilities?.engine === 'postgres' ? 'public' : 'All schemas'}
+				placeholder={capabilities?.engine === 'postgres'
+					? 'public'
+					: capabilities?.engine === 'oracle'
+						? 'CURRENT_SCHEMA'
+						: 'All schemas'}
 			/>
 		</label>
+		{#if capabilities?.requiresDirectory}
+			<label>
+				<span class="text-muted-foreground mb-1 block text-[8px]">
+					Data Pump server directory
+				</span>
+				<FilterCombobox
+					id="backup-directory"
+					options={directoryOptions}
+					value={directory}
+					onChange={(value) => {
+						directory = value;
+						resetRestore();
+					}}
+					disabled={backupRunning || restoreRunning}
+					searchable={directoryOptions.length > 6}
+					searchPlaceholder="Find server directory…"
+					emptyText="No accessible directories"
+					triggerClass="h-9 px-2 text-[9px]"
+				/>
+			</label>
+		{/if}
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto p-4">

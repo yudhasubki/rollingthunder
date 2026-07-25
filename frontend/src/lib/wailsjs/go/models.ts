@@ -450,6 +450,7 @@ export namespace database {
 	    connectionId: string;
 	    token: string;
 	    schema?: string;
+	    directory?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RestorePreviewRequest(source);
@@ -460,6 +461,7 @@ export namespace database {
 	        this.connectionId = source["connectionId"];
 	        this.token = source["token"];
 	        this.schema = source["schema"];
+	        this.directory = source["directory"];
 	    }
 	}
 	export class ApplyRestoreRequest {
@@ -676,6 +678,20 @@ export namespace database {
 		    return a;
 		}
 	}
+	export class BackupDirectory {
+	    name: string;
+	    path?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new BackupDirectory(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	    }
+	}
 	export class BackupCapabilities {
 	    available: boolean;
 	    engine: string;
@@ -687,6 +703,8 @@ export namespace database {
 	    builtIn: boolean;
 	    message?: string;
 	    supportsScope: boolean;
+	    requiresDirectory: boolean;
+	    directories: BackupDirectory[];
 	
 	    static createFrom(source: any = {}) {
 	        return new BackupCapabilities(source);
@@ -704,12 +722,34 @@ export namespace database {
 	        this.builtIn = source["builtIn"];
 	        this.message = source["message"];
 	        this.supportsScope = source["supportsScope"];
+	        this.requiresDirectory = source["requiresDirectory"];
+	        this.directories = this.convertValues(source["directories"], BackupDirectory);
 	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
+
 	export class BackupRequest {
 	    connectionId: string;
 	    jobId: string;
 	    schema?: string;
+	    directory?: string;
 	    schemaOnly: boolean;
 	    dataOnly: boolean;
 	
@@ -722,6 +762,7 @@ export namespace database {
 	        this.connectionId = source["connectionId"];
 	        this.jobId = source["jobId"];
 	        this.schema = source["schema"];
+	        this.directory = source["directory"];
 	        this.schemaOnly = source["schemaOnly"];
 	        this.dataOnly = source["dataOnly"];
 	    }
@@ -937,6 +978,11 @@ export namespace database {
 	    sslCert: string;
 	    sslKey: string;
 	    sslRootCert: string;
+	    oracleConnectionMode?: string;
+	    oracleTnsConfigPath?: string;
+	    oracleTnsAlias?: string;
+	    oracleWalletPath?: string;
+	    oracleWalletPassword?: string;
 	    sshEnabled: boolean;
 	    sshHost: string;
 	    sshPort: string;
@@ -970,6 +1016,11 @@ export namespace database {
 	        this.sslCert = source["sslCert"];
 	        this.sslKey = source["sslKey"];
 	        this.sslRootCert = source["sslRootCert"];
+	        this.oracleConnectionMode = source["oracleConnectionMode"];
+	        this.oracleTnsConfigPath = source["oracleTnsConfigPath"];
+	        this.oracleTnsAlias = source["oracleTnsAlias"];
+	        this.oracleWalletPath = source["oracleWalletPath"];
+	        this.oracleWalletPassword = source["oracleWalletPassword"];
 	        this.sshEnabled = source["sshEnabled"];
 	        this.sshHost = source["sshHost"];
 	        this.sshPort = source["sshPort"];
@@ -2017,6 +2068,36 @@ export namespace database {
 	}
 	
 	
+	export class OracleTNSSelection {
+	    path: string;
+	    aliases: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new OracleTNSSelection(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.aliases = source["aliases"];
+	    }
+	}
+	export class OracleWalletSelection {
+	    path: string;
+	    hasAutoLogin: boolean;
+	    passwordRequired: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new OracleWalletSelection(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.hasAutoLogin = source["hasAutoLogin"];
+	        this.passwordRequired = source["passwordRequired"];
+	    }
+	}
 	
 	export class QueryVariable {
 	    name: string;
@@ -2164,6 +2245,7 @@ export namespace database {
 	    size: number;
 	    format: string;
 	    schema?: string;
+	    directory?: string;
 	    destructive: boolean;
 	    transactional: boolean;
 	    warnings: string[];
@@ -2182,6 +2264,7 @@ export namespace database {
 	        this.size = source["size"];
 	        this.format = source["format"];
 	        this.schema = source["schema"];
+	        this.directory = source["directory"];
 	        this.destructive = source["destructive"];
 	        this.transactional = source["transactional"];
 	        this.warnings = source["warnings"];
@@ -2765,6 +2848,7 @@ export namespace db {
 	    hasPassword: boolean;
 	    hasSshPassword: boolean;
 	    hasSshKeyPassphrase: boolean;
+	    hasOracleWalletPassword: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SavedConnection(source);
@@ -2777,6 +2861,7 @@ export namespace db {
 	        this.hasPassword = source["hasPassword"];
 	        this.hasSshPassword = source["hasSshPassword"];
 	        this.hasSshKeyPassphrase = source["hasSshKeyPassphrase"];
+	        this.hasOracleWalletPassword = source["hasOracleWalletPassword"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -4058,6 +4143,70 @@ export namespace response {
 	        this.data = this.convertValues(source["data"], database.ObjectDetail);
 	    }
 	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_OracleTNSSelection_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.OracleTNSSelection;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_OracleTNSSelection_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.OracleTNSSelection);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BaseResponse_rollingthunder_pkg_database_OracleWalletSelection_ {
+	    errors?: BaseErrorResponse[];
+	    data?: database.OracleWalletSelection;
+
+	    static createFrom(source: any = {}) {
+	        return new BaseResponse_rollingthunder_pkg_database_OracleWalletSelection_(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.errors = this.convertValues(source["errors"], BaseErrorResponse);
+	        this.data = this.convertValues(source["data"], database.OracleWalletSelection);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;

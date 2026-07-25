@@ -254,6 +254,8 @@ jobs:
       ROLLINGTHUNDER_ORACLE_TEST_PASSWORD: "RollingThunder_2026"
       ROLLINGTHUNDER_ORACLE_TEST_SERVICE: FREEPDB1
       ROLLINGTHUNDER_ORACLE_TEST_SSL_MODE: disable
+      ROLLINGTHUNDER_ORACLE_TEST_PRIVILEGED: "1"
+      ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP: "1"
     services:
       database:
         image: container-registry.oracle.com/database/free:latest-lite

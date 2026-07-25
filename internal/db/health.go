@@ -230,6 +230,7 @@ func (s *Service) reconnectConfig(
 		config.Password = ""
 		config.SSHPassword = ""
 		config.SSHKeyPassphrase = ""
+		config.OracleWalletPassword = ""
 		config, err = s.hydrateProfileCredentials(profile, config)
 		if err != nil {
 			return database.Config{}, fmt.Errorf(

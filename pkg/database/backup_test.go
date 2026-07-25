@@ -16,4 +16,10 @@ func TestBackupRequestValidation(t *testing.T) {
 	if err := (BackupRequest{ConnectionID: "connection"}).Validate(); err != nil {
 		t.Fatalf("valid backup request rejected: %v", err)
 	}
+	if err := (BackupRequest{
+		ConnectionID: "connection",
+		Directory:    "DATA_PUMP_DIR\nDROP",
+	}).Validate(); err != ErrBackupDirectoryInvalid {
+		t.Fatalf("unsafe directory error = %v", err)
+	}
 }

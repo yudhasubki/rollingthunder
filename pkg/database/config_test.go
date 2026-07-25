@@ -95,3 +95,70 @@ func TestConfigSafetyValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestOracleConnectionSafetyValidation(t *testing.T) {
+	validTNS := Config{
+		Driver:               DriverOracle,
+		SSLMode:              "verify-full",
+		OracleConnectionMode: "tns",
+		OracleTNSConfigPath:  "/reviewed/tnsnames.ora",
+		OracleTNSAlias:       "APP",
+	}
+	if err := validTNS.ValidateSafety(); err != nil {
+		t.Fatalf("valid Oracle TNS config failed: %v", err)
+	}
+	validWallet := Config{
+		Driver:               DriverOracle,
+		SSLMode:              "verify-full",
+		OracleConnectionMode: "direct",
+		OracleWalletPath:     "/reviewed/wallet",
+		OracleWalletPassword: "opaque\nsecret",
+	}
+	if err := validWallet.ValidateSafety(); err != nil {
+		t.Fatalf("valid Oracle Wallet config failed: %v", err)
+	}
+	tests := []Config{
+		{
+			Driver:               DriverOracle,
+			OracleConnectionMode: "tns",
+			OracleTNSAlias:       "APP",
+		},
+		{
+			Driver:               DriverOracle,
+			OracleConnectionMode: "tns",
+			OracleTNSConfigPath:  "/reviewed/tnsnames.ora",
+			OracleTNSAlias:       "APP",
+			SSHEnabled:           true,
+		},
+		{
+			Driver:           DriverOracle,
+			SSLMode:          "disable",
+			OracleWalletPath: "/reviewed/wallet",
+		},
+		{
+			Driver:           DriverOracle,
+			SSLMode:          "verify-ca",
+			OracleWalletPath: "/reviewed/wallet",
+		},
+		{
+			Driver:               DriverOracle,
+			SSLMode:              "verify-full",
+			OracleWalletPassword: "orphaned",
+		},
+		{
+			Driver:           DriverOracle,
+			SSLMode:          "verify-full",
+			OracleWalletPath: "/reviewed/wallet",
+			SSLRootCert:      "/reviewed/root.pem",
+		},
+		{
+			Driver:               DriverPostgres,
+			OracleConnectionMode: "direct",
+		},
+	}
+	for _, config := range tests {
+		if err := config.ValidateSafety(); err == nil {
+			t.Errorf("expected unsafe Oracle config to fail: %+v", config)
+		}
+	}
+}

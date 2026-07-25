@@ -1,6 +1,10 @@
 package database
 
-import "context"
+import (
+	"context"
+	"io"
+	"strings"
+)
 
 type BackupFormat string
 
@@ -8,25 +12,34 @@ const (
 	BackupFormatSQLiteNative   BackupFormat = "sqlite"
 	BackupFormatPostgresCustom BackupFormat = "postgres_custom"
 	BackupFormatMySQLSQL       BackupFormat = "mysql_sql"
+	BackupFormatOracleDataPump BackupFormat = "oracle_datapump"
 )
 
+type BackupDirectory struct {
+	Name string `json:"name"`
+	Path string `json:"path,omitempty"`
+}
+
 type BackupCapabilities struct {
-	Available     bool         `json:"available"`
-	Engine        string       `json:"engine"`
-	Format        BackupFormat `json:"format"`
-	Extension     string       `json:"extension"`
-	BackupTool    string       `json:"backupTool"`
-	RestoreTool   string       `json:"restoreTool"`
-	RestoreReady  bool         `json:"restoreReady"`
-	BuiltIn       bool         `json:"builtIn"`
-	Message       string       `json:"message,omitempty"`
-	SupportsScope bool         `json:"supportsScope"`
+	Available         bool              `json:"available"`
+	Engine            string            `json:"engine"`
+	Format            BackupFormat      `json:"format"`
+	Extension         string            `json:"extension"`
+	BackupTool        string            `json:"backupTool"`
+	RestoreTool       string            `json:"restoreTool"`
+	RestoreReady      bool              `json:"restoreReady"`
+	BuiltIn           bool              `json:"builtIn"`
+	Message           string            `json:"message,omitempty"`
+	SupportsScope     bool              `json:"supportsScope"`
+	RequiresDirectory bool              `json:"requiresDirectory"`
+	Directories       []BackupDirectory `json:"directories"`
 }
 
 type BackupRequest struct {
 	ConnectionID string `json:"connectionId"`
 	JobID        string `json:"jobId"`
 	Schema       string `json:"schema,omitempty"`
+	Directory    string `json:"directory,omitempty"`
 	SchemaOnly   bool   `json:"schemaOnly"`
 	DataOnly     bool   `json:"dataOnly"`
 }
@@ -37,6 +50,9 @@ func (request BackupRequest) Validate() error {
 	}
 	if request.SchemaOnly && request.DataOnly {
 		return ErrBackupScopeConflict
+	}
+	if strings.ContainsAny(request.Directory, "\x00\r\n") {
+		return ErrBackupDirectoryInvalid
 	}
 	return nil
 }
@@ -59,6 +75,7 @@ type RestorePreviewRequest struct {
 	ConnectionID string `json:"connectionId"`
 	Token        string `json:"token"`
 	Schema       string `json:"schema,omitempty"`
+	Directory    string `json:"directory,omitempty"`
 }
 
 type RestorePreview struct {
@@ -69,6 +86,7 @@ type RestorePreview struct {
 	Size          int64        `json:"size"`
 	Format        BackupFormat `json:"format"`
 	Schema        string       `json:"schema,omitempty"`
+	Directory     string       `json:"directory,omitempty"`
 	Destructive   bool         `json:"destructive"`
 	Transactional bool         `json:"transactional"`
 	Warnings      []string     `json:"warnings"`
@@ -100,6 +118,23 @@ type NativeBackupDriver interface {
 	RestoreDatabase(ctx context.Context, path string) error
 }
 
+// StreamingBackupDriver is implemented by engines whose native backup files
+// are staged by the database server. The service owns the local file handles,
+// while the driver owns server-side job lifecycle and staging cleanup.
+type StreamingBackupDriver interface {
+	GetBackupDirectories(ctx context.Context) ([]BackupDirectory, error)
+	BackupDatabaseToWriter(
+		ctx context.Context,
+		writer io.Writer,
+		request BackupRequest,
+	) error
+	RestoreDatabaseFromReader(
+		ctx context.Context,
+		reader io.Reader,
+		request RestorePreviewRequest,
+	) error
+}
+
 type backupError string
 
 func (err backupError) Error() string { return string(err) }
@@ -107,4 +142,5 @@ func (err backupError) Error() string { return string(err) }
 const (
 	ErrBackupConnectionRequired backupError = "backup connection is required"
 	ErrBackupScopeConflict      backupError = "schema-only and data-only cannot both be enabled"
+	ErrBackupDirectoryInvalid   backupError = "backup directory contains invalid characters"
 )

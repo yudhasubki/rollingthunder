@@ -124,13 +124,25 @@ RT_DATABASE_SSL_MODE=disable \
 go test ./integration -run TestOracleDriverWorkflow -count=1 -v
 ```
 
-The package-level shared conformance suite uses the equivalent
-`ROLLINGTHUNDER_ORACLE_TEST_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_SERVICE`, and `_SSL_MODE`
-variables:
+The package-level shared conformance suite uses the equivalent connection variables. The privileged
+and Data Pump flags below create and remove a disposable role and application schema, then
+round-trip that schema through `DATA_PUMP_DIR`; enable them only against a disposable Oracle
+instance:
 
 ```bash
+ROLLINGTHUNDER_ORACLE_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_ORACLE_TEST_PORT=1521 \
+ROLLINGTHUNDER_ORACLE_TEST_USER=system \
+ROLLINGTHUNDER_ORACLE_TEST_PASSWORD=RollingThunder_2026 \
+ROLLINGTHUNDER_ORACLE_TEST_SERVICE=FREEPDB1 \
+ROLLINGTHUNDER_ORACLE_TEST_SSL_MODE=disable \
+ROLLINGTHUNDER_ORACLE_TEST_PRIVILEGED=1 \
+ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP=1 \
 go test ./pkg/database/oracle -run TestOracleLiveConformance -count=1 -v
 ```
+
+The standard activity and security read paths are exercised whenever the Oracle driver advertises
+those capabilities.
 
 ### SQL Server
 
@@ -177,17 +189,18 @@ Manual checks should use a disposable bastion and database:
 
 Use a disposable saved profile:
 
-1. Save a database password, SSH password, and encrypted-key passphrase in representative profiles,
-   then accept the OS keychain prompt.
+1. Save a database password, SSH password, encrypted-key passphrase, and password-protected Oracle
+   Wallet in representative profiles, then accept the OS keychain prompt.
 2. Inspect `connections.json`; no secret may occur anywhere. Only `hasPassword`,
-   `hasSshPassword`, and `hasSshKeyPassphrase` metadata may be true.
+   `hasSshPassword`, `hasSshKeyPassphrase`, and `hasOracleWalletPassword` metadata may be true.
 3. Edit another field while leaving Password blank. Reconnect successfully with the preserved
    credential.
 4. Enter a replacement password, save, and reconnect.
-5. Use the two-step removal actions for database and SSH credentials. Reopen the profile and confirm
-   it requests the removed secret without affecting the other credential.
-6. Test old version-1/version-2 profile fixtures on a disposable OS account/keychain. Migration to
-   version 4 must rewrite metadata only after the keychain accepts every plaintext secret.
+5. Use the two-step removal actions for database, SSH, and Oracle Wallet credentials. Reopen the
+   profile and confirm it requests the removed secret without affecting the other credentials.
+6. Test old version-1 through version-5 profile fixtures on a disposable OS account/keychain.
+   Migration to version 6 must rewrite metadata only after the keychain accepts every plaintext
+   secret.
 
 Automated tests cover restrictive file modes, plaintext absence, fail-safe legacy migration,
 backend-only secret resolution, and credential removal.
@@ -224,6 +237,10 @@ capabilities expose those tools:
   then opt into drop operations and confirm complex constraint drift remains manual.
 - Back up and restore each engine. Change the selected backup after preview and confirm apply is
   rejected; cancel an external restore and verify the partial-restore warning remains visible.
+- For Oracle, choose a visible DIRECTORY object, round-trip a disposable application schema through
+  a `.dmp`, and confirm temporary dump/log files are removed from the server directory. Test both a
+  direct endpoint and a reviewed TNS alias; test `cwallet.sso` auto-login and password-protected
+  `ewallet.p12` against disposable TCPS endpoints.
 - Create a disposable role/user, grant and revoke table privileges and membership, alter it, then
   drop it. Confirm password text is redacted from previews.
 - Start a long query from a second client, inspect it in Activity, cancel the statement, and test

@@ -47,10 +47,13 @@
   least-privilege roles.
 - Configure TLS modes for PostgreSQL, MySQL/MariaDB, Oracle, and SQL Server. PostgreSQL,
   MySQL/MariaDB, and Oracle also accept client-certificate settings.
-- Route any supported network database through an SSH tunnel using an SSH agent, private key, or
-  password. Host keys must match a known-hosts entry or an explicitly pinned SHA256 fingerprint.
-- Keep SSH passwords and private-key passphrases in the operating-system credential store alongside
-  database passwords; profile JSON contains only non-secret SSH settings.
+- Connect to Oracle through a direct endpoint or an explicitly selected `tnsnames.ora` alias, and
+  use `ewallet.p12` or auto-login `cwallet.sso` Wallet directories for TCPS with `require` or
+  hostname-verified `verify-full` TLS.
+- Route direct network endpoints through an SSH tunnel using an SSH agent, private key, or password.
+  Host keys must match a known-hosts entry or an explicitly pinned SHA256 fingerprint.
+- Keep SSH passwords, private-key passphrases, and Oracle Wallet passwords in the operating-system
+  credential store alongside database passwords; profile JSON contains only non-secret settings.
 - Open or create SQLite database files through the native file picker.
 - Open connection management as a modal without leaving the workspace.
 - Select the database provider before filling in provider-specific settings.
@@ -104,12 +107,14 @@
 - Create and restore MySQL/MariaDB SQL backups with their native client tools. Database and SSH
   secrets are never placed in process arguments; PostgreSQL maintenance uses a temporary `0600`
   password file instead of exposing the password in the child-process environment.
+- Create and restore Oracle schema backups as local `.dmp` files through DBMS_DATAPUMP, using an
+  explicitly selected server-side DIRECTORY object for bounded staging and cleanup.
 - Preview every restore, verify the selected file has not changed, explicitly confirm the target,
   and cancel long-running external maintenance jobs.
-- Inspect PostgreSQL roles or MySQL/MariaDB users, review grants, and preview create/alter/drop,
-  grant/revoke, and role-membership changes before applying them.
-- Monitor active PostgreSQL and MySQL/MariaDB sessions, waits, blockers, duration, and current SQL;
-  cancel a statement or terminate a session through an explicit confirmation flow.
+- Inspect PostgreSQL roles, MySQL/MariaDB users, or Oracle users and roles; review grants and preview
+  create/alter/drop, grant/revoke, and role-membership changes before applying them.
+- Monitor active PostgreSQL, MySQL/MariaDB, and Oracle sessions, waits, blockers, duration, and
+  current SQL; cancel a statement or terminate a session through an explicit confirmation flow.
 
 ### Data export
 
@@ -193,7 +198,7 @@
 | PostgreSQL      | Available           | Full capability-based explorer                        | Sync, backup, roles/grants, activity     | 14-18                             |
 | MySQL / MariaDB | Available           | Databases, tables, views, routines/triggers           | Sync, backup, users/grants, activity     | 8.4/9.7 + legacy 8.0; 10.11-12.3  |
 | SQLite          | Available           | Attached DBs, tables, views, triggers                 | Sync and built-in online backup/restore  | Bundled engine                    |
-| Oracle Database | Beta                | Schemas, tables, views, MVs, routines, triggers       | Schema/data sync; no native backup/admin | Current Free image, weekly/manual |
+| Oracle Database | Beta                | Schemas, tables, views, MVs, routines, triggers       | Sync, Data Pump, users/grants, activity  | Current Free image, weekly/manual |
 | SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences | Schema/data sync; no native backup/admin | 2022 and 2025                     |
 
 ## Known gaps
@@ -209,12 +214,16 @@ Other important limitations include:
   MySQL/MariaDB backup/restore similarly requires `mysqldump`/`mariadb-dump` and
   `mysql`/`mariadb`.
 - Native backup/restore, security administration, and activity monitoring are not yet exposed for
-  Oracle or SQL Server. Role/user management and the activity monitor are also not applicable to
-  SQLite.
-- Oracle beta connections currently use a host, port, service name, and optional PEM TLS material;
-  TNS aliases and wallet-based authentication are not yet modeled. SQL Server beta connections use
-  SQL authentication; Microsoft Entra ID and platform-integrated authentication are not yet
-  exposed.
+  SQL Server. Role/user management and the activity monitor are not applicable to SQLite.
+- Oracle Data Pump currently backs up one non-Oracle-maintained application schema with structure
+  and data together. The connected account needs Data Pump privileges plus `READ` and `WRITE` on a
+  visible Oracle DIRECTORY object; Rolling Thunder removes its temporary server files after each
+  transfer.
+- Oracle TNS parsing deliberately does not follow `IFILE` includes. Choose the reviewed file that
+  directly contains the alias. TNS and Wallet profiles cannot also use Rolling Thunder's SSH
+  tunnel; use a direct endpoint profile when SSH forwarding is required.
+- SQL Server beta connections use SQL authentication; Microsoft Entra ID and platform-integrated
+  authentication are not yet exposed.
 - Oracle `INSERT` export rejects inline RAW values larger than 2,000 bytes instead of generating a
   script that Oracle cannot execute. Use CSV/JSON export for those rows.
 - Schema sync currently automates table, column, and index changes. Complex constraint drift is

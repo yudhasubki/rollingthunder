@@ -48,8 +48,8 @@ func (o *Oracle) Capabilities() database.Capabilities {
 		SQLInsertExport:     true,
 		GeneratedColumns:    true,
 		Upsert:              false,
-		ManageSecurity:      false,
-		ActivityMonitor:     false,
+		ManageSecurity:      true,
+		ActivityMonitor:     true,
 		SSHConnections:      true,
 	}
 }

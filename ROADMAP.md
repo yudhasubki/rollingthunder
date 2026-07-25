@@ -37,6 +37,8 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] PostgreSQL role and MySQL/MariaDB user/grant administration
 - [x] PostgreSQL/MySQL/MariaDB activity and blocker monitoring
 - [x] Strictly verified SSH tunnels with OS-managed secrets
+- [x] Oracle users/roles/grants, activity monitoring, native Data Pump backup/restore, TNS aliases,
+      and Wallet-based TCPS
 
 ## Milestone 1 - Reliable data workflows
 
@@ -235,16 +237,20 @@ remaining explicitly labeled beta until production feedback closes their engine-
 - [x] Add shared live conformance entry points for both drivers.
 - [x] Test SQL Server 2022 and 2025 in the regular CI matrix.
 - [x] Test the current official Oracle Database Free image weekly and on manual workflow runs.
-- [ ] Add native Oracle and SQL Server backup/restore workflows.
-- [ ] Add Oracle and SQL Server security administration and activity monitoring.
-- [ ] Add Oracle wallet/TNS alias flows and SQL Server Entra/integrated authentication.
+- [x] Add native Oracle Data Pump backup/restore with reviewed server DIRECTORY staging.
+- [ ] Add native SQL Server backup/restore workflows.
+- [x] Add Oracle security administration and activity monitoring.
+- [ ] Add SQL Server security administration and activity monitoring.
+- [x] Add Oracle Wallet and TNS alias flows with OS-managed Wallet passwords.
+- [ ] Add SQL Server Entra/integrated authentication.
 - [ ] Add dependency graphs beyond normalized table relationships.
 
-All seven planned milestones now have implemented, testable core scope. Oracle and SQL Server remain
-beta where the unchecked engine-specific administration and authentication work above is concerned.
-Future work should be driven by production feedback and measured gaps. Candidate follow-ups include
-richer visual explain plans, migration support for complex constraints, and signed/notarized macOS
-distribution when project signing resources become available.
+All seven planned milestones now have implemented, testable core scope. Oracle remains beta while
+its new administration, Data Pump, TNS, and Wallet workflows collect production feedback. SQL
+Server remains beta while its unchecked administration, native maintenance, and integrated
+authentication work is open. Future work should be driven by production feedback and measured gaps.
+Candidate follow-ups include richer visual explain plans, migration support for complex constraints,
+and signed/notarized macOS distribution when project signing resources become available.
 
 ## Prioritization principles
 

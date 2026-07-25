@@ -46,6 +46,17 @@ func TestBackupCapabilitiesReportToolReadiness(t *testing.T) {
 	if !sqlite.Available || !sqlite.BuiltIn || !sqlite.RestoreReady {
 		t.Fatalf("sqlite capabilities = %+v", sqlite)
 	}
+
+	oracle := backupCapabilitiesFor(executableFixture(), "oracle")
+	if !oracle.Available ||
+		!oracle.BuiltIn ||
+		!oracle.RestoreReady ||
+		oracle.Format != database.BackupFormatOracleDataPump ||
+		oracle.Extension != ".dmp" ||
+		oracle.SupportsScope ||
+		!oracle.RequiresDirectory {
+		t.Fatalf("oracle capabilities = %+v", oracle)
+	}
 }
 
 func TestMySQLDefaultsFileUsesPrivatePermissionsAndEscaping(t *testing.T) {

@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"os"
@@ -11,6 +12,121 @@ import (
 	"rollingthunder/pkg/database/drivertest"
 	"rollingthunder/pkg/database/sqladapter"
 )
+
+func runOracleDataPumpLiveConformance(
+	t *testing.T,
+	driver *Oracle,
+) {
+	t.Helper()
+	if os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP") != "1" {
+		return
+	}
+	const (
+		schema = "RT_DP_CONFORMANCE"
+		table  = "BACKUP_PROBE"
+	)
+	ctx := context.Background()
+	dropSchema := func() {
+		_, _ = driver.conn.ExecContext(
+			context.Background(),
+			`DROP USER `+schema+` CASCADE`,
+		)
+	}
+	dropSchema()
+	t.Cleanup(dropSchema)
+	if _, err := driver.conn.ExecContext(
+		ctx,
+		`CREATE USER `+schema+`
+		 IDENTIFIED BY "RollingThunder_DP_2026"
+		 DEFAULT TABLESPACE USERS
+		 TEMPORARY TABLESPACE TEMP
+		 QUOTA UNLIMITED ON USERS`,
+	); err != nil {
+		t.Fatalf("create Data Pump conformance schema: %v", err)
+	}
+	if _, err := driver.conn.ExecContext(
+		ctx,
+		`GRANT CREATE SESSION, CREATE TABLE TO `+schema,
+	); err != nil {
+		t.Fatalf("grant Data Pump conformance privileges: %v", err)
+	}
+	if _, err := driver.conn.ExecContext(
+		ctx,
+		`CREATE TABLE `+schema+`.`+table+` (
+			ID NUMBER(10) PRIMARY KEY,
+			NAME VARCHAR2(100) NOT NULL
+		)`,
+	); err != nil {
+		t.Fatalf("create Data Pump conformance table: %v", err)
+	}
+	if _, err := driver.conn.ExecContext(
+		ctx,
+		`INSERT INTO `+schema+`.`+table+` (ID, NAME)
+		 VALUES (1, 'rolling thunder')`,
+	); err != nil {
+		t.Fatalf("seed Data Pump conformance table: %v", err)
+	}
+
+	directories, err := driver.GetBackupDirectories(ctx)
+	if err != nil {
+		t.Fatalf("GetBackupDirectories() error = %v", err)
+	}
+	directory := ""
+	for _, candidate := range directories {
+		if candidate.Name == "DATA_PUMP_DIR" {
+			directory = candidate.Name
+			break
+		}
+	}
+	if directory == "" {
+		t.Fatalf(
+			"GetBackupDirectories() = %+v, missing DATA_PUMP_DIR",
+			directories,
+		)
+	}
+	var dump bytes.Buffer
+	if err := driver.BackupDatabaseToWriter(
+		ctx,
+		&dump,
+		database.BackupRequest{
+			ConnectionID: "live-conformance",
+			Schema:       schema,
+			Directory:    directory,
+		},
+	); err != nil {
+		t.Fatalf("BackupDatabaseToWriter() error = %v", err)
+	}
+	if dump.Len() == 0 {
+		t.Fatal("BackupDatabaseToWriter() returned an empty dump")
+	}
+	if _, err := driver.conn.ExecContext(
+		ctx,
+		`DROP TABLE `+schema+`.`+table+` PURGE`,
+	); err != nil {
+		t.Fatalf("drop Data Pump conformance table: %v", err)
+	}
+	if err := driver.RestoreDatabaseFromReader(
+		ctx,
+		bytes.NewReader(dump.Bytes()),
+		database.RestorePreviewRequest{
+			ConnectionID: "live-conformance",
+			Schema:       schema,
+			Directory:    directory,
+		},
+	); err != nil {
+		t.Fatalf("RestoreDatabaseFromReader() error = %v", err)
+	}
+	var rows int
+	if err := driver.conn.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM `+schema+`.`+table,
+	).Scan(&rows); err != nil {
+		t.Fatalf("query restored Data Pump table: %v", err)
+	}
+	if rows != 1 {
+		t.Fatalf("restored Data Pump row count = %d, want 1", rows)
+	}
+}
 
 func TestOracleCapabilityContract(t *testing.T) {
 	driver := NewOracle(context.Background(), Config{})
@@ -97,7 +213,9 @@ func TestOracleConnectionValidationAndTLSModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verified.ServerName != "oracle.internal" || verified.InsecureSkipVerify {
+	if verified.ServerName != "oracle.internal" ||
+		!verified.InsecureSkipVerify ||
+		verified.VerifyConnection == nil {
 		t.Fatalf("verify-full TLS config = %#v", verified)
 	}
 }
@@ -149,6 +267,43 @@ func TestOracleDatabaseVersionHasPermissionSafeFallback(t *testing.T) {
 	}
 }
 
+func TestOracleCatalogViewDDL(t *testing.T) {
+	view := database.ObjectReference{
+		Kind:   database.ObjectKindView,
+		Schema: `APP`,
+		Name:   `ACTIVE_ORDERS`,
+	}
+	got, err := oracleCatalogViewDDL(
+		view,
+		`SELECT "ID" FROM "APP"."ORDERS";`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "CREATE OR REPLACE VIEW \"APP\".\"ACTIVE_ORDERS\" AS\n" +
+		`SELECT "ID" FROM "APP"."ORDERS";`
+	if got != want {
+		t.Fatalf("view DDL = %q, want %q", got, want)
+	}
+
+	materialized := view
+	materialized.Kind = database.ObjectKindMaterializedView
+	materialized.Name = "ORDER_TOTALS"
+	got, err = oracleCatalogViewDDL(materialized, "SELECT COUNT(*) FROM ORDERS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = "CREATE MATERIALIZED VIEW \"APP\".\"ORDER_TOTALS\" AS\n" +
+		"SELECT COUNT(*) FROM ORDERS;"
+	if got != want {
+		t.Fatalf("materialized view DDL = %q, want %q", got, want)
+	}
+
+	if _, err := oracleCatalogViewDDL(view, " ; "); err == nil {
+		t.Fatal("empty catalog view definition was accepted")
+	}
+}
+
 func TestOracleLiveConformance(t *testing.T) {
 	host := os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_HOST")
 	if host == "" {
@@ -176,9 +331,11 @@ func TestOracleLiveConformance(t *testing.T) {
 		t.Fatal("Oracle current schema is empty")
 	}
 	drivertest.RunLiveContract(t, drivertest.LiveConfig{
-		Driver:      driver,
-		Schema:      schema,
-		IntegerType: "NUMBER(10)",
-		TextType:    "VARCHAR2(255)",
+		Driver:             driver,
+		Schema:             schema,
+		IntegerType:        "NUMBER(10)",
+		TextType:           "VARCHAR2(255)",
+		ExercisePrivileged: os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_PRIVILEGED") == "1",
 	})
+	runOracleDataPumpLiveConformance(t, driver)
 }

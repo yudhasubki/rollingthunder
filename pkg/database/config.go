@@ -60,6 +60,14 @@ type Config struct {
 	SSLKey      string `json:"sslKey"`      // Client key path
 	SSLRootCert string `json:"sslRootCert"` // CA certificate path
 
+	// Oracle connection options. OracleWalletPassword is transient and is
+	// persisted only in the operating system credential store.
+	OracleConnectionMode string `json:"oracleConnectionMode,omitempty"` // direct, tns
+	OracleTNSConfigPath  string `json:"oracleTnsConfigPath,omitempty"`
+	OracleTNSAlias       string `json:"oracleTnsAlias,omitempty"`
+	OracleWalletPath     string `json:"oracleWalletPath,omitempty"`
+	OracleWalletPassword string `json:"oracleWalletPassword,omitempty"`
+
 	// SSH tunnel options. SSHPassword and SSHKeyPassphrase are transient
 	// secrets; saved profiles persist them only in the operating system
 	// credential store.
@@ -205,6 +213,10 @@ func (config Config) ValidateSafety() error {
 		{"TLS client certificate path", config.SSLCert, 4096},
 		{"TLS client key path", config.SSLKey, 4096},
 		{"TLS CA certificate path", config.SSLRootCert, 4096},
+		{"Oracle connection mode", config.OracleConnectionMode, 32},
+		{"Oracle TNS configuration path", config.OracleTNSConfigPath, 4096},
+		{"Oracle TNS alias", config.OracleTNSAlias, 256},
+		{"Oracle Wallet path", config.OracleWalletPath, 4096},
 		{"SSH host", config.SSHHost, 255},
 		{"SSH user", config.SSHUser, 256},
 		{"SSH authentication mode", config.SSHAuthMode, 32},
@@ -261,6 +273,66 @@ func (config Config) ValidateSafety() error {
 		default:
 			return fmt.Errorf("SSH authentication mode is not supported")
 		}
+	}
+	oracleMode := strings.ToLower(strings.TrimSpace(config.OracleConnectionMode))
+	if strings.EqualFold(config.Driver, DriverOracle) {
+		switch oracleMode {
+		case "", "direct":
+		case "tns":
+			if strings.TrimSpace(config.OracleTNSConfigPath) == "" ||
+				strings.TrimSpace(config.OracleTNSAlias) == "" {
+				return fmt.Errorf(
+					"Oracle TNS mode requires a tnsnames.ora file and alias",
+				)
+			}
+			if config.SSHEnabled {
+				return fmt.Errorf(
+					"Oracle TNS aliases cannot be combined with an SSH tunnel; use a direct endpoint through the tunnel",
+				)
+			}
+		default:
+			return fmt.Errorf("Oracle connection mode is not supported")
+		}
+		if strings.TrimSpace(config.OracleWalletPath) != "" &&
+			config.SSHEnabled {
+			return fmt.Errorf(
+				"Oracle Wallet connections cannot be combined with an SSH tunnel because certificate host verification would be ambiguous",
+			)
+		}
+		if strings.TrimSpace(config.OracleWalletPath) == "" &&
+			config.OracleWalletPassword != "" {
+			return fmt.Errorf(
+				"Oracle Wallet password requires a selected Wallet directory",
+			)
+		}
+		if strings.TrimSpace(config.OracleWalletPath) != "" {
+			if strings.TrimSpace(config.SSLMode) == "" ||
+				strings.EqualFold(config.SSLMode, "disable") {
+				return fmt.Errorf(
+					"Oracle Wallet requires an encrypted TLS mode",
+				)
+			}
+			if strings.EqualFold(config.SSLMode, "verify-ca") {
+				return fmt.Errorf(
+					"Oracle Wallet supports require or verify-full TLS modes; the Oracle driver cannot apply CA-only verification without also checking the endpoint hostname",
+				)
+			}
+			if strings.TrimSpace(config.SSLRootCert) != "" ||
+				strings.TrimSpace(config.SSLCert) != "" ||
+				strings.TrimSpace(config.SSLKey) != "" {
+				return fmt.Errorf(
+					"Oracle Wallet cannot be combined with separate TLS certificate paths",
+				)
+			}
+		}
+	} else if oracleMode != "" ||
+		strings.TrimSpace(config.OracleTNSConfigPath) != "" ||
+		strings.TrimSpace(config.OracleTNSAlias) != "" ||
+		strings.TrimSpace(config.OracleWalletPath) != "" ||
+		config.OracleWalletPassword != "" {
+		return fmt.Errorf(
+			"Oracle connection options can only be used by the Oracle driver",
+		)
 	}
 	return nil
 }

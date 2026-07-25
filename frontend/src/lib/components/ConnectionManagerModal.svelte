@@ -3,7 +3,10 @@
 	import {
 		Connect,
 		ConnectWithProfile,
+		ChooseOracleTNSFile,
+		ChooseOracleWalletDirectory,
 		ChooseSQLiteDatabaseFile,
+		ClearConnectionOracleWalletPassword,
 		ClearConnectionPassword,
 		ClearConnectionSSHCredentials,
 		DeleteConnection,
@@ -29,6 +32,7 @@
 		CONNECTION_DEFAULTS,
 		CONNECTION_ENVIRONMENTS,
 		DATABASE_PROVIDERS,
+		ORACLE_CONNECTION_MODES,
 		SSH_AUTH_OPTIONS,
 		SSL_OPTIONS,
 		connectionEnvironmentOption,
@@ -36,6 +40,7 @@
 		normalizeConnectionEnvironment,
 		type ConnectionAccessMode,
 		type ConnectionEnvironment,
+		type OracleConnectionMode,
 		type ProviderId
 	} from '$lib/config/application';
 	import {
@@ -79,7 +84,6 @@
 	}: Props = $props();
 
 	const providers = DATABASE_PROVIDERS;
-	const sslOptions = SSL_OPTIONS.map((option) => ({ ...option }));
 	const sshAuthOptions = SSH_AUTH_OPTIONS.map((option) => ({ ...option }));
 	const environmentOptions = CONNECTION_ENVIRONMENTS.map(({ value, label }) => ({
 		value,
@@ -89,6 +93,7 @@
 		value,
 		label
 	}));
+	const oracleConnectionModeOptions = ORACLE_CONNECTION_MODES.map((option) => ({ ...option }));
 
 	let profiles = $state<db.SavedConnection[]>([]);
 	let searchQuery = $state('');
@@ -116,6 +121,17 @@
 	let hasStoredSSHKeyPassphrase = $state(false);
 	let showSSHSecret = $state(false);
 	let clearSSHCredentialsConfirm = $state(false);
+	let oracleConnectionMode = $state<OracleConnectionMode>(CONNECTION_DEFAULTS.oracleConnectionMode);
+	let oracleTnsConfigPath = $state('');
+	let oracleTnsAlias = $state('');
+	let oracleTnsAliases = $state<string[]>([]);
+	let oracleWalletPath = $state('');
+	let oracleWalletHasAutoLogin = $state(false);
+	let oracleWalletPasswordRequired = $state(false);
+	let oracleWalletPassword = $state('');
+	let hasStoredOracleWalletPassword = $state(false);
+	let showOracleWalletPassword = $state(false);
+	let clearOracleWalletPasswordConfirm = $state(false);
 	let loadedForOpen = $state(false);
 	let connectionAttemptID = $state<string | null>(null);
 	let connectionElapsedSeconds = $state(0);
@@ -166,11 +182,24 @@
 			.map(([name, items]) => ({ name, items }));
 	});
 
-	const endpoint = $derived(
-		provider === 'sqlite'
-			? databaseName || 'Choose a local database file'
-			: `${host || 'host'}:${port || 'port'} / ${databaseName || 'database'}`
+	const oracleUsesTNS = $derived(provider === 'oracle' && oracleConnectionMode === 'tns');
+	const oracleUsesWallet = $derived(provider === 'oracle' && Boolean(oracleWalletPath.trim()));
+	const sslOptions = $derived(
+		SSL_OPTIONS.filter((option) => !oracleUsesWallet || option.value !== 'verify-ca').map(
+			(option) => ({ ...option })
+		)
 	);
+	const oracleTnsAliasOptions = $derived(
+		oracleTnsAliases.map((alias) => ({ value: alias, label: alias }))
+	);
+	const endpoint = $derived.by(() => {
+		if (provider === 'sqlite') return databaseName || 'Choose a local database file';
+		if (oracleUsesTNS) {
+			const file = oracleTnsConfigPath.split(/[\\/]/).pop() || 'tnsnames.ora';
+			return `${oracleTnsAlias || 'TNS alias'} · ${file}`;
+		}
+		return `${host || 'host'}:${port || 'port'} / ${databaseName || 'database'}`;
+	});
 	const selectedProvider = $derived(providers.find((item) => item.id === provider) ?? null);
 	const selectedEnvironment = $derived(connectionEnvironmentOption(connectionEnvironment));
 
@@ -281,6 +310,19 @@
 		hasStoredSSHKeyPassphrase = Boolean(profile.hasSshKeyPassphrase);
 		showSSHSecret = false;
 		clearSSHCredentialsConfirm = false;
+		oracleConnectionMode =
+			config.oracleConnectionMode === 'tns' ? 'tns' : CONNECTION_DEFAULTS.oracleConnectionMode;
+		oracleTnsConfigPath = config.oracleTnsConfigPath || '';
+		oracleTnsAlias = config.oracleTnsAlias || '';
+		oracleTnsAliases = oracleTnsAlias ? [oracleTnsAlias] : [];
+		oracleWalletPath = config.oracleWalletPath || '';
+		if (oracleWalletPath && sslMode === 'verify-ca') sslMode = 'verify-full';
+		hasStoredOracleWalletPassword = Boolean(profile.hasOracleWalletPassword);
+		oracleWalletHasAutoLogin = Boolean(oracleWalletPath) && !hasStoredOracleWalletPassword;
+		oracleWalletPasswordRequired = Boolean(oracleWalletPath) && hasStoredOracleWalletPassword;
+		oracleWalletPassword = '';
+		showOracleWalletPassword = false;
+		clearOracleWalletPasswordConfirm = false;
 		provider = profileProvider;
 		deleteConfirm = false;
 		message = '';
@@ -322,6 +364,17 @@
 		hasStoredSSHKeyPassphrase = false;
 		showSSHSecret = false;
 		clearSSHCredentialsConfirm = false;
+		oracleConnectionMode = CONNECTION_DEFAULTS.oracleConnectionMode;
+		oracleTnsConfigPath = '';
+		oracleTnsAlias = '';
+		oracleTnsAliases = [];
+		oracleWalletPath = '';
+		oracleWalletHasAutoLogin = false;
+		oracleWalletPasswordRequired = false;
+		oracleWalletPassword = '';
+		hasStoredOracleWalletPassword = false;
+		showOracleWalletPassword = false;
+		clearOracleWalletPasswordConfirm = false;
 		provider = '';
 		deleteConfirm = false;
 		showPassword = false;
@@ -341,6 +394,10 @@
 
 	function buildConfig() {
 		const sqlite = provider === 'sqlite';
+		const oracle = provider === 'oracle';
+		const oracleTNS = oracle && oracleConnectionMode === 'tns';
+		const wallet = oracle && Boolean(oracleWalletPath.trim());
+		const allowSSH = !sqlite && !oracleTNS && !wallet;
 		return new database.Config({
 			name: connectionName.trim(),
 			environment: connectionEnvironment,
@@ -351,27 +408,32 @@
 				.map((tag) => tag.trim())
 				.filter(Boolean),
 			driver: provider || CONNECTION_DEFAULTS.provider,
-			host: sqlite ? '' : host.trim(),
-			port: sqlite ? '' : port.trim(),
+			host: sqlite || oracleTNS ? '' : host.trim(),
+			port: sqlite || oracleTNS ? '' : port.trim(),
 			user: sqlite ? '' : username.trim(),
 			password: sqlite ? '' : password,
-			db: databaseName.trim(),
+			db: oracleTNS ? oracleTnsAlias.trim() : databaseName.trim(),
 			sslMode: sqlite ? CONNECTION_DEFAULTS.sslMode : sslMode,
-			sslRootCert: sqlite ? '' : sslRootCert.trim(),
-			sslCert: sqlite ? '' : sslCert.trim(),
-			sslKey: sqlite ? '' : sslKey.trim(),
-			sshEnabled: !sqlite && sshEnabled,
-			sshHost: !sqlite && sshEnabled ? sshHost.trim() : '',
-			sshPort: !sqlite && sshEnabled ? sshPort.trim() || CONNECTION_DEFAULTS.sshPort : '',
-			sshUser: !sqlite && sshEnabled ? sshUser.trim() : '',
-			sshAuthMode: !sqlite && sshEnabled ? sshAuthMode : '',
+			sslRootCert: sqlite || wallet ? '' : sslRootCert.trim(),
+			sslCert: sqlite || wallet ? '' : sslCert.trim(),
+			sslKey: sqlite || wallet ? '' : sslKey.trim(),
+			oracleConnectionMode: oracle ? oracleConnectionMode : '',
+			oracleTnsConfigPath: oracleTNS ? oracleTnsConfigPath.trim() : '',
+			oracleTnsAlias: oracleTNS ? oracleTnsAlias.trim() : '',
+			oracleWalletPath: oracle ? oracleWalletPath.trim() : '',
+			oracleWalletPassword: oracle && wallet ? oracleWalletPassword : '',
+			sshEnabled: allowSSH && sshEnabled,
+			sshHost: allowSSH && sshEnabled ? sshHost.trim() : '',
+			sshPort: allowSSH && sshEnabled ? sshPort.trim() || CONNECTION_DEFAULTS.sshPort : '',
+			sshUser: allowSSH && sshEnabled ? sshUser.trim() : '',
+			sshAuthMode: allowSSH && sshEnabled ? sshAuthMode : '',
 			sshPrivateKeyPath:
-				!sqlite && sshEnabled && sshAuthMode === 'private-key' ? sshPrivateKeyPath.trim() : '',
-			sshKnownHostsPath: !sqlite && sshEnabled ? sshKnownHostsPath.trim() : '',
-			sshHostKeyFingerprint: !sqlite && sshEnabled ? sshHostKeyFingerprint.trim() : '',
-			sshPassword: !sqlite && sshEnabled && sshAuthMode === 'password' ? sshPassword : '',
+				allowSSH && sshEnabled && sshAuthMode === 'private-key' ? sshPrivateKeyPath.trim() : '',
+			sshKnownHostsPath: allowSSH && sshEnabled ? sshKnownHostsPath.trim() : '',
+			sshHostKeyFingerprint: allowSSH && sshEnabled ? sshHostKeyFingerprint.trim() : '',
+			sshPassword: allowSSH && sshEnabled && sshAuthMode === 'password' ? sshPassword : '',
 			sshKeyPassphrase:
-				!sqlite && sshEnabled && sshAuthMode === 'private-key' ? sshKeyPassphrase : ''
+				allowSSH && sshEnabled && sshAuthMode === 'private-key' ? sshKeyPassphrase : ''
 		});
 	}
 
@@ -388,11 +450,32 @@
 			showMessage('Choose an existing SQLite file or a path for a new database.', 'error');
 			return false;
 		}
-		if (provider !== 'sqlite' && (!host.trim() || !port.trim() || !databaseName.trim())) {
+		if (
+			provider === 'oracle' &&
+			oracleConnectionMode === 'tns' &&
+			(!oracleTnsConfigPath.trim() || !oracleTnsAlias.trim())
+		) {
+			showMessage('Choose a tnsnames.ora file and TNS alias.', 'error');
+			return false;
+		}
+		if (
+			provider !== 'sqlite' &&
+			!(provider === 'oracle' && oracleConnectionMode === 'tns') &&
+			(!host.trim() || !port.trim() || !databaseName.trim())
+		) {
 			showMessage(
 				`Host, port, and ${selectedProvider?.databaseLabel.toLowerCase() || 'database'} are required.`,
 				'error'
 			);
+			return false;
+		}
+		if (
+			provider === 'oracle' &&
+			oracleWalletPasswordRequired &&
+			!oracleWalletPassword &&
+			!(editingId && hasStoredOracleWalletPassword)
+		) {
+			showMessage('Enter the password for the selected Oracle Wallet.', 'error');
 			return false;
 		}
 		if (provider !== 'sqlite' && sshEnabled) {
@@ -423,6 +506,19 @@
 			port = nextProvider.defaultPort;
 		}
 		provider = nextProvider.id;
+		if (nextProvider.id !== 'oracle') {
+			oracleConnectionMode = CONNECTION_DEFAULTS.oracleConnectionMode;
+			oracleTnsConfigPath = '';
+			oracleTnsAlias = '';
+			oracleTnsAliases = [];
+			oracleWalletPath = '';
+			oracleWalletHasAutoLogin = false;
+			oracleWalletPasswordRequired = false;
+			oracleWalletPassword = '';
+			hasStoredOracleWalletPassword = false;
+			showOracleWalletPassword = false;
+			clearOracleWalletPasswordConfirm = false;
+		}
 		if (nextProvider.id === 'sqlite') {
 			host = '';
 			port = '';
@@ -451,6 +547,13 @@
 	function profileEndpoint(profile: db.SavedConnection): string {
 		const config = profile.config;
 		if ((config.driver || CONNECTION_DEFAULTS.provider) === 'sqlite') return config.db;
+		if (
+			(config.driver || CONNECTION_DEFAULTS.provider) === 'oracle' &&
+			config.oracleConnectionMode === 'tns'
+		) {
+			const file = config.oracleTnsConfigPath?.split(/[\\/]/).pop() || 'tnsnames.ora';
+			return `${config.oracleTnsAlias || config.db} · ${file}`;
+		}
 		return `${config.host}:${config.port}/${config.db}`;
 	}
 
@@ -480,6 +583,74 @@
 		} catch (error: any) {
 			showMessage(error?.message || 'Could not choose SQLite database', 'error');
 		}
+	}
+
+	async function chooseOracleTNSFile() {
+		if (action !== null) return;
+		try {
+			const response = await ChooseOracleTNSFile();
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not choose tnsnames.ora');
+			}
+			if (!response.data?.path) return;
+			oracleTnsConfigPath = response.data.path;
+			oracleTnsAliases = response.data.aliases || [];
+			if (!oracleTnsAliases.includes(oracleTnsAlias)) {
+				oracleTnsAlias = oracleTnsAliases[0] || '';
+			}
+			sshEnabled = false;
+			sshExpanded = false;
+			if (!connectionName.trim() && oracleTnsAlias) connectionName = oracleTnsAlias;
+			showMessage(
+				`Loaded ${oracleTnsAliases.length} TNS ${oracleTnsAliases.length === 1 ? 'alias' : 'aliases'}.`,
+				'info'
+			);
+		} catch (error: any) {
+			showMessage(error?.message || 'Could not choose tnsnames.ora', 'error');
+		}
+	}
+
+	async function chooseOracleWallet() {
+		if (action !== null) return;
+		try {
+			const response = await ChooseOracleWalletDirectory();
+			if (response.errors?.length) {
+				throw createServiceError(response.errors[0], 'Could not choose Oracle Wallet');
+			}
+			if (!response.data?.path) return;
+			const changed = response.data.path !== oracleWalletPath;
+			oracleWalletPath = response.data.path;
+			oracleWalletHasAutoLogin = Boolean(response.data.hasAutoLogin);
+			oracleWalletPasswordRequired = Boolean(response.data.passwordRequired);
+			if (changed) {
+				oracleWalletPassword = '';
+				hasStoredOracleWalletPassword = false;
+			}
+			if (sslMode === 'disable' || sslMode === 'verify-ca') sslMode = 'verify-full';
+			sslRootCert = '';
+			sslCert = '';
+			sslKey = '';
+			sshEnabled = false;
+			sshExpanded = false;
+			showMessage(
+				oracleWalletHasAutoLogin
+					? 'Oracle Wallet selected. Auto-login credentials are available.'
+					: 'Oracle Wallet selected. Enter its password before connecting.',
+				'info'
+			);
+		} catch (error: any) {
+			showMessage(error?.message || 'Could not choose Oracle Wallet', 'error');
+		}
+	}
+
+	function removeOracleWallet() {
+		oracleWalletPath = '';
+		oracleWalletHasAutoLogin = false;
+		oracleWalletPasswordRequired = false;
+		oracleWalletPassword = '';
+		hasStoredOracleWalletPassword = false;
+		showOracleWalletPassword = false;
+		clearOracleWalletPasswordConfirm = false;
 	}
 
 	async function saveProfile() {
@@ -625,6 +796,44 @@
 			);
 		} catch (error: any) {
 			showMessage(error?.message || 'Could not remove stored SSH credentials', 'error');
+		} finally {
+			action = null;
+		}
+	}
+
+	async function clearStoredOracleWalletPassword() {
+		if (!editingId || !hasStoredOracleWalletPassword || action !== null) return;
+		if (!clearOracleWalletPasswordConfirm) {
+			clearOracleWalletPasswordConfirm = true;
+			showMessage('Press “Remove Wallet password” again to confirm.', 'info');
+			return;
+		}
+		action = 'save';
+		try {
+			const response = await ClearConnectionOracleWalletPassword(editingId);
+			if (response.errors?.length || !response.data) {
+				throw createServiceError(
+					response.errors?.[0],
+					'Could not remove the Oracle Wallet password'
+				);
+			}
+			hasStoredOracleWalletPassword = false;
+			oracleWalletPassword = '';
+			clearOracleWalletPasswordConfirm = false;
+			profiles = profiles.map((profile) =>
+				profile.id === editingId
+					? new db.SavedConnection({
+							...profile,
+							hasOracleWalletPassword: false
+						})
+					: profile
+			);
+			showMessage(
+				'Oracle Wallet password removed from the operating system credential store.',
+				'success'
+			);
+		} catch (error: any) {
+			showMessage(error?.message || 'Could not remove the Oracle Wallet password', 'error');
 		} finally {
 			action = null;
 		}
@@ -1062,35 +1271,96 @@
 										<Server class="text-muted-foreground h-3.5 w-3.5" />
 										<span class="text-[10px] font-bold">{selectedProvider.name} connection</span>
 									</div>
-									<div>
-										<label for="modal-host">Host</label>
-										<input
-											id="modal-host"
-											bind:value={host}
-											placeholder={CONNECTION_DEFAULTS.host}
-											disabled={action !== null}
-										/>
-									</div>
-									<div class="grid grid-cols-[112px_minmax(0,1fr)] gap-3">
+									{#if provider === 'oracle'}
+										<div class="col-span-2">
+											<label for="modal-oracle-connection-mode">Connection method</label>
+											<FilterCombobox
+												id="modal-oracle-connection-mode"
+												options={oracleConnectionModeOptions}
+												value={oracleConnectionMode}
+												onChange={(value) => {
+													oracleConnectionMode = value as OracleConnectionMode;
+													if (value === 'tns') {
+														sshEnabled = false;
+														sshExpanded = false;
+													}
+												}}
+												searchable={false}
+												disabled={action !== null}
+												triggerClass="h-9 px-3 text-xs"
+											/>
+										</div>
+									{/if}
+									{#if oracleUsesTNS}
+										<div class="col-span-2">
+											<label for="modal-oracle-tns-path">tnsnames.ora</label>
+											<div class="flex gap-2">
+												<input
+													id="modal-oracle-tns-path"
+													value={oracleTnsConfigPath}
+													placeholder="Choose an Oracle Net configuration file"
+													readonly
+													disabled={action !== null}
+												/>
+												<button
+													type="button"
+													class="rt-toolbar-button h-9 shrink-0 gap-1.5 px-3 text-[9px] font-bold"
+													onclick={() => void chooseOracleTNSFile()}
+													disabled={action !== null}
+												>
+													<FolderOpen class="h-3.5 w-3.5" />
+													Choose file
+												</button>
+											</div>
+										</div>
+										<div class="col-span-2">
+											<label for="modal-oracle-tns-alias">TNS alias</label>
+											<FilterCombobox
+												id="modal-oracle-tns-alias"
+												options={oracleTnsAliasOptions}
+												value={oracleTnsAlias}
+												onChange={(value) => (oracleTnsAlias = value)}
+												searchable={oracleTnsAliasOptions.length > 6}
+												disabled={action !== null || oracleTnsAliasOptions.length === 0}
+												triggerClass="h-9 px-3 text-xs"
+												placeholder="Choose a TNS alias"
+											/>
+											<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
+												The reviewed descriptor supplies host, port, protocol, and service name.
+												Included files are not followed automatically.
+											</p>
+										</div>
+									{:else}
 										<div>
-											<label for="modal-port">Port</label>
+											<label for="modal-host">Host</label>
 											<input
-												id="modal-port"
-												bind:value={port}
-												placeholder={selectedProvider.defaultPort}
+												id="modal-host"
+												bind:value={host}
+												placeholder={CONNECTION_DEFAULTS.host}
 												disabled={action !== null}
 											/>
 										</div>
-										<div>
-											<label for="modal-database">{selectedProvider.databaseLabel}</label>
-											<input
-												id="modal-database"
-												bind:value={databaseName}
-												placeholder={selectedProvider.defaultDatabase}
-												disabled={action !== null}
-											/>
+										<div class="grid grid-cols-[112px_minmax(0,1fr)] gap-3">
+											<div>
+												<label for="modal-port">Port</label>
+												<input
+													id="modal-port"
+													bind:value={port}
+													placeholder={selectedProvider.defaultPort}
+													disabled={action !== null}
+												/>
+											</div>
+											<div>
+												<label for="modal-database">{selectedProvider.databaseLabel}</label>
+												<input
+													id="modal-database"
+													bind:value={databaseName}
+													placeholder={selectedProvider.defaultDatabase}
+													disabled={action !== null}
+												/>
+											</div>
 										</div>
-									</div>
+									{/if}
 
 									<div class="col-span-2 mt-1 flex items-center gap-2 border-b pb-2">
 										<Lock class="text-muted-foreground h-3.5 w-3.5" />
@@ -1160,7 +1430,126 @@
 										/>
 									</div>
 
-									{#if sslMode === 'verify-ca' || sslMode === 'verify-full'}
+									{#if provider === 'oracle'}
+										<div
+											class="col-span-2 overflow-hidden rounded-lg border bg-[var(--surface-sunken)]"
+										>
+											<div class="flex items-center gap-3 px-3.5 py-3">
+												<span
+													class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-[var(--surface-raised)]"
+												>
+													<ShieldCheck class="text-muted-foreground h-3.5 w-3.5" />
+												</span>
+												<div class="min-w-0 flex-1">
+													<p class="text-[10px] font-bold">Oracle Wallet</p>
+													<p class="text-muted-foreground mt-0.5 text-[8px] leading-relaxed">
+														Optional TCPS trust material from
+														<code>ewallet.p12</code> or <code>cwallet.sso</code>.
+													</p>
+												</div>
+												<button
+													type="button"
+													class="rt-toolbar-button h-8 shrink-0 gap-1.5 px-2.5 text-[9px] font-bold"
+													onclick={() => void chooseOracleWallet()}
+													disabled={action !== null}
+												>
+													<FolderOpen class="h-3.5 w-3.5" />
+													{oracleWalletPath ? 'Change' : 'Choose directory'}
+												</button>
+											</div>
+											{#if oracleWalletPath}
+												<div
+													class="grid grid-cols-2 gap-3 border-t bg-[var(--surface-raised)] p-3.5"
+												>
+													<div class="col-span-2">
+														<div class="mb-1.5 flex items-center justify-between gap-2">
+															<label for="modal-oracle-wallet-path" class="!mb-0">
+																Wallet directory
+															</label>
+															<button
+																type="button"
+																class="text-muted-foreground hover:text-destructive text-[8px] font-semibold"
+																onclick={removeOracleWallet}
+																disabled={action !== null}
+															>
+																Remove
+															</button>
+														</div>
+														<input
+															id="modal-oracle-wallet-path"
+															value={oracleWalletPath}
+															readonly
+															disabled={action !== null}
+														/>
+														<p class="text-muted-foreground mt-1 text-[8px]">
+															{oracleWalletHasAutoLogin
+																? 'Auto-login wallet detected; a password is not required.'
+																: 'Password-protected wallet detected.'}
+														</p>
+													</div>
+													<div class="col-span-2">
+														<div class="mb-1.5 flex items-center justify-between gap-2">
+															<label for="modal-oracle-wallet-password" class="!mb-0">
+																Wallet password
+															</label>
+															{#if hasStoredOracleWalletPassword}
+																<button
+																	type="button"
+																	class="text-muted-foreground hover:text-destructive text-[8px] font-semibold"
+																	onclick={clearStoredOracleWalletPassword}
+																	disabled={action !== null}
+																>
+																	{clearOracleWalletPasswordConfirm
+																		? 'Remove Wallet password'
+																		: 'Stored securely · remove'}
+																</button>
+															{:else if oracleWalletHasAutoLogin}
+																<span class="text-muted-foreground text-[8px] font-semibold">
+																	Optional
+																</span>
+															{/if}
+														</div>
+														<div class="relative">
+															<input
+																id="modal-oracle-wallet-password"
+																type={showOracleWalletPassword ? 'text' : 'password'}
+																bind:value={oracleWalletPassword}
+																placeholder={hasStoredOracleWalletPassword
+																	? 'Stored by the operating system - leave blank to keep'
+																	: oracleWalletPasswordRequired
+																		? 'Enter Wallet password'
+																		: 'Not required for auto-login'}
+																class="!pr-10"
+																disabled={action !== null}
+															/>
+															<button
+																type="button"
+																class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
+																onclick={() =>
+																	(showOracleWalletPassword = !showOracleWalletPassword)}
+																aria-label={showOracleWalletPassword
+																	? 'Hide Oracle Wallet password'
+																	: 'Show Oracle Wallet password'}
+															>
+																{#if showOracleWalletPassword}
+																	<EyeOff class="h-3.5 w-3.5" />
+																{:else}
+																	<Eye class="h-3.5 w-3.5" />
+																{/if}
+															</button>
+														</div>
+													</div>
+													<p class="text-muted-foreground col-span-2 text-[8px] leading-relaxed">
+														Wallet passwords are stored only in the operating system credential
+														store. Selecting a Wallet disables separate certificate paths and SSH
+														tunnelling.
+													</p>
+												</div>
+											{/if}
+										</div>
+									{/if}
+
+									{#if !oracleUsesWallet && (sslMode === 'verify-ca' || sslMode === 'verify-full')}
 										<div class="col-span-2">
 											<label for="modal-root-cert">CA certificate path</label>
 											<input
@@ -1192,246 +1581,265 @@
 										{/if}
 									{/if}
 
-									<div
-										class="col-span-2 overflow-hidden rounded-lg border bg-[var(--surface-sunken)]"
-									>
-										<div class="flex min-h-12 items-center">
-											<button
-												type="button"
-												class="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-3 text-left"
-												onclick={() => (sshExpanded = !sshExpanded)}
-												disabled={action !== null}
-												aria-expanded={sshExpanded}
-											>
-												<span
-													class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-[var(--surface-raised)]"
-												>
-													<Network class="text-muted-foreground h-3.5 w-3.5" />
-												</span>
-												<span class="min-w-0 flex-1">
-													<span class="block text-[10px] font-bold">SSH tunnel</span>
-													<span class="text-muted-foreground mt-0.5 block text-[8px]">
-														{sshEnabled
-															? `Via ${sshHost || 'SSH host'}:${sshPort || CONNECTION_DEFAULTS.sshPort}`
-															: 'Optional secure forwarding through a bastion host'}
-													</span>
-												</span>
-												<ChevronDown
-													class="text-muted-foreground h-3.5 w-3.5 transition-transform {sshExpanded
-														? 'rotate-180'
-														: ''}"
-												/>
-											</button>
-											<button
-												type="button"
-												class="mr-3 inline-flex h-7 min-w-12 items-center justify-center rounded-full border px-2.5 text-[8px] font-bold transition-colors {sshEnabled
-													? 'border-success-border bg-success-soft text-success'
-													: 'text-muted-foreground bg-[var(--surface-raised)]'}"
-												onclick={() => {
-													sshEnabled = !sshEnabled;
-													if (sshEnabled) sshExpanded = true;
-												}}
-												disabled={action !== null}
-												aria-pressed={sshEnabled}
-											>
-												{sshEnabled ? 'On' : 'Off'}
-											</button>
-										</div>
-
-										{#if sshExpanded}
-											<div class="grid grid-cols-2 gap-3 border-t bg-[var(--surface-raised)] p-3.5">
-												<div>
-													<label for="modal-ssh-host">SSH host</label>
-													<input
-														id="modal-ssh-host"
-														bind:value={sshHost}
-														placeholder="bastion.example.com"
-														disabled={action !== null || !sshEnabled}
-													/>
-												</div>
-												<div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3">
-													<div>
-														<label for="modal-ssh-port">Port</label>
-														<input
-															id="modal-ssh-port"
-															bind:value={sshPort}
-															placeholder={CONNECTION_DEFAULTS.sshPort}
-															disabled={action !== null || !sshEnabled}
-														/>
-													</div>
-													<div>
-														<label for="modal-ssh-user">Username</label>
-														<input
-															id="modal-ssh-user"
-															bind:value={sshUser}
-															placeholder="deploy"
-															disabled={action !== null || !sshEnabled}
-														/>
-													</div>
-												</div>
-
-												<div class="col-span-2">
-													<label for="modal-ssh-auth">Authentication</label>
-													<FilterCombobox
-														id="modal-ssh-auth"
-														options={sshAuthOptions}
-														value={sshAuthMode}
-														onChange={(value) => {
-															sshAuthMode = value;
-															clearSSHCredentialsConfirm = false;
-														}}
-														searchable={false}
-														disabled={action !== null || !sshEnabled}
-														triggerClass="h-9 px-3 text-xs"
-														placeholder="Select SSH authentication"
-													/>
-												</div>
-
-												{#if sshAuthMode === 'private-key'}
-													<div class="col-span-2">
-														<label for="modal-ssh-key">Private key path</label>
-														<input
-															id="modal-ssh-key"
-															bind:value={sshPrivateKeyPath}
-															placeholder="~/.ssh/id_ed25519"
-															disabled={action !== null || !sshEnabled}
-														/>
-													</div>
-													<div class="col-span-2">
-														<div class="mb-1.5 flex items-center justify-between gap-2">
-															<label for="modal-ssh-passphrase" class="!mb-0">
-																Key passphrase
-															</label>
-															{#if hasStoredSSHKeyPassphrase}
-																<span class="text-muted-foreground text-[8px] font-semibold">
-																	Stored securely
-																</span>
-															{/if}
-														</div>
-														<div class="relative">
-															<input
-																id="modal-ssh-passphrase"
-																type={showSSHSecret ? 'text' : 'password'}
-																bind:value={sshKeyPassphrase}
-																placeholder={hasStoredSSHKeyPassphrase
-																	? 'Stored by the operating system - leave blank to keep'
-																	: 'Optional for encrypted keys'}
-																class="!pr-10"
-																disabled={action !== null || !sshEnabled}
-															/>
-															<button
-																type="button"
-																class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
-																onclick={() => (showSSHSecret = !showSSHSecret)}
-																aria-label={showSSHSecret
-																	? 'Hide SSH key passphrase'
-																	: 'Show SSH key passphrase'}
-															>
-																{#if showSSHSecret}
-																	<EyeOff class="h-3.5 w-3.5" />
-																{:else}
-																	<Eye class="h-3.5 w-3.5" />
-																{/if}
-															</button>
-														</div>
-													</div>
-												{:else if sshAuthMode === 'password'}
-													<div class="col-span-2">
-														<div class="mb-1.5 flex items-center justify-between gap-2">
-															<label for="modal-ssh-password" class="!mb-0">SSH password</label>
-															{#if hasStoredSSHPassword}
-																<span class="text-muted-foreground text-[8px] font-semibold">
-																	Stored securely
-																</span>
-															{/if}
-														</div>
-														<div class="relative">
-															<input
-																id="modal-ssh-password"
-																type={showSSHSecret ? 'text' : 'password'}
-																bind:value={sshPassword}
-																placeholder={hasStoredSSHPassword
-																	? 'Stored by the operating system - leave blank to keep'
-																	: 'Enter SSH password'}
-																class="!pr-10"
-																disabled={action !== null || !sshEnabled}
-															/>
-															<button
-																type="button"
-																class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
-																onclick={() => (showSSHSecret = !showSSHSecret)}
-																aria-label={showSSHSecret
-																	? 'Hide SSH password'
-																	: 'Show SSH password'}
-															>
-																{#if showSSHSecret}
-																	<EyeOff class="h-3.5 w-3.5" />
-																{:else}
-																	<Eye class="h-3.5 w-3.5" />
-																{/if}
-															</button>
-														</div>
-													</div>
-												{:else}
-													<div
-														class="border-success-border bg-success-soft text-success col-span-2 rounded-md border px-3 py-2 text-[8px] leading-relaxed"
-													>
-														{APPLICATION.name} uses the agent exposed by <code>SSH_AUTH_SOCK</code>.
-														No private key or SSH password is copied into the profile.
-													</div>
-												{/if}
-
-												<div>
-													<label for="modal-known-hosts">Known hosts file</label>
-													<input
-														id="modal-known-hosts"
-														bind:value={sshKnownHostsPath}
-														placeholder="~/.ssh/known_hosts (default)"
-														disabled={action !== null || !sshEnabled}
-													/>
-												</div>
-												<div>
-													<label for="modal-host-fingerprint">Pinned host fingerprint</label>
-													<input
-														id="modal-host-fingerprint"
-														bind:value={sshHostKeyFingerprint}
-														placeholder="SHA256:… (optional)"
-														disabled={action !== null || !sshEnabled}
-													/>
-												</div>
-
-												<div
-													class="col-span-2 flex items-start gap-2 rounded-md border px-3 py-2.5"
-												>
-													<ShieldCheck class="text-success mt-0.5 h-3.5 w-3.5 shrink-0" />
-													<div class="min-w-0 flex-1">
-														<p class="text-[8px] font-bold">Strict host verification</p>
-														<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
-															The pinned SHA256 fingerprint takes priority. Otherwise the selected
-															or default known_hosts file must already trust this server.
-														</p>
-													</div>
-													{#if editingId && (hasStoredSSHPassword || hasStoredSSHKeyPassphrase)}
-														<button
-															type="button"
-															class="text-muted-foreground hover:text-destructive shrink-0 text-[8px] font-semibold"
-															onclick={clearStoredSSHCredentials}
-															disabled={action !== null}
-														>
-															{clearSSHCredentialsConfirm
-																? 'Remove stored SSH secret'
-																: 'Remove secret'}
-														</button>
-													{/if}
-												</div>
-												<p class="text-muted-foreground col-span-2 text-[8px] leading-relaxed">
-													The database host above is resolved from the SSH server. Use
-													<code>{CONNECTION_DEFAULTS.host}</code> when the database only listens on that
-													server.
+									{#if provider === 'oracle' && (oracleUsesTNS || oracleUsesWallet)}
+										<div
+											class="col-span-2 flex items-start gap-3 rounded-lg border bg-[var(--surface-sunken)] px-3.5 py-3"
+										>
+											<Network class="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
+											<div>
+												<p class="text-[9px] font-bold">SSH tunnel unavailable</p>
+												<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
+													{oracleUsesTNS
+														? 'TNS descriptors control their own endpoints. Use Direct endpoint mode when Oracle must be reached through SSH.'
+														: 'Wallet certificate verification must target the reviewed Oracle endpoint directly.'}
 												</p>
 											</div>
-										{/if}
-									</div>
+										</div>
+									{:else}
+										<div
+											class="col-span-2 overflow-hidden rounded-lg border bg-[var(--surface-sunken)]"
+										>
+											<div class="flex min-h-12 items-center">
+												<button
+													type="button"
+													class="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-3 text-left"
+													onclick={() => (sshExpanded = !sshExpanded)}
+													disabled={action !== null}
+													aria-expanded={sshExpanded}
+												>
+													<span
+														class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-[var(--surface-raised)]"
+													>
+														<Network class="text-muted-foreground h-3.5 w-3.5" />
+													</span>
+													<span class="min-w-0 flex-1">
+														<span class="block text-[10px] font-bold">SSH tunnel</span>
+														<span class="text-muted-foreground mt-0.5 block text-[8px]">
+															{sshEnabled
+																? `Via ${sshHost || 'SSH host'}:${sshPort || CONNECTION_DEFAULTS.sshPort}`
+																: 'Optional secure forwarding through a bastion host'}
+														</span>
+													</span>
+													<ChevronDown
+														class="text-muted-foreground h-3.5 w-3.5 transition-transform {sshExpanded
+															? 'rotate-180'
+															: ''}"
+													/>
+												</button>
+												<button
+													type="button"
+													class="mr-3 inline-flex h-7 min-w-12 items-center justify-center rounded-full border px-2.5 text-[8px] font-bold transition-colors {sshEnabled
+														? 'border-success-border bg-success-soft text-success'
+														: 'text-muted-foreground bg-[var(--surface-raised)]'}"
+													onclick={() => {
+														sshEnabled = !sshEnabled;
+														if (sshEnabled) sshExpanded = true;
+													}}
+													disabled={action !== null}
+													aria-pressed={sshEnabled}
+												>
+													{sshEnabled ? 'On' : 'Off'}
+												</button>
+											</div>
+
+											{#if sshExpanded}
+												<div
+													class="grid grid-cols-2 gap-3 border-t bg-[var(--surface-raised)] p-3.5"
+												>
+													<div>
+														<label for="modal-ssh-host">SSH host</label>
+														<input
+															id="modal-ssh-host"
+															bind:value={sshHost}
+															placeholder="bastion.example.com"
+															disabled={action !== null || !sshEnabled}
+														/>
+													</div>
+													<div class="grid grid-cols-[96px_minmax(0,1fr)] gap-3">
+														<div>
+															<label for="modal-ssh-port">Port</label>
+															<input
+																id="modal-ssh-port"
+																bind:value={sshPort}
+																placeholder={CONNECTION_DEFAULTS.sshPort}
+																disabled={action !== null || !sshEnabled}
+															/>
+														</div>
+														<div>
+															<label for="modal-ssh-user">Username</label>
+															<input
+																id="modal-ssh-user"
+																bind:value={sshUser}
+																placeholder="deploy"
+																disabled={action !== null || !sshEnabled}
+															/>
+														</div>
+													</div>
+
+													<div class="col-span-2">
+														<label for="modal-ssh-auth">Authentication</label>
+														<FilterCombobox
+															id="modal-ssh-auth"
+															options={sshAuthOptions}
+															value={sshAuthMode}
+															onChange={(value) => {
+																sshAuthMode = value;
+																clearSSHCredentialsConfirm = false;
+															}}
+															searchable={false}
+															disabled={action !== null || !sshEnabled}
+															triggerClass="h-9 px-3 text-xs"
+															placeholder="Select SSH authentication"
+														/>
+													</div>
+
+													{#if sshAuthMode === 'private-key'}
+														<div class="col-span-2">
+															<label for="modal-ssh-key">Private key path</label>
+															<input
+																id="modal-ssh-key"
+																bind:value={sshPrivateKeyPath}
+																placeholder="~/.ssh/id_ed25519"
+																disabled={action !== null || !sshEnabled}
+															/>
+														</div>
+														<div class="col-span-2">
+															<div class="mb-1.5 flex items-center justify-between gap-2">
+																<label for="modal-ssh-passphrase" class="!mb-0">
+																	Key passphrase
+																</label>
+																{#if hasStoredSSHKeyPassphrase}
+																	<span class="text-muted-foreground text-[8px] font-semibold">
+																		Stored securely
+																	</span>
+																{/if}
+															</div>
+															<div class="relative">
+																<input
+																	id="modal-ssh-passphrase"
+																	type={showSSHSecret ? 'text' : 'password'}
+																	bind:value={sshKeyPassphrase}
+																	placeholder={hasStoredSSHKeyPassphrase
+																		? 'Stored by the operating system - leave blank to keep'
+																		: 'Optional for encrypted keys'}
+																	class="!pr-10"
+																	disabled={action !== null || !sshEnabled}
+																/>
+																<button
+																	type="button"
+																	class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
+																	onclick={() => (showSSHSecret = !showSSHSecret)}
+																	aria-label={showSSHSecret
+																		? 'Hide SSH key passphrase'
+																		: 'Show SSH key passphrase'}
+																>
+																	{#if showSSHSecret}
+																		<EyeOff class="h-3.5 w-3.5" />
+																	{:else}
+																		<Eye class="h-3.5 w-3.5" />
+																	{/if}
+																</button>
+															</div>
+														</div>
+													{:else if sshAuthMode === 'password'}
+														<div class="col-span-2">
+															<div class="mb-1.5 flex items-center justify-between gap-2">
+																<label for="modal-ssh-password" class="!mb-0">SSH password</label>
+																{#if hasStoredSSHPassword}
+																	<span class="text-muted-foreground text-[8px] font-semibold">
+																		Stored securely
+																	</span>
+																{/if}
+															</div>
+															<div class="relative">
+																<input
+																	id="modal-ssh-password"
+																	type={showSSHSecret ? 'text' : 'password'}
+																	bind:value={sshPassword}
+																	placeholder={hasStoredSSHPassword
+																		? 'Stored by the operating system - leave blank to keep'
+																		: 'Enter SSH password'}
+																	class="!pr-10"
+																	disabled={action !== null || !sshEnabled}
+																/>
+																<button
+																	type="button"
+																	class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
+																	onclick={() => (showSSHSecret = !showSSHSecret)}
+																	aria-label={showSSHSecret
+																		? 'Hide SSH password'
+																		: 'Show SSH password'}
+																>
+																	{#if showSSHSecret}
+																		<EyeOff class="h-3.5 w-3.5" />
+																	{:else}
+																		<Eye class="h-3.5 w-3.5" />
+																	{/if}
+																</button>
+															</div>
+														</div>
+													{:else}
+														<div
+															class="border-success-border bg-success-soft text-success col-span-2 rounded-md border px-3 py-2 text-[8px] leading-relaxed"
+														>
+															{APPLICATION.name} uses the agent exposed by
+															<code>SSH_AUTH_SOCK</code>. No private key or SSH password is copied
+															into the profile.
+														</div>
+													{/if}
+
+													<div>
+														<label for="modal-known-hosts">Known hosts file</label>
+														<input
+															id="modal-known-hosts"
+															bind:value={sshKnownHostsPath}
+															placeholder="~/.ssh/known_hosts (default)"
+															disabled={action !== null || !sshEnabled}
+														/>
+													</div>
+													<div>
+														<label for="modal-host-fingerprint">Pinned host fingerprint</label>
+														<input
+															id="modal-host-fingerprint"
+															bind:value={sshHostKeyFingerprint}
+															placeholder="SHA256:… (optional)"
+															disabled={action !== null || !sshEnabled}
+														/>
+													</div>
+
+													<div
+														class="col-span-2 flex items-start gap-2 rounded-md border px-3 py-2.5"
+													>
+														<ShieldCheck class="text-success mt-0.5 h-3.5 w-3.5 shrink-0" />
+														<div class="min-w-0 flex-1">
+															<p class="text-[8px] font-bold">Strict host verification</p>
+															<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
+																The pinned SHA256 fingerprint takes priority. Otherwise the selected
+																or default known_hosts file must already trust this server.
+															</p>
+														</div>
+														{#if editingId && (hasStoredSSHPassword || hasStoredSSHKeyPassphrase)}
+															<button
+																type="button"
+																class="text-muted-foreground hover:text-destructive shrink-0 text-[8px] font-semibold"
+																onclick={clearStoredSSHCredentials}
+																disabled={action !== null}
+															>
+																{clearSSHCredentialsConfirm
+																	? 'Remove stored SSH secret'
+																	: 'Remove secret'}
+															</button>
+														{/if}
+													</div>
+													<p class="text-muted-foreground col-span-2 text-[8px] leading-relaxed">
+														The database host above is resolved from the SSH server. Use
+														<code>{CONNECTION_DEFAULTS.host}</code> when the database only listens on
+														that server.
+													</p>
+												</div>
+											{/if}
+										</div>
+									{/if}
 								{/if}
 							</div>
 						{/if}

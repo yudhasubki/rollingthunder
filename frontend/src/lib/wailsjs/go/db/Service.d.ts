@@ -38,9 +38,15 @@ export function CheckForUpdates():Promise<response.BaseResponse_rollingthunder_i
 
 export function ChooseImportFile():Promise<response.BaseResponse_rollingthunder_pkg_database_ImportFileSelection_>;
 
+export function ChooseOracleTNSFile():Promise<response.BaseResponse_rollingthunder_pkg_database_OracleTNSSelection_>;
+
+export function ChooseOracleWalletDirectory():Promise<response.BaseResponse_rollingthunder_pkg_database_OracleWalletSelection_>;
+
 export function ChooseRestoreFile(arg1:string):Promise<response.BaseResponse_rollingthunder_pkg_database_RestoreFileSelection_>;
 
 export function ChooseSQLiteDatabaseFile(arg1:boolean):Promise<response.BaseResponse_string_>;
+
+export function ClearConnectionOracleWalletPassword(arg1:string):Promise<response.BaseResponse_bool_>;
 
 export function ClearConnectionPassword(arg1:string):Promise<response.BaseResponse_bool_>;
 

@@ -52,16 +52,21 @@ func NewDriver(ctx context.Context, driver string, cfg database.Config) (databas
 		}), nil
 	case database.DriverOracle:
 		return oracle.NewOracle(ctx, oracle.Config{
-			Host:          cfg.Host,
-			Port:          cfg.Port,
-			User:          cfg.User,
-			Password:      cfg.Password,
-			Db:            cfg.Db,
-			SSLMode:       cfg.SSLMode,
-			SSLRootCert:   cfg.SSLRootCert,
-			SSLCert:       cfg.SSLCert,
-			SSLKey:        cfg.SSLKey,
-			TLSServerName: cfg.TLSServerName,
+			Host:           cfg.Host,
+			Port:           cfg.Port,
+			User:           cfg.User,
+			Password:       cfg.Password,
+			Db:             cfg.Db,
+			SSLMode:        cfg.SSLMode,
+			SSLRootCert:    cfg.SSLRootCert,
+			SSLCert:        cfg.SSLCert,
+			SSLKey:         cfg.SSLKey,
+			TLSServerName:  cfg.TLSServerName,
+			ConnectionMode: cfg.OracleConnectionMode,
+			TNSConfigPath:  cfg.OracleTNSConfigPath,
+			TNSAlias:       cfg.OracleTNSAlias,
+			WalletPath:     cfg.OracleWalletPath,
+			WalletPassword: cfg.OracleWalletPassword,
 		}), nil
 	case database.DriverSQLServer:
 		return sqlserver.NewSQLServer(ctx, sqlserver.Config{

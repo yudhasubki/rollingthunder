@@ -16,19 +16,21 @@ import (
 )
 
 const (
-	connectionStorageVersion      = 5
-	sshPasswordCredentialSuffix   = ":ssh-password"
-	sshPassphraseCredentialSuffix = ":ssh-key-passphrase"
+	connectionStorageVersion             = 6
+	sshPasswordCredentialSuffix          = ":ssh-password"
+	sshPassphraseCredentialSuffix        = ":ssh-key-passphrase"
+	oracleWalletPasswordCredentialSuffix = ":oracle-wallet-password"
 )
 
 // SavedConnection contains non-secret profile metadata. Passwords are stored
 // under the profile ID in the operating system credential store.
 type SavedConnection struct {
-	ID                  string          `json:"id"`
-	Config              database.Config `json:"config"`
-	HasPassword         bool            `json:"hasPassword"`
-	HasSSHPassword      bool            `json:"hasSshPassword"`
-	HasSSHKeyPassphrase bool            `json:"hasSshKeyPassphrase"`
+	ID                      string          `json:"id"`
+	Config                  database.Config `json:"config"`
+	HasPassword             bool            `json:"hasPassword"`
+	HasSSHPassword          bool            `json:"hasSshPassword"`
+	HasSSHKeyPassphrase     bool            `json:"hasSshKeyPassphrase"`
+	HasOracleWalletPassword bool            `json:"hasOracleWalletPassword"`
 }
 
 type connectionStorageEnvelope struct {
@@ -111,6 +113,7 @@ func scrubSavedConnection(connection SavedConnection) SavedConnection {
 	connection.Config.Password = ""
 	connection.Config.SSHPassword = ""
 	connection.Config.SSHKeyPassphrase = ""
+	connection.Config.OracleWalletPassword = ""
 	return connection
 }
 
@@ -120,6 +123,10 @@ func sshPasswordCredentialID(profileID string) string {
 
 func sshPassphraseCredentialID(profileID string) string {
 	return profileID + sshPassphraseCredentialSuffix
+}
+
+func oracleWalletPasswordCredentialID(profileID string) string {
+	return profileID + oracleWalletPasswordCredentialSuffix
 }
 
 func (s *Service) migratePlaintextSecret(
@@ -235,6 +242,17 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 				err,
 			)
 		}
+		walletPasswordMigrated, err := s.migratePlaintextSecret(
+			connection.Config.OracleWalletPassword,
+			oracleWalletPasswordCredentialID(connection.ID),
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"migrate Oracle Wallet password for %q to the operating system credential store: %w",
+				connection.Config.Name,
+				err,
+			)
+		}
 		if passwordMigrated {
 			connection.HasPassword = true
 		}
@@ -244,7 +262,13 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 		if passphraseMigrated {
 			connection.HasSSHKeyPassphrase = true
 		}
-		if passwordMigrated || sshPasswordMigrated || passphraseMigrated {
+		if walletPasswordMigrated {
+			connection.HasOracleWalletPassword = true
+		}
+		if passwordMigrated ||
+			sshPasswordMigrated ||
+			passphraseMigrated ||
+			walletPasswordMigrated {
 			*connection = scrubSavedConnection(*connection)
 			needsRewrite = true
 		}
@@ -350,6 +374,10 @@ func profileCredentialStates(
 			sshPassphraseCredentialID(connection.ID),
 			connection.HasSSHKeyPassphrase,
 		},
+		{
+			oracleWalletPasswordCredentialID(connection.ID),
+			connection.HasOracleWalletPassword,
+		},
 	}
 	states := make([]credentialState, 0, len(specifications))
 	for _, specification := range specifications {
@@ -403,10 +431,12 @@ func (s *Service) SaveConnection(
 	password := config.Password
 	sshPassword := config.SSHPassword
 	sshKeyPassphrase := config.SSHKeyPassphrase
+	oracleWalletPassword := config.OracleWalletPassword
 	sshAuthMode := resolvedSSHAuthMode(config)
 	config.Password = ""
 	config.SSHPassword = ""
 	config.SSHKeyPassphrase = ""
+	config.OracleWalletPassword = ""
 	connection := SavedConnection{
 		ID:          uuid.NewString(),
 		Config:      config,
@@ -417,11 +447,18 @@ func (s *Service) SaveConnection(
 		HasSSHKeyPassphrase: config.SSHEnabled &&
 			(sshAuthMode == "private-key" || sshAuthMode == "key") &&
 			sshKeyPassphrase != "",
+		HasOracleWalletPassword: strings.EqualFold(
+			config.Driver,
+			database.DriverOracle,
+		) &&
+			strings.TrimSpace(config.OracleWalletPath) != "" &&
+			oracleWalletPassword != "",
 	}
 	previous := []credentialState{
 		{id: connection.ID},
 		{id: sshPasswordCredentialID(connection.ID)},
 		{id: sshPassphraseCredentialID(connection.ID)},
+		{id: oracleWalletPasswordCredentialID(connection.ID)},
 	}
 	desired := []credentialState{
 		{id: connection.ID, value: password, exists: connection.HasPassword},
@@ -434,6 +471,11 @@ func (s *Service) SaveConnection(
 			id:     sshPassphraseCredentialID(connection.ID),
 			value:  sshKeyPassphrase,
 			exists: connection.HasSSHKeyPassphrase,
+		},
+		{
+			id:     oracleWalletPasswordCredentialID(connection.ID),
+			value:  oracleWalletPassword,
+			exists: connection.HasOracleWalletPassword,
 		},
 	}
 	if err := applyCredentialStates(s.credentialStore, previous, desired); err != nil {
@@ -508,10 +550,12 @@ func (s *Service) UpdateConnection(
 	newPassword := config.Password
 	newSSHPassword := config.SSHPassword
 	newSSHKeyPassphrase := config.SSHKeyPassphrase
+	newOracleWalletPassword := config.OracleWalletPassword
 	sshAuthMode := resolvedSSHAuthMode(config)
 	config.Password = ""
 	config.SSHPassword = ""
 	config.SSHKeyPassphrase = ""
+	config.OracleWalletPassword = ""
 	passwordState := previousCredentials[0]
 	if newPassword != "" {
 		passwordState.value = newPassword
@@ -534,17 +578,36 @@ func (s *Service) UpdateConnection(
 		sshPassphraseState.value = newSSHKeyPassphrase
 		sshPassphraseState.exists = true
 	}
+	oracleWalletPasswordState := previousCredentials[3]
+	walletConfigured := strings.EqualFold(
+		config.Driver,
+		database.DriverOracle,
+	) && strings.TrimSpace(config.OracleWalletPath) != ""
+	walletPathChanged := filepath.Clean(previous.Config.OracleWalletPath) !=
+		filepath.Clean(config.OracleWalletPath)
+	if !walletConfigured {
+		oracleWalletPasswordState.value = ""
+		oracleWalletPasswordState.exists = false
+	} else if newOracleWalletPassword != "" {
+		oracleWalletPasswordState.value = newOracleWalletPassword
+		oracleWalletPasswordState.exists = true
+	} else if walletPathChanged {
+		oracleWalletPasswordState.value = ""
+		oracleWalletPasswordState.exists = false
+	}
 	updated := SavedConnection{
-		ID:                  previous.ID,
-		Config:              config,
-		HasPassword:         passwordState.exists,
-		HasSSHPassword:      sshPasswordState.exists,
-		HasSSHKeyPassphrase: sshPassphraseState.exists,
+		ID:                      previous.ID,
+		Config:                  config,
+		HasPassword:             passwordState.exists,
+		HasSSHPassword:          sshPasswordState.exists,
+		HasSSHKeyPassphrase:     sshPassphraseState.exists,
+		HasOracleWalletPassword: oracleWalletPasswordState.exists,
 	}
 	desiredCredentials := []credentialState{
 		passwordState,
 		sshPasswordState,
 		sshPassphraseState,
+		oracleWalletPasswordState,
 	}
 	if err := applyCredentialStates(
 		s.credentialStore,
@@ -683,6 +746,62 @@ func (s *Service) ClearConnectionSSHCredentials(
 	return response.BaseResponse[bool]{Data: true}
 }
 
+func (s *Service) ClearConnectionOracleWalletPassword(
+	id string,
+) response.BaseResponse[bool] {
+	connections, err := s.loadSavedConnections()
+	if err != nil {
+		return connectionStorageError[bool](
+			"Could not load saved connections",
+			err,
+		)
+	}
+	index := -1
+	for candidateIndex := range connections {
+		if connections[candidateIndex].ID == id {
+			index = candidateIndex
+			break
+		}
+	}
+	if index < 0 {
+		return serviceErrorWithCode[bool](
+			404,
+			errorCodeInvalidRequest,
+			"Connection profile not found",
+			"The saved profile no longer exists.",
+			"Refresh saved connections and choose another profile.",
+		)
+	}
+	previous, err := profileCredentialStates(
+		s.credentialStore,
+		connections[index],
+	)
+	if err != nil {
+		return connectionStorageError[bool](
+			"Could not unlock the Oracle Wallet password before removing it",
+			err,
+		)
+	}
+	desired := append([]credentialState(nil), previous...)
+	desired[3].value = ""
+	desired[3].exists = false
+	if err := applyCredentialStates(s.credentialStore, previous, desired); err != nil {
+		return connectionStorageError[bool](
+			"Could not remove the Oracle Wallet password",
+			err,
+		)
+	}
+	connections[index].HasOracleWalletPassword = false
+	if err := s.connectionStorage.Save(connections); err != nil {
+		restoreCredentialStates(s.credentialStore, previous)
+		return connectionStorageError[bool](
+			"Could not update connection profile",
+			err,
+		)
+	}
+	return response.BaseResponse[bool]{Data: true}
+}
+
 func (s *Service) DeleteConnection(id string) response.BaseResponse[bool] {
 	connections, err := s.loadSavedConnections()
 	if err != nil {
@@ -757,6 +876,19 @@ func (s *Service) hydrateProfileCredentials(
 			)
 		}
 		config.Password = password
+	}
+	if config.OracleWalletPassword == "" &&
+		profile.HasOracleWalletPassword {
+		password, err := s.credentialStore.Get(
+			oracleWalletPasswordCredentialID(profile.ID),
+		)
+		if err != nil {
+			return database.Config{}, fmt.Errorf(
+				"unlock Oracle Wallet password: %w",
+				err,
+			)
+		}
+		config.OracleWalletPassword = password
 	}
 	if !config.SSHEnabled {
 		return config, nil

@@ -220,12 +220,65 @@ func backupCapabilitiesFor(
 			Message:       message,
 			SupportsScope: true,
 		}
+	case "oracle":
+		return database.BackupCapabilities{
+			Available:         true,
+			Engine:            engine,
+			Format:            database.BackupFormatOracleDataPump,
+			Extension:         ".dmp",
+			BackupTool:        "DBMS_DATAPUMP",
+			RestoreTool:       "DBMS_DATAPUMP",
+			RestoreReady:      true,
+			BuiltIn:           true,
+			SupportsScope:     false,
+			RequiresDirectory: true,
+			Directories:       []database.BackupDirectory{},
+			Message: "Oracle Data Pump stages encrypted-at-rest responsibility " +
+				"with the configured database server directory.",
+		}
 	default:
 		return database.BackupCapabilities{
 			Engine:  engine,
 			Message: "This database engine does not expose a backup workflow.",
 		}
 	}
+}
+
+func (s *Service) backupCapabilitiesForConnection(
+	ctx context.Context,
+	connection *Connection,
+) database.BackupCapabilities {
+	capabilities := backupCapabilitiesFor(
+		s.lookPath,
+		connection.Driver.Capabilities().Engine,
+	)
+	if !capabilities.RequiresDirectory {
+		return capabilities
+	}
+	driver, ok := connection.Driver.(database.StreamingBackupDriver)
+	if !ok {
+		capabilities.Available = false
+		capabilities.RestoreReady = false
+		capabilities.Message =
+			"The Oracle driver does not expose its native Data Pump workflow."
+		return capabilities
+	}
+	directories, err := driver.GetBackupDirectories(ctx)
+	if err != nil {
+		capabilities.Available = false
+		capabilities.RestoreReady = false
+		capabilities.Message = "Could not read Oracle Data Pump directories: " +
+			err.Error()
+		return capabilities
+	}
+	capabilities.Directories = directories
+	if len(directories) == 0 {
+		capabilities.Available = false
+		capabilities.RestoreReady = false
+		capabilities.Message =
+			"Grant READ and WRITE on an Oracle DIRECTORY object before using Data Pump."
+	}
+	return capabilities
 }
 
 func (s *Service) GetBackupCapabilities(
@@ -236,11 +289,10 @@ func (s *Service) GetBackupCapabilities(
 		return serviceError[database.BackupCapabilities](err.Error())
 	}
 	defer release()
+	ctx, cancel := s.structuralChangeContext()
+	defer cancel()
 	return response.BaseResponse[database.BackupCapabilities]{
-		Data: backupCapabilitiesFor(
-			s.lookPath,
-			connection.Driver.Capabilities().Engine,
-		),
+		Data: s.backupCapabilitiesForConnection(ctx, connection),
 	}
 }
 
@@ -258,6 +310,8 @@ func backupDialogConfiguration(
 		displayName = "PostgreSQL custom backups (*.dump)"
 	case database.BackupFormatMySQLSQL:
 		displayName = "MySQL / MariaDB backups (*.sql)"
+	case database.BackupFormatOracleDataPump:
+		displayName = "Oracle Data Pump backups (*.dmp)"
 	default:
 		return wailsruntime.SaveDialogOptions{}, fmt.Errorf(
 			"unsupported backup format %q",
@@ -581,6 +635,27 @@ func (s *Service) createBackup(
 			os.Environ(),
 			nil,
 		)
+	case database.BackupFormatOracleDataPump:
+		driver, ok := connection.Driver.(database.StreamingBackupDriver)
+		if !ok {
+			return fmt.Errorf(
+				"Oracle driver does not expose native Data Pump backup support",
+			)
+		}
+		target, err := os.OpenFile(
+			tempPath,
+			os.O_WRONLY|os.O_TRUNC,
+			0o600,
+		)
+		if err != nil {
+			return err
+		}
+		backupErr := driver.BackupDatabaseToWriter(ctx, target, request)
+		closeErr := target.Close()
+		if backupErr != nil {
+			return backupErr
+		}
+		return closeErr
 	default:
 		return fmt.Errorf("unsupported backup format %q", capabilities.Format)
 	}
@@ -603,10 +678,12 @@ func (s *Service) BackupDatabase(
 		return serviceError[database.BackupResult](err.Error())
 	}
 	defer release()
-	capabilities := backupCapabilitiesFor(
-		s.lookPath,
-		connection.Driver.Capabilities().Engine,
+	capabilityCtx, capabilityCancel := s.structuralChangeContext()
+	capabilities := s.backupCapabilitiesForConnection(
+		capabilityCtx,
+		connection,
 	)
+	capabilityCancel()
 	if !capabilities.Available {
 		return serviceErrorWithCode[database.BackupResult](
 			http.StatusNotImplemented,
@@ -731,6 +808,11 @@ func restoreFileFilters(engine string) []wailsruntime.FileFilter {
 			DisplayName: "MySQL / MariaDB SQL backups (*.sql)",
 			Pattern:     "*.sql",
 		}}
+	case "oracle":
+		return []wailsruntime.FileFilter{{
+			DisplayName: "Oracle Data Pump backups (*.dmp)",
+			Pattern:     "*.dmp",
+		}}
 	default:
 		return nil
 	}
@@ -752,6 +834,10 @@ func restoreFormatFor(engine string, path string) (database.BackupFormat, error)
 	case "mysql":
 		if extension == ".sql" {
 			return database.BackupFormatMySQLSQL, nil
+		}
+	case "oracle":
+		if extension == ".dmp" {
+			return database.BackupFormatOracleDataPump, nil
 		}
 	}
 	return "", fmt.Errorf("selected file does not match the %s restore format", engine)
@@ -902,6 +988,9 @@ func validateRestoreHeader(grant restoreFileGrant) error {
 		if bytes.IndexByte(header, 0) >= 0 {
 			return fmt.Errorf("SQL restore file contains binary data")
 		}
+	case database.BackupFormatOracleDataPump:
+		// Oracle Data Pump headers vary by database release. The native import
+		// API performs authoritative format and compatibility validation.
 	}
 	return nil
 }
@@ -920,6 +1009,7 @@ func restoreFingerprint(
 		engine,
 		databaseName,
 		request.Schema,
+		request.Directory,
 		string(grant.selection.Format),
 		grant.path,
 		strconv.FormatInt(grant.selection.Size, 10),
@@ -966,7 +1056,7 @@ func (s *Service) buildRestorePreview(
 	engine := connection.Driver.Capabilities().Engine
 	databaseName := connection.Config.Db
 	transactional := engine == "sqlite"
-	capabilities := backupCapabilitiesFor(s.lookPath, engine)
+	capabilities := s.backupCapabilitiesForConnection(ctx, connection)
 	release()
 	if grant.selection.Format != capabilities.Format {
 		return database.RestorePreview{}, restoreFileGrant{}, fmt.Errorf(
@@ -978,6 +1068,23 @@ func (s *Service) buildRestorePreview(
 	if !capabilities.RestoreReady {
 		return database.RestorePreview{}, restoreFileGrant{},
 			fmt.Errorf("%s", capabilities.Message)
+	}
+	if capabilities.RequiresDirectory {
+		selectedDirectory := strings.TrimSpace(request.Directory)
+		found := false
+		for _, directory := range capabilities.Directories {
+			if strings.EqualFold(directory.Name, selectedDirectory) {
+				request.Directory = directory.Name
+				found = true
+				break
+			}
+		}
+		if !found {
+			return database.RestorePreview{}, restoreFileGrant{},
+				fmt.Errorf(
+					"select an accessible Oracle Data Pump directory",
+				)
+		}
 	}
 	fileHash, err := hashRestoreFile(ctx, grant)
 	if err != nil {
@@ -993,6 +1100,13 @@ func (s *Service) buildRestorePreview(
 			"The external restore tool may commit multiple DDL steps; cancellation or failure can leave a partial restore.",
 		)
 	}
+	if engine == "oracle" {
+		warnings = append(
+			warnings,
+			"Oracle Data Pump stages the dump in the selected server directory and removes the temporary copy after the job.",
+			"Data Pump import auto-commits object changes and can leave a partial schema when cancelled or rejected by the server.",
+		)
+	}
 	return database.RestorePreview{
 		ConnectionID:  request.ConnectionID,
 		Database:      databaseName,
@@ -1001,6 +1115,7 @@ func (s *Service) buildRestorePreview(
 		Size:          grant.selection.Size,
 		Format:        grant.selection.Format,
 		Schema:        request.Schema,
+		Directory:     request.Directory,
 		Destructive:   true,
 		Transactional: transactional,
 		Warnings:      warnings,
@@ -1150,6 +1265,19 @@ func (s *Service) runRestore(
 			os.Environ(),
 			source,
 		)
+	case database.BackupFormatOracleDataPump:
+		driver, ok := connection.Driver.(database.StreamingBackupDriver)
+		if !ok {
+			return fmt.Errorf(
+				"Oracle driver does not expose native Data Pump restore support",
+			)
+		}
+		source, err := os.Open(grant.path)
+		if err != nil {
+			return err
+		}
+		defer source.Close()
+		return driver.RestoreDatabaseFromReader(ctx, source, request)
 	default:
 		return fmt.Errorf("unsupported restore format %q", grant.selection.Format)
 	}

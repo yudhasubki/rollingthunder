@@ -451,7 +451,70 @@ func metadataType(kind database.ObjectKind) (string, error) {
 	}
 }
 
+const (
+	oracleViewDefinitionQuery = `
+		SELECT text
+		FROM all_views
+		WHERE owner = :1
+			AND view_name = :2`
+	oracleMaterializedViewDefinitionQuery = `
+		SELECT query
+		FROM all_mviews
+		WHERE owner = :1
+			AND mview_name = :2`
+)
+
+func oracleCatalogViewDDL(
+	reference database.ObjectReference,
+	query string,
+) (string, error) {
+	query = strings.TrimSpace(query)
+	query = strings.TrimSuffix(query, ";")
+	if query == "" {
+		return "", fmt.Errorf(
+			"Oracle %s %q has an empty catalog definition",
+			reference.Kind,
+			reference.QualifiedName(),
+		)
+	}
+	prefix := "CREATE OR REPLACE VIEW "
+	if reference.Kind == database.ObjectKindMaterializedView {
+		prefix = "CREATE MATERIALIZED VIEW "
+	}
+	return prefix +
+		quoteQualified(reference.Schema, reference.Name) +
+		" AS\n" + query + ";", nil
+}
+
+func (o *Oracle) catalogViewDefinition(
+	ctx context.Context,
+	reference database.ObjectReference,
+) (string, error) {
+	query := oracleViewDefinitionQuery
+	if reference.Kind == database.ObjectKindMaterializedView {
+		query = oracleMaterializedViewDefinitionQuery
+	}
+	var definition sql.NullString
+	if err := o.conn.QueryRowContext(
+		ctx,
+		query,
+		o.defaultSchema(reference.Schema),
+		reference.Name,
+	).Scan(&definition); err != nil {
+		return "", err
+	}
+	if !definition.Valid {
+		return "", fmt.Errorf(
+			"Oracle %s %q has no catalog definition",
+			reference.Kind,
+			reference.QualifiedName(),
+		)
+	}
+	return oracleCatalogViewDDL(reference, definition.String)
+}
+
 func (o *Oracle) objectDefinition(
+	ctx context.Context,
 	reference database.ObjectReference,
 ) (string, error) {
 	objectType, err := metadataType(reference.Kind)
@@ -459,22 +522,42 @@ func (o *Oracle) objectDefinition(
 		return "", err
 	}
 	var definition sql.NullString
-	if err := o.conn.QueryRow(
+	metadataErr := o.conn.QueryRowContext(
+		ctx,
 		"SELECT DBMS_METADATA.GET_DDL(:1, :2, :3) FROM dual",
 		objectType,
 		reference.Name,
 		o.defaultSchema(reference.Schema),
-	).Scan(&definition); err != nil {
-		return "", err
+	).Scan(&definition)
+	if metadataErr == nil && definition.Valid &&
+		strings.TrimSpace(definition.String) != "" {
+		result := strings.TrimSpace(definition.String)
+		if !strings.HasSuffix(result, ";") {
+			result += ";"
+		}
+		return result, nil
 	}
-	if !definition.Valid {
-		return "", nil
+	if reference.Kind == database.ObjectKindView ||
+		reference.Kind == database.ObjectKindMaterializedView {
+		fallback, fallbackErr := o.catalogViewDefinition(ctx, reference)
+		if fallbackErr == nil {
+			return fallback, nil
+		}
+		if metadataErr != nil {
+			return "", fmt.Errorf(
+				"read Oracle %s definition with DBMS_METADATA: %w; "+
+					"catalog fallback also failed: %v",
+				reference.Kind,
+				metadataErr,
+				fallbackErr,
+			)
+		}
+		return "", fallbackErr
 	}
-	result := strings.TrimSpace(definition.String)
-	if result != "" && !strings.HasSuffix(result, ";") {
-		result += ";"
+	if metadataErr != nil {
+		return "", metadataErr
 	}
-	return result, nil
+	return "", nil
 }
 
 func (o *Oracle) GetObjectDetail(
@@ -514,7 +597,7 @@ func (o *Oracle) GetObjectDetail(
 			reference.QualifiedName(),
 		)
 	}
-	definition, err := o.objectDefinition(selected.Reference)
+	definition, err := o.objectDefinition(ctx, selected.Reference)
 	if err != nil {
 		return database.ObjectDetail{}, err
 	}

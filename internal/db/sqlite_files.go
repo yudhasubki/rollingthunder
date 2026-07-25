@@ -18,6 +18,7 @@ type openFileDialogFunc func(
 ) (string, error)
 
 var defaultOpenFileDialog openFileDialogFunc = wailsruntime.OpenFileDialog
+var defaultOpenDirectoryDialog openFileDialogFunc = wailsruntime.OpenDirectoryDialog
 
 var sqliteFileFilters = []wailsruntime.FileFilter{
 	{

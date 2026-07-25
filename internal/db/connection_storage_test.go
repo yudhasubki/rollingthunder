@@ -98,7 +98,7 @@ func TestSavedConnectionStoresPasswordOutsideProfileFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "super-secret-value") ||
-		!strings.Contains(string(data), `"version": 5`) {
+		!strings.Contains(string(data), `"version": 6`) {
 		t.Fatalf("profile file = %s", data)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -184,14 +184,104 @@ func TestSavedConnectionStoresSSHSecretsOutsideProfileFile(t *testing.T) {
 	}
 }
 
+func TestSavedConnectionStoresOracleWalletPasswordOutsideProfileFile(
+	t *testing.T,
+) {
+	service, credentials := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:                 "Oracle production",
+		Driver:               database.DriverOracle,
+		Host:                 "oracle.internal",
+		Port:                 "1521",
+		User:                 "rolling",
+		Password:             "database-secret",
+		Db:                   "FREEPDB1",
+		SSLMode:              "verify-full",
+		OracleConnectionMode: "direct",
+		OracleWalletPath:     "/secure/oracle-wallet",
+		OracleWalletPassword: "wallet-secret",
+	})
+	if len(saved.Errors) > 0 {
+		t.Fatalf("SaveConnection() errors = %+v", saved.Errors)
+	}
+	if !saved.Data.HasOracleWalletPassword ||
+		saved.Data.Config.OracleWalletPassword != "" {
+		t.Fatalf("saved Wallet metadata = %+v", saved.Data)
+	}
+	credentialID := oracleWalletPasswordCredentialID(saved.Data.ID)
+	if password, err := credentials.Get(credentialID); err != nil ||
+		password != "wallet-secret" {
+		t.Fatalf("Wallet credential = %q, %v", password, err)
+	}
+	data, err := os.ReadFile(service.connectionStorage.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "wallet-secret") {
+		t.Fatalf("profile file exposed Wallet password: %s", data)
+	}
+	hydrated, err := service.hydrateProfileCredentials(
+		saved.Data,
+		saved.Data.Config,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hydrated.OracleWalletPassword != "wallet-secret" {
+		t.Fatalf(
+			"hydrated Wallet password = %q",
+			hydrated.OracleWalletPassword,
+		)
+	}
+
+	updated := service.UpdateConnection(saved.Data.ID, saved.Data.Config)
+	if len(updated.Errors) > 0 ||
+		!updated.Data.HasOracleWalletPassword {
+		t.Fatalf("UpdateConnection() = %+v", updated)
+	}
+	if password, err := credentials.Get(credentialID); err != nil ||
+		password != "wallet-secret" {
+		t.Fatalf("preserved Wallet credential = %q, %v", password, err)
+	}
+}
+
+func TestChangingOracleWalletClearsUnchangedStoredPassword(t *testing.T) {
+	service, credentials := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:                 "Oracle",
+		Driver:               database.DriverOracle,
+		Db:                   "FREEPDB1",
+		SSLMode:              "verify-full",
+		OracleConnectionMode: "direct",
+		OracleWalletPath:     "/wallet/one",
+		OracleWalletPassword: "wallet-one-secret",
+	})
+	if len(saved.Errors) > 0 {
+		t.Fatalf("SaveConnection() errors = %+v", saved.Errors)
+	}
+	config := saved.Data.Config
+	config.OracleWalletPath = "/wallet/two"
+	updated := service.UpdateConnection(saved.Data.ID, config)
+	if len(updated.Errors) > 0 ||
+		updated.Data.HasOracleWalletPassword {
+		t.Fatalf("UpdateConnection() = %+v", updated)
+	}
+	if _, err := credentials.Get(
+		oracleWalletPasswordCredentialID(saved.Data.ID),
+	); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("old Wallet credential still exists: %v", err)
+	}
+}
+
 func TestActiveConnectionJSONCannotExposeConfigurationSecrets(t *testing.T) {
 	data, err := json.Marshal(Connection{
 		ID:   "active",
 		Name: "Private",
 		Config: database.Config{
-			Password:         "database-secret",
-			SSHPassword:      "ssh-secret",
-			SSHKeyPassphrase: "passphrase-secret",
+			Password:             "database-secret",
+			SSHPassword:          "ssh-secret",
+			SSHKeyPassphrase:     "passphrase-secret",
+			OracleWalletPassword: "wallet-secret",
 		},
 	})
 	if err != nil {
@@ -201,6 +291,7 @@ func TestActiveConnectionJSONCannotExposeConfigurationSecrets(t *testing.T) {
 		"database-secret",
 		"ssh-secret",
 		"passphrase-secret",
+		"wallet-secret",
 	} {
 		if strings.Contains(string(data), secret) {
 			t.Fatalf("active connection JSON exposed %q: %s", secret, data)
@@ -331,7 +422,7 @@ func TestLegacyPlaintextPasswordMigratesBeforeProfileRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(migrated), "legacy-password") ||
-		!strings.Contains(string(migrated), `"version": 5`) {
+		!strings.Contains(string(migrated), `"version": 6`) {
 		t.Fatalf("migrated profile file = %s", migrated)
 	}
 }
@@ -355,7 +446,7 @@ func TestLegacyProfileWithoutPasswordStillMigratesToVersionedEnvelope(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(migrated), `"version": 5`) {
+	if !strings.Contains(string(migrated), `"version": 6`) {
 		t.Fatalf("legacy profile was not versioned: %s", migrated)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -364,6 +455,58 @@ func TestLegacyProfileWithoutPasswordStillMigratesToVersionedEnvelope(t *testing
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("migrated profile permissions = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestVersionFiveOracleWalletPasswordMigratesToCredentialStore(
+	t *testing.T,
+) {
+	service, credentials := credentialTestService(t)
+	legacy := connectionStorageEnvelope{
+		Version: 5,
+		Connections: []SavedConnection{{
+			ID: "oracle-wallet-profile",
+			Config: database.Config{
+				Name:                 "Oracle",
+				Driver:               database.DriverOracle,
+				Db:                   "FREEPDB1",
+				OracleConnectionMode: "direct",
+				OracleWalletPath:     "/secure/oracle-wallet",
+				OracleWalletPassword: "legacy-wallet-secret",
+			},
+		}},
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		service.connectionStorage.FilePath,
+		data,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := service.GetSavedConnections()
+	if len(loaded.Errors) > 0 ||
+		len(loaded.Data) != 1 ||
+		!loaded.Data[0].HasOracleWalletPassword ||
+		loaded.Data[0].Config.OracleWalletPassword != "" {
+		t.Fatalf("GetSavedConnections() = %+v", loaded)
+	}
+	if password, err := credentials.Get(
+		oracleWalletPasswordCredentialID("oracle-wallet-profile"),
+	); err != nil || password != "legacy-wallet-secret" {
+		t.Fatalf("migrated Wallet credential = %q, %v", password, err)
+	}
+	migrated, err := os.ReadFile(service.connectionStorage.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(migrated), "legacy-wallet-secret") ||
+		!strings.Contains(string(migrated), `"version": 6`) {
+		t.Fatalf("migrated profile file = %s", migrated)
 	}
 }
 
@@ -446,7 +589,7 @@ func TestVersionThreeProfileMigratesToSemanticEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(migrated)
-	if !strings.Contains(text, `"version": 5`) ||
+	if !strings.Contains(text, `"version": 6`) ||
 		!strings.Contains(text, `"environment": "unclassified"`) ||
 		!strings.Contains(text, `"accessMode": "read-write"`) ||
 		strings.Contains(text, "#ff00ff") {
@@ -568,6 +711,43 @@ func TestClearConnectionPasswordRemovesCredentialAndProfileFlag(t *testing.T) {
 	loaded := service.GetSavedConnections()
 	if len(loaded.Errors) > 0 || len(loaded.Data) != 1 ||
 		loaded.Data[0].HasPassword {
+		t.Fatalf("saved profile after clear = %+v", loaded)
+	}
+}
+
+func TestClearConnectionOracleWalletPasswordRemovesCredentialAndFlag(
+	t *testing.T,
+) {
+	service, credentials := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:                 "Oracle",
+		Driver:               database.DriverOracle,
+		Db:                   "FREEPDB1",
+		SSLMode:              "verify-full",
+		OracleConnectionMode: "direct",
+		OracleWalletPath:     "/secure/oracle-wallet",
+		OracleWalletPassword: "remove-wallet-secret",
+	})
+	if len(saved.Errors) > 0 {
+		t.Fatalf("SaveConnection() errors = %+v", saved.Errors)
+	}
+
+	cleared := service.ClearConnectionOracleWalletPassword(saved.Data.ID)
+	if len(cleared.Errors) > 0 || !cleared.Data {
+		t.Fatalf(
+			"ClearConnectionOracleWalletPassword() = %+v",
+			cleared,
+		)
+	}
+	if _, err := credentials.Get(
+		oracleWalletPasswordCredentialID(saved.Data.ID),
+	); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("Wallet credential still available: %v", err)
+	}
+	loaded := service.GetSavedConnections()
+	if len(loaded.Errors) > 0 ||
+		len(loaded.Data) != 1 ||
+		loaded.Data[0].HasOracleWalletPassword {
 		t.Fatalf("saved profile after clear = %+v", loaded)
 	}
 }

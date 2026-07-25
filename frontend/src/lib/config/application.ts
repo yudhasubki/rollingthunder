@@ -34,6 +34,7 @@ export const TIME = Object.freeze({
 export type ProviderId = 'postgres' | 'mysql' | 'sqlite' | 'oracle' | 'sqlserver';
 export type ConnectionEnvironment = 'unclassified' | 'development' | 'staging' | 'production';
 export type ConnectionAccessMode = 'read-write' | 'read-only';
+export type OracleConnectionMode = 'direct' | 'tns';
 
 export const DATABASE_PROVIDERS: ReadonlyArray<{
 	id: ProviderId;
@@ -114,6 +115,7 @@ export const CONNECTION_DEFAULTS = Object.freeze({
 	sshPort: '22',
 	sslMode: 'disable',
 	provider: 'postgres' as ProviderId,
+	oracleConnectionMode: 'direct' as OracleConnectionMode,
 	environment: 'unclassified' as ConnectionEnvironment,
 	accessMode: 'read-write' as ConnectionAccessMode
 });
@@ -147,6 +149,14 @@ export const SSH_AUTH_OPTIONS = Object.freeze([
 	{ value: 'private-key', label: 'Private key' },
 	{ value: 'password', label: 'Password' }
 ]);
+
+export const ORACLE_CONNECTION_MODES: ReadonlyArray<{
+	value: OracleConnectionMode;
+	label: string;
+}> = [
+	{ value: 'direct', label: 'Direct endpoint' },
+	{ value: 'tns', label: 'TNS alias' }
+];
 
 export const CONNECTION_ENVIRONMENTS: ReadonlyArray<{
 	value: ConnectionEnvironment;

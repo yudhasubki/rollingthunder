@@ -66,12 +66,24 @@ export function ChooseImportFile() {
   return window['go']['db']['Service']['ChooseImportFile']();
 }
 
+export function ChooseOracleTNSFile() {
+  return window['go']['db']['Service']['ChooseOracleTNSFile']();
+}
+
+export function ChooseOracleWalletDirectory() {
+  return window['go']['db']['Service']['ChooseOracleWalletDirectory']();
+}
+
 export function ChooseRestoreFile(arg1) {
   return window['go']['db']['Service']['ChooseRestoreFile'](arg1);
 }
 
 export function ChooseSQLiteDatabaseFile(arg1) {
   return window['go']['db']['Service']['ChooseSQLiteDatabaseFile'](arg1);
+}
+
+export function ClearConnectionOracleWalletPassword(arg1) {
+  return window['go']['db']['Service']['ClearConnectionOracleWalletPassword'](arg1);
 }
 
 export function ClearConnectionPassword(arg1) {

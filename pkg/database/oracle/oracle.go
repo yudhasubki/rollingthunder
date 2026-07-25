@@ -18,6 +18,7 @@ import (
 	"rollingthunder/pkg/database/sqladapter"
 
 	go_ora "github.com/sijms/go-ora/v2"
+	"github.com/sijms/go-ora/v2/configurations"
 )
 
 const (
@@ -28,16 +29,21 @@ const (
 )
 
 type Config struct {
-	Host          string
-	Port          string
-	User          string
-	Password      string
-	Db            string
-	SSLMode       string
-	SSLRootCert   string
-	SSLCert       string
-	SSLKey        string
-	TLSServerName string
+	Host           string
+	Port           string
+	User           string
+	Password       string
+	Db             string
+	SSLMode        string
+	SSLRootCert    string
+	SSLCert        string
+	SSLKey         string
+	TLSServerName  string
+	ConnectionMode string
+	TNSConfigPath  string
+	TNSAlias       string
+	WalletPath     string
+	WalletPassword string
 }
 
 type Oracle struct {
@@ -52,6 +58,32 @@ func NewOracle(ctx context.Context, cfg Config) *Oracle {
 }
 
 func normalizeConfig(config Config) (Config, int, error) {
+	config.ConnectionMode = strings.ToLower(
+		strings.TrimSpace(config.ConnectionMode),
+	)
+	if config.ConnectionMode == "" {
+		config.ConnectionMode = "direct"
+	}
+	config.SSLMode = strings.ToLower(strings.TrimSpace(config.SSLMode))
+	if config.SSLMode == "" {
+		config.SSLMode = database.DefaultSSLMode
+	}
+	if config.ConnectionMode == "tns" {
+		config.TNSConfigPath = strings.TrimSpace(config.TNSConfigPath)
+		config.TNSAlias = strings.TrimSpace(config.TNSAlias)
+		if config.TNSConfigPath == "" || config.TNSAlias == "" {
+			return Config{}, 0, errors.New(
+				"Oracle TNS mode requires a tnsnames.ora file and alias",
+			)
+		}
+		return config, 0, nil
+	}
+	if config.ConnectionMode != "direct" {
+		return Config{}, 0, fmt.Errorf(
+			"unsupported Oracle connection mode %q",
+			config.ConnectionMode,
+		)
+	}
 	config.Host = strings.TrimSpace(config.Host)
 	if config.Host == "" {
 		config.Host = database.DefaultHost
@@ -69,10 +101,6 @@ func normalizeConfig(config Config) (Config, int, error) {
 	config.Db = strings.TrimSpace(config.Db)
 	if config.Db == "" {
 		return Config{}, 0, errors.New("Oracle service name is required")
-	}
-	config.SSLMode = strings.ToLower(strings.TrimSpace(config.SSLMode))
-	if config.SSLMode == "" {
-		config.SSLMode = database.DefaultSSLMode
 	}
 	return config, port, nil
 }
@@ -149,10 +177,71 @@ func oracleTLSConfig(config Config) (*tls.Config, error) {
 			return verifyErr
 		}
 	case "verify-full":
+		if strings.TrimSpace(config.TLSServerName) != "" {
+			// go-ora rewrites tls.Config.ServerName to the active network
+			// endpoint. A tunnel endpoint is local, so preserve verification
+			// against the reviewed database hostname explicitly.
+			expectedName := serverName
+			tlsConfig.InsecureSkipVerify = true //nolint:gosec
+			tlsConfig.VerifyConnection = func(state tls.ConnectionState) error {
+				if len(state.PeerCertificates) == 0 {
+					return errors.New(
+						"Oracle TLS server returned no certificate",
+					)
+				}
+				intermediates := x509.NewCertPool()
+				for _, certificate := range state.PeerCertificates[1:] {
+					intermediates.AddCert(certificate)
+				}
+				_, verifyErr := state.PeerCertificates[0].Verify(
+					x509.VerifyOptions{
+						Roots:         roots,
+						Intermediates: intermediates,
+						DNSName:       expectedName,
+						KeyUsages: []x509.ExtKeyUsage{
+							x509.ExtKeyUsageServerAuth,
+						},
+					},
+				)
+				return verifyErr
+			}
+		}
 	default:
 		return nil, fmt.Errorf("unsupported Oracle TLS mode %q", config.SSLMode)
 	}
 	return tlsConfig, nil
+}
+
+func oracleWalletDirectory(config Config) (string, error) {
+	walletPath := strings.TrimSpace(config.WalletPath)
+	if walletPath == "" {
+		return "", nil
+	}
+	if config.SSLMode == "verify-ca" {
+		return "", errors.New(
+			"Oracle Wallet supports require or verify-full TLS modes; CA-only verification is not supported by the Oracle driver",
+		)
+	}
+	if config.SSLRootCert != "" || config.SSLCert != "" || config.SSLKey != "" {
+		return "", errors.New(
+			"Oracle Wallet cannot be combined with separate TLS certificate paths",
+		)
+	}
+	info, err := InspectWalletDirectory(walletPath)
+	if err != nil {
+		return "", err
+	}
+	if config.WalletPassword != "" && !info.HasEWallet {
+		return "", errors.New(
+			"Oracle Wallet password requires ewallet.p12 in the selected directory",
+		)
+	}
+	if config.WalletPassword == "" && !info.HasAutoLogin {
+		return "", errors.New(
+			"enter the Oracle Wallet password for ewallet.p12 or add cwallet.sso for auto-login",
+		)
+	}
+	return info.Path, nil
 }
 
 func buildConnector(config Config) (*go_ora.OracleConnector, error) {
@@ -164,22 +253,77 @@ func buildConnector(config Config) (*go_ora.OracleConnector, error) {
 		"CONNECTION TIMEOUT": strconv.Itoa(int(defaultConnectionTimeout.Seconds())),
 		"PROGRAM":            application.DatabaseClientName,
 	}
-	tlsConfig, err := oracleTLSConfig(normalized)
+	descriptor := ""
+	if normalized.ConnectionMode == "tns" {
+		descriptor, err = resolveTNSAlias(
+			normalized.TNSConfigPath,
+			normalized.TNSAlias,
+		)
+		if err != nil {
+			return nil, err
+		}
+		servers, extractErr := configurations.ExtractServers(descriptor)
+		if extractErr != nil || len(servers) == 0 {
+			if extractErr == nil {
+				extractErr = errors.New(
+					"TNS descriptor contains no supported ADDRESS",
+				)
+			}
+			return nil, fmt.Errorf(
+				"inspect Oracle TNS descriptor: %w",
+				extractErr,
+			)
+		}
+		normalized.Host = servers[0].Addr
+		compactDescriptor := strings.Join(
+			strings.Fields(strings.ToUpper(descriptor)),
+			"",
+		)
+		if strings.Contains(compactDescriptor, "(PROTOCOL=TCPS)") &&
+			normalized.SSLMode == "disable" {
+			return nil, errors.New(
+				"the selected TNS alias uses TCPS; choose a TLS verification mode",
+			)
+		}
+	}
+	walletPath, err := oracleWalletDirectory(normalized)
 	if err != nil {
 		return nil, err
+	}
+	var tlsConfig *tls.Config
+	if walletPath == "" {
+		tlsConfig, err = oracleTLSConfig(normalized)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		options["WALLET"] = walletPath
+		if normalized.WalletPassword != "" {
+			options["WALLET PASSWORD"] = normalized.WalletPassword
+		}
 	}
 	if normalized.SSLMode != "disable" {
 		options["SSL"] = "true"
 		options["SSL VERIFY"] = strconv.FormatBool(normalized.SSLMode != "require")
 	}
-	dsn := go_ora.BuildUrl(
-		normalized.Host,
-		port,
-		normalized.Db,
-		normalized.User,
-		normalized.Password,
-		options,
-	)
+	dsn := ""
+	if normalized.ConnectionMode == "tns" {
+		dsn = go_ora.BuildJDBC(
+			normalized.User,
+			normalized.Password,
+			descriptor,
+			options,
+		)
+	} else {
+		dsn = go_ora.BuildUrl(
+			normalized.Host,
+			port,
+			normalized.Db,
+			normalized.User,
+			normalized.Password,
+			options,
+		)
+	}
 	connector, ok := go_ora.NewConnector(dsn).(*go_ora.OracleConnector)
 	if !ok {
 		return nil, errors.New("Oracle driver returned an incompatible connector")
