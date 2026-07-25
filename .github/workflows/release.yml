@@ -1,13 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
   workflow_dispatch:
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.release.tag_name || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -17,6 +16,9 @@ env:
   GO_VERSION_FILE: go.mod
   NODE_VERSION: "22"
   WAILS_VERSION: v2.10.1
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+  PACKAGE_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('0.0.{0}', github.run_number) }}
+  ARTIFACT_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('manual-{0}', github.run_number) }}
 
 jobs:
   validate:
@@ -41,9 +43,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Validate release tag
-        if: github.event_name == 'push'
+        if: github.event_name == 'release'
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Release tags must use semantic versioning, for example v1.2.3"
             exit 1
           fi
@@ -112,9 +114,7 @@ jobs:
         run: npm ci
 
       - name: Set package version
-        env:
-          RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref_name || format('0.0.{0}', github.run_number) }}
-        run: node .github/scripts/set-release-version.mjs "$RELEASE_VERSION"
+        run: node .github/scripts/set-release-version.mjs "$PACKAGE_VERSION"
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
@@ -124,11 +124,7 @@ jobs:
 
       - name: Package unsigned application
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="manual-${GITHUB_RUN_NUMBER}"
-          fi
+          VERSION="${ARTIFACT_VERSION#v}"
           shopt -s nullglob
           APPS=(build/bin/*.app)
           test "${#APPS[@]}" -eq 1
@@ -170,12 +166,12 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Require signing credentials for tag releases
-        if: github.event_name == 'push'
+      - name: Validate optional Windows signing configuration
+        if: env.WINDOWS_CERTIFICATE_BASE64 != '' || env.WINDOWS_CERTIFICATE_PASSWORD != ''
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64)) { throw "WINDOWS_CERTIFICATE_BASE64 is required" }
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) { throw "WINDOWS_CERTIFICATE_PASSWORD is required" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64)) { throw "WINDOWS_CERTIFICATE_BASE64 must be set when Windows signing is configured" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) { throw "WINDOWS_CERTIFICATE_PASSWORD must be set when Windows signing is configured" }
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -183,9 +179,7 @@ jobs:
 
       - name: Set package version
         shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref_name || format('0.0.{0}', github.run_number) }}
-        run: node .github/scripts/set-release-version.mjs "$env:RELEASE_VERSION"
+        run: node .github/scripts/set-release-version.mjs "$env:PACKAGE_VERSION"
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
@@ -214,11 +208,7 @@ jobs:
             & $signTool verify /pa /v $installer.FullName
             if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
           }
-          $version = if ($env:GITHUB_EVENT_NAME -eq "push") {
-            $env:GITHUB_REF_NAME.TrimStart("v")
-          } else {
-            "manual-$env:GITHUB_RUN_NUMBER"
-          }
+          $version = $env:ARTIFACT_VERSION.TrimStart("v")
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item $installer.FullName "dist/rollingthunder_${version}_windows_amd64_installer.exe"
 
@@ -254,8 +244,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Require signing credentials for tag releases
-        if: github.event_name == 'push'
+      - name: Validate optional Linux signing configuration
+        if: env.LINUX_GPG_PRIVATE_KEY_BASE64 != '' || env.LINUX_GPG_PASSPHRASE != ''
         run: |
           test -n "$LINUX_GPG_PRIVATE_KEY_BASE64"
           test -n "$LINUX_GPG_PASSPHRASE"
@@ -270,9 +260,7 @@ jobs:
         run: npm ci
 
       - name: Set package version
-        env:
-          RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref_name || format('0.0.{0}', github.run_number) }}
-        run: node .github/scripts/set-release-version.mjs "$RELEASE_VERSION"
+        run: node .github/scripts/set-release-version.mjs "$PACKAGE_VERSION"
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
@@ -282,11 +270,7 @@ jobs:
 
       - name: Package application
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="manual-${GITHUB_RUN_NUMBER}"
-          fi
+          VERSION="${ARTIFACT_VERSION#v}"
           mkdir -p dist/package
           install -m 0755 build/bin/rollingthunder dist/package/rollingthunder
           install -m 0644 README.md LICENSE dist/package/
@@ -344,13 +328,8 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      - name: Create GitHub release
-        if: github.event_name == 'push'
+      - name: Upload assets to published GitHub release
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes
-          fi
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber

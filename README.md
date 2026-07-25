@@ -170,15 +170,15 @@
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.4/9.7 LTS with legacy 8.0
   compatibility, and MariaDB 10.11/11.4/11.8/12.3 LTS.
 - Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
-  attestations. macOS packaging does not require an Apple Developer account.
+  attestations. Platform signing is optional and never required for preview builds.
 
 ## Database support
 
-| Engine          | Connect/query | Object explorer                             | Maintenance / admin                     | CI integration                    |
-| --------------- | ------------- | ------------------------------------------- | --------------------------------------- | --------------------------------- |
-| PostgreSQL      | Available     | Full capability-based explorer              | Sync, backup, roles/grants, activity    | 14-18                             |
+| Engine          | Connect/query | Object explorer                             | Maintenance / admin                     | CI integration                   |
+| --------------- | ------------- | ------------------------------------------- | --------------------------------------- | -------------------------------- |
+| PostgreSQL      | Available     | Full capability-based explorer              | Sync, backup, roles/grants, activity    | 14-18                            |
 | MySQL / MariaDB | Available     | Databases, tables, views, routines/triggers | Sync, backup, users/grants, activity    | 8.4/9.7 + legacy 8.0; 10.11-12.3 |
-| SQLite          | Available     | Attached DBs, tables, views, triggers       | Sync and built-in online backup/restore | Bundled engine                    |
+| SQLite          | Available     | Attached DBs, tables, views, triggers       | Sync and built-in online backup/restore | Bundled engine                   |
 
 ## Known gaps
 
@@ -202,8 +202,8 @@ Other important limitations include:
   libraries from the distribution.
 - macOS release archives are not code-signed or notarized, so Gatekeeper can require approval on the
   first launch.
-- Windows and Linux tagged-release signing depends on repository signing certificates/keys and
-  intentionally fails closed when they are absent.
+- Windows and Linux artifacts are signed only when the matching optional repository signing
+  material is configured. Unsigned packages can trigger platform trust warnings.
 - Automated accessibility contracts cover common regressions, but every stable release still
   requires the manual assistive-technology matrix.
 
@@ -231,10 +231,11 @@ Prebuilt packages are available from
 - Windows: `rollingthunder_<version>_windows_amd64_installer.exe`
 - Linux: `rollingthunder_<version>_linux_amd64.tar.gz`
 
-Every release includes `SHA256SUMS` and GitHub provenance attestations. macOS may show a Gatekeeper
-prompt on first launch because the app is currently distributed without code signing or
-notarization. See [release packaging and verification](docs/RELEASING.md) for verification and
-first-launch guidance.
+Every release includes `SHA256SUMS` and GitHub provenance attestations. Platform signatures are
+included only when signing material is configured. macOS may show a Gatekeeper prompt on first
+launch because the app is currently distributed without code signing or notarization. See
+[release packaging and verification](docs/RELEASING.md) for verification and first-launch
+guidance.
 
 ### Prerequisites
 
