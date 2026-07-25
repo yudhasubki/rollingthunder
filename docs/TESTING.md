@@ -47,10 +47,10 @@ Each server driver has two live layers:
   results, commit and rollback, Explain, reviewed column/index/view changes, object details and
   dependencies, CSV/JSON/SQL export, truncate, drop, and close.
 
-PostgreSQL and MySQL/MariaDB conformance also reads activity and security metadata. In disposable CI
-containers, `ROLLINGTHUNDER_TEST_PRIVILEGED=1` additionally creates and drops a uniquely named test
-role so `ApplySecurityChange` is covered. Do not enable that flag against a shared or production
-server.
+PostgreSQL, MySQL/MariaDB, Oracle, and SQL Server conformance also read activity and security
+metadata when the driver advertises those capabilities. In disposable CI containers,
+`ROLLINGTHUNDER_TEST_PRIVILEGED=1` additionally creates and drops a uniquely named test role so
+`ApplySecurityChange` is covered. Do not enable that flag against a shared or production server.
 
 SQLite conformance is always available locally:
 
@@ -171,11 +171,25 @@ go test ./integration -run TestSQLServerDriverWorkflow -count=1 -v
 
 The package-level shared conformance suite uses the equivalent
 `ROLLINGTHUNDER_SQLSERVER_TEST_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_DATABASE`, and `_SSL_MODE`
-variables:
+variables. The privileged and native-backup flags create/drop a disposable role and database, write
+a `.bak` on the server, mutate the database, restore it, and verify the pre-backup value. Enable
+them only against a disposable instance:
 
 ```bash
+ROLLINGTHUNDER_SQLSERVER_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_PORT=1433 \
+ROLLINGTHUNDER_SQLSERVER_TEST_USER=sa \
+ROLLINGTHUNDER_SQLSERVER_TEST_PASSWORD='RollingThunder_2026!' \
+ROLLINGTHUNDER_SQLSERVER_TEST_DATABASE=master \
+ROLLINGTHUNDER_SQLSERVER_TEST_SSL_MODE=disable \
+ROLLINGTHUNDER_TEST_PRIVILEGED=1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_BACKUP=1 \
 go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v
 ```
+
+Set `ROLLINGTHUNDER_SQLSERVER_TEST_BACKUP_PATH` when the server does not expose
+`/var/opt/mssql/data/rt_native_backup_conformance.bak`. The path is evaluated on the SQL Server
+host and its service account must be able to create and restore that file.
 
 ## SSH tunnel checks
 
@@ -209,9 +223,10 @@ Use a disposable saved profile:
 4. Enter a replacement password, save, and reconnect.
 5. Use the two-step removal actions for database, SSH, and Oracle Wallet credentials. Reopen the
    profile and confirm it requests the removed secret without affecting the other credentials.
-6. Test old version-1 through version-5 profile fixtures on a disposable OS account/keychain.
-   Migration to version 6 must rewrite metadata only after the keychain accepts every plaintext
-   secret.
+6. Test old version-1 through version-6 profile fixtures on a disposable OS account/keychain.
+   Migration to version 7 must rewrite metadata only after the credential store accepts every
+   plaintext secret or obsolete-credential removal. A failed removal must keep the original profile
+   and credential usable.
 
 Automated tests cover restrictive file modes, plaintext absence, fail-safe legacy migration,
 backend-only secret resolution, and credential removal.
@@ -252,6 +267,14 @@ capabilities expose those tools:
   a `.dmp`, and confirm temporary dump/log files are removed from the server directory. Test both a
   direct endpoint and a reviewed TNS alias; test `cwallet.sso` auto-login and password-protected
   `ewallet.p12` against disposable TCPS endpoints.
+- For SQL Server, use a disposable non-system database and an absolute server-side `.bak` path.
+  Confirm an existing destination is explicitly disclosed, a changed backup is rejected after
+  review, open transactions are rolled back, the database returns to multi-user mode, and the
+  connection works after restore. Verify an Azure-managed edition reports the unsupported
+  `BACKUP TO URL` requirement instead of offering a local path.
+- On Windows, test SQL Server Integrated authentication with the current identity. Separately test
+  each configured Microsoft Entra flow over encrypted TLS and verify passwordless modes do not
+  retain or request a database credential.
 - Create a disposable role/user, grant and revoke table privileges and membership, alter it, then
   drop it. Confirm password text is redacted from previews.
 - Start a long query from a second client, inspect it in Activity, cancel the statement, and test

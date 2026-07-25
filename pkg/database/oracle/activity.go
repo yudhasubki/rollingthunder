@@ -182,11 +182,13 @@ func (o *Oracle) GetDatabaseActivity(
 		return database.DatabaseActivity{}, err
 	}
 	return database.DatabaseActivity{
-		Supported:        true,
-		Engine:           database.DriverOracle,
-		CurrentSessionID: currentID,
-		Sessions:         sessions,
-		CapturedAt:       time.Now(),
+		Supported:           true,
+		Engine:              database.DriverOracle,
+		CurrentSessionID:    currentID,
+		CanCancelQuery:      true,
+		CanTerminateSession: true,
+		Sessions:            sessions,
+		CapturedAt:          time.Now(),
 	}, nil
 }
 

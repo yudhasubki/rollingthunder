@@ -34,6 +34,8 @@
 	let scope = $state<'full' | 'schema' | 'data'>('full');
 	let schema = $state('');
 	let directory = $state('');
+	let serverBackupPath = $state('');
+	let serverRestorePath = $state('');
 	let loading = $state(false);
 	let backupRunning = $state(false);
 	let backupJobId = $state('');
@@ -71,6 +73,7 @@
 	const connection = $derived(
 		connections.find((candidate) => candidate.id === connectionId) ?? null
 	);
+	const serverSideFiles = $derived(Boolean(capabilities?.serverSideFiles));
 	const canRestore = $derived(
 		Boolean(
 			restorePreview &&
@@ -119,6 +122,18 @@
 		restoreConfirmation = '';
 	}
 
+	function suggestedServerPath(directoryPath: string, databaseName: string): string {
+		const serverDirectory = directoryPath.trim();
+		if (!serverDirectory) return '';
+		const separator = serverDirectory.includes('\\') && !serverDirectory.includes('/') ? '\\' : '/';
+		const filename =
+			databaseName
+				.trim()
+				.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+				.replace(/[. ]+$/g, '') || 'database';
+		return `${serverDirectory.replace(/[\\/]+$/g, '')}${separator}${filename}.bak`;
+	}
+
 	async function loadCapabilities(): Promise<void> {
 		if (!connectionId) return;
 		loading = true;
@@ -132,6 +147,7 @@
 				throw createServiceError(response.errors[0], 'Could not inspect backup tooling');
 			}
 			capabilities = response.data ?? null;
+			if (!capabilities?.supportsScope) scope = 'full';
 			if (capabilities?.requiresDirectory) {
 				const directories = capabilities.directories ?? [];
 				const preferred =
@@ -139,6 +155,16 @@
 				directory = preferred?.name ?? '';
 			} else {
 				directory = '';
+			}
+			if (capabilities?.serverSideFiles) {
+				serverBackupPath = suggestedServerPath(
+					capabilities.directories?.[0]?.path ?? '',
+					connection?.database ?? 'database'
+				);
+				serverRestorePath = '';
+			} else {
+				serverBackupPath = '';
+				serverRestorePath = '';
 			}
 		} catch (loadError: any) {
 			error = loadError?.message ?? 'Could not inspect backup tooling.';
@@ -167,6 +193,10 @@
 			error = 'Choose an Oracle Data Pump server directory first.';
 			return;
 		}
+		if (capabilities.serverSideFiles && !serverBackupPath.trim()) {
+			error = 'Enter an absolute .bak path visible to the SQL Server service.';
+			return;
+		}
 		if (!hasBackendMethod('BackupDatabase')) {
 			error = BACKEND_RESTART_MESSAGE;
 			return;
@@ -182,20 +212,26 @@
 				new database.BackupRequest({
 					connectionId,
 					jobId: backupJobId,
-					schema: schema.trim(),
+					schema: capabilities.serverSideFiles ? '' : schema.trim(),
 					directory,
-					schemaOnly: scope === 'schema',
-					dataOnly: scope === 'data'
+					serverPath: capabilities.serverSideFiles ? serverBackupPath.trim() : '',
+					schemaOnly: !capabilities.serverSideFiles && scope === 'schema',
+					dataOnly: !capabilities.serverSideFiles && scope === 'data'
 				})
 			);
 			if (response.errors?.length) {
 				throw createServiceError(response.errors[0], 'Database backup failed');
 			}
 			if (response.data?.cancelled) {
-				message = 'Backup cancelled. The destination was not replaced.';
+				message = capabilities.serverSideFiles
+					? 'Backup cancelled. Inspect the server-side destination before reusing it.'
+					: 'Backup cancelled. The destination was not replaced.';
 				updateStatus(message, 'info');
 			} else if (response.data) {
 				backupResult = response.data;
+				if (capabilities.serverSideFiles) {
+					serverRestorePath = response.data.path;
+				}
 				message = `Backup saved · ${formatBytes(response.data.bytes)}`;
 				updateStatus(message, 'success');
 				addConsoleLog(
@@ -229,25 +265,37 @@
 			error = 'Choose an Oracle Data Pump server directory first.';
 			return;
 		}
-		if (!hasBackendMethod('ChooseRestoreFile')) {
+		if (!hasBackendMethod('PreviewDatabaseRestore')) {
 			error = BACKEND_RESTART_MESSAGE;
+			return;
+		}
+		if (capabilities?.serverSideFiles && !serverRestorePath.trim()) {
+			error = 'Enter the absolute SQL Server .bak path to review.';
 			return;
 		}
 		error = '';
 		message = '';
 		resetRestore();
 		try {
-			const selected = await ChooseRestoreFile(connectionId);
-			if (selected.errors?.length) {
-				throw createServiceError(selected.errors[0], 'Could not choose a backup');
+			let restoreToken = '';
+			if (!capabilities?.serverSideFiles) {
+				if (!hasBackendMethod('ChooseRestoreFile')) {
+					throw new Error(BACKEND_RESTART_MESSAGE);
+				}
+				const selected = await ChooseRestoreFile(connectionId);
+				if (selected.errors?.length) {
+					throw createServiceError(selected.errors[0], 'Could not choose a backup');
+				}
+				if (!selected.data?.token) return;
+				restoreSelection = selected.data;
+				restoreToken = selected.data.token;
 			}
-			if (!selected.data?.token) return;
-			restoreSelection = selected.data;
 			const request = new database.RestorePreviewRequest({
 				connectionId,
-				token: selected.data.token,
-				schema: schema.trim(),
-				directory
+				token: restoreToken,
+				schema: capabilities?.serverSideFiles ? '' : schema.trim(),
+				directory,
+				serverPath: capabilities?.serverSideFiles ? serverRestorePath.trim() : ''
 			});
 			const response = await PreviewDatabaseRestore(request);
 			if (response.errors?.length) {
@@ -264,7 +312,14 @@
 	}
 
 	async function applyRestore(): Promise<void> {
-		if (!restorePreview || !restoreSelection || !canRestore || backupRunning) return;
+		if (
+			!restorePreview ||
+			(!serverSideFiles && !restoreSelection) ||
+			!canRestore ||
+			backupRunning
+		) {
+			return;
+		}
 		if (!hasBackendMethod('ApplyDatabaseRestore')) {
 			error = BACKEND_RESTART_MESSAGE;
 			return;
@@ -277,9 +332,10 @@
 		try {
 			const restore = new database.RestorePreviewRequest({
 				connectionId,
-				token: restoreSelection.token,
-				schema: schema.trim(),
-				directory
+				token: restoreSelection?.token ?? '',
+				schema: serverSideFiles ? '' : schema.trim(),
+				directory,
+				serverPath: serverSideFiles ? serverRestorePath.trim() : ''
 			});
 			const response = await ApplyDatabaseRestore(
 				new database.ApplyRestoreRequest({
@@ -318,9 +374,9 @@
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 	<div
-		class="grid shrink-0 gap-3 border-b bg-[var(--surface-sunken)] p-4"
-		class:grid-cols-[minmax(220px,1fr)_minmax(170px,0.6fr)_minmax(190px,0.7fr)_minmax(220px,0.8fr)]={capabilities?.requiresDirectory}
-		class:grid-cols-[minmax(220px,1fr)_minmax(180px,0.65fr)_minmax(190px,0.7fr)]={!capabilities?.requiresDirectory}
+		class="grid shrink-0 grid-cols-1 gap-3 border-b bg-[var(--surface-sunken)] p-4 sm:grid-cols-2 {capabilities?.requiresDirectory
+			? 'xl:grid-cols-4'
+			: 'xl:grid-cols-3'}"
 	>
 		<label>
 			<span class="text-muted-foreground mb-1 block text-[8px]">Connection</span>
@@ -352,19 +408,26 @@
 		</label>
 		<label>
 			<span class="text-muted-foreground mb-1 block text-[8px]">
-				{capabilities?.engine === 'oracle'
-					? 'Application schema (defaults to current)'
-					: 'Schema filter (optional)'}
+				{capabilities?.serverSideFiles
+					? 'Backup coverage'
+					: capabilities?.engine === 'oracle'
+						? 'Application schema (defaults to current)'
+						: 'Schema filter (optional)'}
 			</span>
 			<input
 				class="rt-input h-9 w-full px-2 text-[9px]"
 				bind:value={schema}
-				disabled={capabilities?.engine === 'sqlite' || backupRunning || restoreRunning}
-				placeholder={capabilities?.engine === 'postgres'
-					? 'public'
-					: capabilities?.engine === 'oracle'
-						? 'CURRENT_SCHEMA'
-						: 'All schemas'}
+				disabled={capabilities?.engine === 'sqlite' ||
+					capabilities?.serverSideFiles ||
+					backupRunning ||
+					restoreRunning}
+				placeholder={capabilities?.serverSideFiles
+					? 'Complete database'
+					: capabilities?.engine === 'postgres'
+						? 'public'
+						: capabilities?.engine === 'oracle'
+							? 'CURRENT_SCHEMA'
+							: 'All schemas'}
 			/>
 		</label>
 		{#if capabilities?.requiresDirectory}
@@ -415,7 +478,7 @@
 				<Loader2 class="text-muted-foreground h-5 w-5 animate-spin" />
 			</div>
 		{:else}
-			<div class="grid grid-cols-2 gap-4">
+			<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
 				<section class="flex min-h-[360px] flex-col rounded-xl border">
 					<header class="flex items-center gap-3 border-b p-4">
 						<span
@@ -459,6 +522,25 @@
 								</div>
 							</div>
 
+							{#if capabilities.serverSideFiles}
+								<div class="mt-3 rounded-lg border bg-[var(--surface-sunken)] p-3">
+									<label for="sqlserver-backup-path" class="text-[8px] font-bold">
+										SQL Server destination path
+									</label>
+									<input
+										id="sqlserver-backup-path"
+										class="rt-input mt-1.5 h-9 w-full px-2 font-mono text-[8px]"
+										bind:value={serverBackupPath}
+										disabled={backupRunning || restoreRunning}
+										placeholder="/var/opt/mssql/backup/database.bak or C:\Backups\database.bak"
+									/>
+									<p class="text-muted-foreground mt-2 text-[7px] leading-relaxed">
+										This is a path on the database server. The SQL Server service account must be
+										able to write it; an existing file at this path is replaced.
+									</p>
+								</div>
+							{/if}
+
 							{#if backupResult}
 								<div class="border-success-border bg-success-soft mt-3 rounded-lg border p-3">
 									<div class="text-success flex items-center gap-2 text-[8px] font-bold">
@@ -489,7 +571,9 @@
 										disabled={restoreRunning}
 									>
 										<Archive class="h-3.5 w-3.5" />
-										Choose destination & back up
+										{capabilities.serverSideFiles
+											? 'Back up to server path'
+											: 'Choose destination & back up'}
 									</button>
 								{/if}
 							</div>
@@ -537,18 +621,39 @@
 							<div class="flex flex-1 items-center justify-center text-center">
 								<div class="max-w-xs">
 									<FolderOpen class="text-muted-foreground mx-auto h-6 w-6" />
-									<p class="mt-3 text-[9px] font-bold">Choose a compatible backup</p>
-									<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
-										The file stays backend-only and is hashed before the restore can run.
+									<p class="mt-3 text-[9px] font-bold">
+										{capabilities.serverSideFiles
+											? 'Review a server backup'
+											: 'Choose a compatible backup'}
 									</p>
+									<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
+										{capabilities.serverSideFiles
+											? 'SQL Server reads and verifies this .bak from its own filesystem before confirmation is enabled.'
+											: 'The file stays backend-only and is hashed before the restore can run.'}
+									</p>
+									{#if capabilities.serverSideFiles}
+										<label class="mt-4 block text-left" for="sqlserver-restore-path">
+											<span class="text-muted-foreground mb-1 block text-[7px]">
+												Absolute SQL Server path
+											</span>
+											<input
+												id="sqlserver-restore-path"
+												class="rt-input h-9 w-full px-2 font-mono text-[8px]"
+												bind:value={serverRestorePath}
+												disabled={backupRunning}
+												placeholder="/var/opt/mssql/backup/database.bak"
+											/>
+										</label>
+									{/if}
 									<button
 										type="button"
 										class="rt-toolbar-button mt-4 h-9 cursor-pointer gap-2 px-3 text-[9px] font-bold"
 										onclick={chooseRestore}
-										disabled={backupRunning}
+										disabled={backupRunning ||
+											(capabilities.serverSideFiles && !serverRestorePath.trim())}
 									>
 										<FolderOpen class="h-3.5 w-3.5" />
-										Choose backup file
+										{capabilities.serverSideFiles ? 'Inspect server backup' : 'Choose backup file'}
 									</button>
 								</div>
 							</div>

@@ -118,11 +118,13 @@ func (p *Postgres) GetDatabaseActivity(
 		})
 	}
 	return database.DatabaseActivity{
-		Supported:        true,
-		Engine:           "postgres",
-		CurrentSessionID: currentID,
-		Sessions:         sessions,
-		CapturedAt:       time.Now(),
+		Supported:           true,
+		Engine:              "postgres",
+		CurrentSessionID:    currentID,
+		CanCancelQuery:      true,
+		CanTerminateSession: true,
+		Sessions:            sessions,
+		CapturedAt:          time.Now(),
 	}, nil
 }
 

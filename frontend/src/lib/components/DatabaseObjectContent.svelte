@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		AlertCircle,
+		ArrowRight,
 		ArrowUpRight,
 		Boxes,
 		Check,
@@ -477,92 +478,171 @@
 					{/if}
 				</div>
 			{:else if activeSection === 'dependencies'}
-				<div class="mx-auto grid max-w-5xl gap-4 lg:grid-cols-2">
+				<div class="mx-auto max-w-5xl space-y-4">
 					<section class="overflow-hidden rounded-xl border bg-[var(--surface-raised)]">
 						<header class="flex h-10 items-center justify-between border-b px-3">
 							<div class="flex items-center gap-2">
-								<GitBranch class="text-muted-foreground h-3.5 w-3.5" />
-								<h2 class="text-[10px] font-bold">Uses</h2>
+								<GitBranch class="text-info h-3.5 w-3.5" />
+								<h2 class="text-[10px] font-bold">Dependency graph</h2>
 							</div>
-							<span class="text-muted-foreground text-[9px]">{dependencies.length}</span>
+							<span class="text-muted-foreground text-[8px]"> Direct relationships </span>
 						</header>
-						{#if dependencies.length > 0}
-							<div class="divide-y">
-								{#each dependencies as dependency}
-									<button
-										type="button"
-										class="flex w-full cursor-pointer items-start gap-2.5 px-3 py-2.5 text-left hover:bg-[var(--surface-hover)] disabled:cursor-default"
-										onclick={() => openDependency(dependency)}
-										disabled={dependency.reference.kind === 'unknown'}
-									>
-										<span
-											class="bg-muted mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded"
+						<div
+							class="grid items-center gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(170px,0.7fr)_auto_minmax(0,1fr)]"
+						>
+							<div class="space-y-1.5">
+								<p class="text-muted-foreground mb-2 text-[7px] font-bold uppercase">Uses</p>
+								{#if dependencies.length > 0}
+									{#each dependencies.slice(0, 6) as dependency}
+										<button
+											type="button"
+											class="flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-[var(--surface-hover)] disabled:cursor-default"
+											onclick={() => openDependency(dependency)}
+											disabled={dependency.reference.kind === 'unknown'}
 										>
-											<Boxes class="h-3 w-3" />
-										</span>
-										<span class="min-w-0 flex-1">
-											<span class="block truncate text-[10px] font-semibold"
-												>{dependencyTitle(dependency)}</span
-											>
-											<span class="text-muted-foreground mt-0.5 block truncate text-[8px]"
-												>{dependency.description}</span
-											>
-										</span>
-										{#if dependency.reference.kind !== 'unknown'}
-											<ArrowUpRight class="text-muted-foreground mt-1 h-3 w-3 shrink-0" />
-										{/if}
-									</button>
-								{/each}
+											<Boxes class="text-muted-foreground h-3 w-3 shrink-0" />
+											<span class="min-w-0 flex-1 truncate text-[8px] font-semibold">
+												{dependencyTitle(dependency)}
+											</span>
+										</button>
+									{/each}
+								{:else}
+									<div
+										class="text-muted-foreground rounded-lg border border-dashed px-2.5 py-3 text-center text-[8px]"
+									>
+										No direct inputs
+									</div>
+								{/if}
 							</div>
-						{:else}
-							<div class="text-muted-foreground flex h-28 items-center justify-center text-[9px]">
-								No direct dependencies detected
+							<ArrowRight class="text-muted-foreground mx-auto h-4 w-4 rotate-90 lg:rotate-0" />
+							<div class="border-info-border bg-info-soft rounded-xl border p-3 text-center">
+								<Boxes class="text-info mx-auto h-4 w-4" />
+								<p class="mt-2 truncate font-mono text-[9px] font-bold">{qualifiedName}</p>
+								<p class="text-info mt-1 text-[7px]">
+									{databaseObjectKindLabel(objectKind)}
+								</p>
 							</div>
+							<ArrowRight class="text-muted-foreground mx-auto h-4 w-4 rotate-90 lg:rotate-0" />
+							<div class="space-y-1.5">
+								<p class="text-muted-foreground mb-2 text-[7px] font-bold uppercase">Used by</p>
+								{#if dependents.length > 0}
+									{#each dependents.slice(0, 6) as dependent}
+										<button
+											type="button"
+											class="flex w-full cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-[var(--surface-hover)] disabled:cursor-default"
+											onclick={() => openDependency(dependent)}
+											disabled={dependent.reference.kind === 'unknown'}
+										>
+											<Boxes class="text-muted-foreground h-3 w-3 shrink-0" />
+											<span class="min-w-0 flex-1 truncate text-[8px] font-semibold">
+												{dependencyTitle(dependent)}
+											</span>
+										</button>
+									{/each}
+								{:else}
+									<div
+										class="text-muted-foreground rounded-lg border border-dashed px-2.5 py-3 text-center text-[8px]"
+									>
+										No direct consumers
+									</div>
+								{/if}
+							</div>
+						</div>
+						{#if dependencies.length > 6 || dependents.length > 6}
+							<p class="text-muted-foreground border-t px-3 py-2 text-[7px]">
+								The graph shows the first six objects on each side. The complete relationship list
+								remains below.
+							</p>
 						{/if}
 					</section>
 
-					<section class="overflow-hidden rounded-xl border bg-[var(--surface-raised)]">
-						<header class="flex h-10 items-center justify-between border-b px-3">
-							<div class="flex items-center gap-2">
-								<GitBranch class="text-muted-foreground h-3.5 w-3.5 rotate-180" />
-								<h2 class="text-[10px] font-bold">Used by</h2>
-							</div>
-							<span class="text-muted-foreground text-[9px]">{dependents.length}</span>
-						</header>
-						{#if dependents.length > 0}
-							<div class="divide-y">
-								{#each dependents as dependent}
-									<button
-										type="button"
-										class="flex w-full cursor-pointer items-start gap-2.5 px-3 py-2.5 text-left hover:bg-[var(--surface-hover)] disabled:cursor-default"
-										onclick={() => openDependency(dependent)}
-										disabled={dependent.reference.kind === 'unknown'}
-									>
-										<span
-											class="bg-muted mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded"
+					<div class="grid gap-4 lg:grid-cols-2">
+						<section class="overflow-hidden rounded-xl border bg-[var(--surface-raised)]">
+							<header class="flex h-10 items-center justify-between border-b px-3">
+								<div class="flex items-center gap-2">
+									<GitBranch class="text-muted-foreground h-3.5 w-3.5" />
+									<h2 class="text-[10px] font-bold">Uses</h2>
+								</div>
+								<span class="text-muted-foreground text-[9px]">{dependencies.length}</span>
+							</header>
+							{#if dependencies.length > 0}
+								<div class="divide-y">
+									{#each dependencies as dependency}
+										<button
+											type="button"
+											class="flex w-full cursor-pointer items-start gap-2.5 px-3 py-2.5 text-left hover:bg-[var(--surface-hover)] disabled:cursor-default"
+											onclick={() => openDependency(dependency)}
+											disabled={dependency.reference.kind === 'unknown'}
 										>
-											<Boxes class="h-3 w-3" />
-										</span>
-										<span class="min-w-0 flex-1">
-											<span class="block truncate text-[10px] font-semibold"
-												>{dependencyTitle(dependent)}</span
+											<span
+												class="bg-muted mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded"
 											>
-											<span class="text-muted-foreground mt-0.5 block truncate text-[8px]"
-												>{dependent.description}</span
+												<Boxes class="h-3 w-3" />
+											</span>
+											<span class="min-w-0 flex-1">
+												<span class="block truncate text-[10px] font-semibold"
+													>{dependencyTitle(dependency)}</span
+												>
+												<span class="text-muted-foreground mt-0.5 block truncate text-[8px]"
+													>{dependency.description}</span
+												>
+											</span>
+											{#if dependency.reference.kind !== 'unknown'}
+												<ArrowUpRight class="text-muted-foreground mt-1 h-3 w-3 shrink-0" />
+											{/if}
+										</button>
+									{/each}
+								</div>
+							{:else}
+								<div class="text-muted-foreground flex h-28 items-center justify-center text-[9px]">
+									No direct dependencies detected
+								</div>
+							{/if}
+						</section>
+
+						<section class="overflow-hidden rounded-xl border bg-[var(--surface-raised)]">
+							<header class="flex h-10 items-center justify-between border-b px-3">
+								<div class="flex items-center gap-2">
+									<GitBranch class="text-muted-foreground h-3.5 w-3.5 rotate-180" />
+									<h2 class="text-[10px] font-bold">Used by</h2>
+								</div>
+								<span class="text-muted-foreground text-[9px]">{dependents.length}</span>
+							</header>
+							{#if dependents.length > 0}
+								<div class="divide-y">
+									{#each dependents as dependent}
+										<button
+											type="button"
+											class="flex w-full cursor-pointer items-start gap-2.5 px-3 py-2.5 text-left hover:bg-[var(--surface-hover)] disabled:cursor-default"
+											onclick={() => openDependency(dependent)}
+											disabled={dependent.reference.kind === 'unknown'}
+										>
+											<span
+												class="bg-muted mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded"
 											>
-										</span>
-										{#if dependent.reference.kind !== 'unknown'}
-											<ArrowUpRight class="text-muted-foreground mt-1 h-3 w-3 shrink-0" />
-										{/if}
-									</button>
-								{/each}
-							</div>
-						{:else}
-							<div class="text-muted-foreground flex h-28 items-center justify-center text-[9px]">
-								No direct dependents detected
-							</div>
-						{/if}
-					</section>
+												<Boxes class="h-3 w-3" />
+											</span>
+											<span class="min-w-0 flex-1">
+												<span class="block truncate text-[10px] font-semibold"
+													>{dependencyTitle(dependent)}</span
+												>
+												<span class="text-muted-foreground mt-0.5 block truncate text-[8px]"
+													>{dependent.description}</span
+												>
+											</span>
+											{#if dependent.reference.kind !== 'unknown'}
+												<ArrowUpRight class="text-muted-foreground mt-1 h-3 w-3 shrink-0" />
+											{/if}
+										</button>
+									{/each}
+								</div>
+							{:else}
+								<div class="text-muted-foreground flex h-28 items-center justify-center text-[9px]">
+									No direct dependents detected
+								</div>
+							{/if}
+						</section>
+					</div>
 				</div>
 			{:else}
 				<div class="mx-auto max-w-5xl space-y-4">

@@ -33,7 +33,7 @@ func (s *SQLServer) Capabilities() database.Capabilities {
 		CustomTypes:         true,
 		Constraints:         true,
 		ObjectDefinitions:   true,
-		ObjectDependencies:  false,
+		ObjectDependencies:  true,
 		ManageViews:         true,
 		ManageRoutines:      true,
 		ManageTriggers:      true,
@@ -47,8 +47,8 @@ func (s *SQLServer) Capabilities() database.Capabilities {
 		SQLInsertExport:     true,
 		GeneratedColumns:    true,
 		Upsert:              false,
-		ManageSecurity:      false,
-		ActivityMonitor:     false,
+		ManageSecurity:      true,
+		ActivityMonitor:     true,
 		SSHConnections:      true,
 	}
 }

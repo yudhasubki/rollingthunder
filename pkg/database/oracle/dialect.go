@@ -34,7 +34,7 @@ func (o *Oracle) Capabilities() database.Capabilities {
 		CustomTypes:         true,
 		Constraints:         true,
 		ObjectDefinitions:   true,
-		ObjectDependencies:  false,
+		ObjectDependencies:  true,
 		ManageViews:         true,
 		ManageRoutines:      true,
 		ManageTriggers:      true,

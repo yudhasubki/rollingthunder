@@ -98,7 +98,7 @@ func TestSavedConnectionStoresPasswordOutsideProfileFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(data), "super-secret-value") ||
-		!strings.Contains(string(data), `"version": 6`) {
+		!strings.Contains(string(data), `"version": 7`) {
 		t.Fatalf("profile file = %s", data)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -122,6 +122,74 @@ func TestSavedConnectionStoresPasswordOutsideProfileFile(t *testing.T) {
 	password, err = credentials.Get(saved.Data.ID)
 	if err != nil || password != "super-secret-value" {
 		t.Fatalf("preserved credential = %q, %v", password, err)
+	}
+}
+
+func TestPasswordlessSQLServerProfileRemovesStoredPassword(t *testing.T) {
+	service, credentials := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:              "SQL Server",
+		Driver:            database.DriverSQLServer,
+		Host:              "sql.internal",
+		Port:              "1433",
+		User:              "sa",
+		Password:          "sql-secret",
+		Db:                "rolling",
+		SSLMode:           "require",
+		SQLServerAuthMode: database.SQLServerAuthSQL,
+	})
+	if len(saved.Errors) > 0 || !saved.Data.HasPassword {
+		t.Fatalf("SaveConnection() = %+v", saved)
+	}
+	updated := service.UpdateConnection(saved.Data.ID, database.Config{
+		Name:              "SQL Server",
+		Driver:            database.DriverSQLServer,
+		Host:              "sql.internal",
+		Port:              "1433",
+		Db:                "rolling",
+		SSLMode:           "verify-full",
+		SQLServerAuthMode: database.SQLServerAuthEntraDefault,
+	})
+	if len(updated.Errors) > 0 {
+		t.Fatalf("UpdateConnection() = %+v", updated.Errors)
+	}
+	if updated.Data.HasPassword {
+		t.Fatal("passwordless profile retained a credential flag")
+	}
+	if _, err := credentials.Get(saved.Data.ID); !errors.Is(
+		err,
+		ErrCredentialNotFound,
+	) {
+		t.Fatalf("passwordless profile retained credential: %v", err)
+	}
+}
+
+func TestEditingEntraProfilePreservesStoredSecret(t *testing.T) {
+	service, credentials := credentialTestService(t)
+	saved := service.SaveConnection(database.Config{
+		Name:                   "SQL Server Entra",
+		Driver:                 database.DriverSQLServer,
+		Host:                   "tenant.database.windows.net",
+		Port:                   "1433",
+		User:                   "operator@example.com",
+		Password:               "entra-secret",
+		Db:                     "rolling",
+		SSLMode:                "verify-full",
+		SQLServerAuthMode:      database.SQLServerAuthEntraPassword,
+		SQLServerEntraClientID: "application-id",
+	})
+	if len(saved.Errors) > 0 || !saved.Data.HasPassword {
+		t.Fatalf("SaveConnection() = %+v", saved)
+	}
+	config := saved.Data.Config
+	config.Name = "Renamed SQL Server Entra"
+	updated := service.UpdateConnection(saved.Data.ID, config)
+	if len(updated.Errors) > 0 || !updated.Data.HasPassword {
+		t.Fatalf("UpdateConnection() = %+v", updated)
+	}
+	if password, err := credentials.Get(saved.Data.ID); err != nil ||
+		password != "entra-secret" {
+		t.Fatalf("preserved Entra credential = %q, %v", password, err)
 	}
 }
 
@@ -422,7 +490,7 @@ func TestLegacyPlaintextPasswordMigratesBeforeProfileRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(migrated), "legacy-password") ||
-		!strings.Contains(string(migrated), `"version": 6`) {
+		!strings.Contains(string(migrated), `"version": 7`) {
 		t.Fatalf("migrated profile file = %s", migrated)
 	}
 }
@@ -446,7 +514,7 @@ func TestLegacyProfileWithoutPasswordStillMigratesToVersionedEnvelope(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(migrated), `"version": 6`) {
+	if !strings.Contains(string(migrated), `"version": 7`) {
 		t.Fatalf("legacy profile was not versioned: %s", migrated)
 	}
 	info, err := os.Stat(service.connectionStorage.FilePath)
@@ -505,8 +573,117 @@ func TestVersionFiveOracleWalletPasswordMigratesToCredentialStore(
 		t.Fatal(err)
 	}
 	if strings.Contains(string(migrated), "legacy-wallet-secret") ||
-		!strings.Contains(string(migrated), `"version": 6`) {
+		!strings.Contains(string(migrated), `"version": 7`) {
 		t.Fatalf("migrated profile file = %s", migrated)
+	}
+}
+
+func TestVersionSixPasswordlessSQLServerProfileDropsObsoleteCredential(
+	t *testing.T,
+) {
+	service, credentials := credentialTestService(t)
+	const profileID = "integrated-sqlserver"
+	if err := credentials.Set(profileID, "obsolete-password"); err != nil {
+		t.Fatal(err)
+	}
+	legacy := connectionStorageEnvelope{
+		Version: 6,
+		Connections: []SavedConnection{{
+			ID:          profileID,
+			HasPassword: true,
+			Config: database.Config{
+				Name:              "Integrated SQL Server",
+				Driver:            database.DriverSQLServer,
+				Db:                "rolling",
+				SSLMode:           "require",
+				SQLServerAuthMode: database.SQLServerAuthIntegrated,
+			},
+		}},
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		service.connectionStorage.FilePath,
+		data,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := service.GetSavedConnections()
+	if len(loaded.Errors) > 0 ||
+		len(loaded.Data) != 1 ||
+		loaded.Data[0].HasPassword {
+		t.Fatalf("GetSavedConnections() = %+v", loaded)
+	}
+	if _, err := credentials.Get(profileID); !errors.Is(
+		err,
+		ErrCredentialNotFound,
+	) {
+		t.Fatalf("obsolete credential remains available: %v", err)
+	}
+	migrated, err := os.ReadFile(service.connectionStorage.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(migrated), `"version": 7`) {
+		t.Fatalf("profile was not migrated to version 7: %s", migrated)
+	}
+}
+
+func TestPasswordlessProfileMigrationFailsClosedWhenCredentialDeleteFails(
+	t *testing.T,
+) {
+	service, credentials := credentialTestService(t)
+	const profileID = "integrated-sqlserver"
+	if err := credentials.Set(profileID, "keep-on-failure"); err != nil {
+		t.Fatal(err)
+	}
+	credentials.deleteErr = errors.New("credential service denied deletion")
+	legacy := connectionStorageEnvelope{
+		Version: 6,
+		Connections: []SavedConnection{{
+			ID:          profileID,
+			HasPassword: true,
+			Config: database.Config{
+				Name:              "Integrated SQL Server",
+				Driver:            database.DriverSQLServer,
+				Db:                "rolling",
+				SSLMode:           "require",
+				SQLServerAuthMode: database.SQLServerAuthIntegrated,
+			},
+		}},
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		service.connectionStorage.FilePath,
+		data,
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := service.GetSavedConnections()
+	if len(loaded.Errors) == 0 {
+		t.Fatalf("GetSavedConnections() unexpectedly succeeded: %+v", loaded)
+	}
+	unchanged, err := os.ReadFile(service.connectionStorage.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(unchanged), `"version":6`) ||
+		!strings.Contains(string(unchanged), `"hasPassword":true`) {
+		t.Fatalf("failed migration changed source metadata: %s", unchanged)
+	}
+	credentials.deleteErr = nil
+	if password, err := credentials.Get(profileID); err != nil ||
+		password != "keep-on-failure" {
+		t.Fatalf("credential after failed migration = %q, %v", password, err)
 	}
 }
 
@@ -589,7 +766,7 @@ func TestVersionThreeProfileMigratesToSemanticEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(migrated)
-	if !strings.Contains(text, `"version": 6`) ||
+	if !strings.Contains(text, `"version": 7`) ||
 		!strings.Contains(text, `"environment": "unclassified"`) ||
 		!strings.Contains(text, `"accessMode": "read-write"`) ||
 		strings.Contains(text, "#ff00ff") {

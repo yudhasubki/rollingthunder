@@ -220,6 +220,23 @@ func backupCapabilitiesFor(
 			Message:       message,
 			SupportsScope: true,
 		}
+	case "sqlserver":
+		return database.BackupCapabilities{
+			Available:       true,
+			Engine:          engine,
+			Format:          database.BackupFormatSQLServerNative,
+			Extension:       ".bak",
+			BackupTool:      "BACKUP DATABASE",
+			RestoreTool:     "RESTORE DATABASE",
+			RestoreReady:    true,
+			BuiltIn:         true,
+			SupportsScope:   false,
+			ServerSideFiles: true,
+			Directories:     []database.BackupDirectory{},
+			Message: "Native .bak files stay on the SQL Server host. " +
+				"The configured database account and SQL Server service account " +
+				"must be allowed to use the selected server path.",
+		}
 	case "oracle":
 		return database.BackupCapabilities{
 			Available:         true,
@@ -252,7 +269,27 @@ func (s *Service) backupCapabilitiesForConnection(
 		s.lookPath,
 		connection.Driver.Capabilities().Engine,
 	)
-	if !capabilities.RequiresDirectory {
+	if !capabilities.RequiresDirectory && !capabilities.ServerSideFiles {
+		return capabilities
+	}
+	if capabilities.ServerSideFiles {
+		driver, ok := connection.Driver.(database.ServerSideBackupDriver)
+		if !ok {
+			capabilities.Available = false
+			capabilities.RestoreReady = false
+			capabilities.Message =
+				"The SQL Server driver does not expose its native server-side backup workflow."
+			return capabilities
+		}
+		directories, err := driver.GetBackupDirectories(ctx)
+		if err != nil {
+			capabilities.Available = false
+			capabilities.RestoreReady = false
+			capabilities.Message =
+				"Could not read SQL Server backup configuration: " + err.Error()
+			return capabilities
+		}
+		capabilities.Directories = directories
 		return capabilities
 	}
 	driver, ok := connection.Driver.(database.StreamingBackupDriver)
@@ -312,6 +349,10 @@ func backupDialogConfiguration(
 		displayName = "MySQL / MariaDB backups (*.sql)"
 	case database.BackupFormatOracleDataPump:
 		displayName = "Oracle Data Pump backups (*.dmp)"
+	case database.BackupFormatSQLServerNative:
+		return wailsruntime.SaveDialogOptions{}, fmt.Errorf(
+			"SQL Server native backups use a path on the database server",
+		)
 	default:
 		return wailsruntime.SaveDialogOptions{}, fmt.Errorf(
 			"unsupported backup format %q",
@@ -693,6 +734,58 @@ func (s *Service) BackupDatabase(
 			"Install the required database client tools and restart Rolling Thunder.",
 		)
 	}
+	if capabilities.ServerSideFiles {
+		driver, ok := connection.Driver.(database.ServerSideBackupDriver)
+		if !ok {
+			return serviceErrorWithCode[database.BackupResult](
+				http.StatusNotImplemented,
+				errorCodeBackupUnavailable,
+				"SQL Server backup unavailable",
+				"The connected driver does not expose server-side native backup.",
+				"Reconnect the database with the current Rolling Thunder build.",
+			)
+		}
+		if strings.TrimSpace(request.ServerPath) == "" {
+			return serviceErrorWithCode[database.BackupResult](
+				http.StatusBadRequest,
+				errorCodeInvalidRequest,
+				"Server backup path required",
+				"Enter an absolute .bak path visible to the SQL Server service.",
+				"Use the reported default backup directory or another server directory with write permission.",
+			)
+		}
+		ctx, job, startErr := s.startMaintenanceJob(request.JobID, "backup")
+		if startErr != nil {
+			return serviceError[database.BackupResult](startErr.Error())
+		}
+		defer s.finishMaintenanceJob(job)
+		metadata, backupErr := driver.BackupDatabaseToServer(ctx, request)
+		if backupErr != nil {
+			if errors.Is(backupErr, context.Canceled) ||
+				job.cancelled.Load() {
+				return response.BaseResponse[database.BackupResult]{
+					Data: database.BackupResult{
+						Format:    capabilities.Format,
+						Cancelled: true,
+					},
+				}
+			}
+			return serviceErrorWithCode[database.BackupResult](
+				http.StatusBadRequest,
+				errorCodeBackupFailed,
+				"SQL Server native backup failed",
+				backupErr.Error(),
+				"Verify BACKUP DATABASE permission and SQL Server service-account access to the server path.",
+			)
+		}
+		return response.BaseResponse[database.BackupResult]{
+			Data: database.BackupResult{
+				Path:   metadata.Path,
+				Bytes:  metadata.Bytes,
+				Format: capabilities.Format,
+			},
+		}
+	}
 	dialog, err := backupDialogConfiguration(
 		capabilities,
 		connection.Config.Db,
@@ -852,6 +945,15 @@ func (s *Service) ChooseRestoreFile(
 	}
 	engine := connection.Driver.Capabilities().Engine
 	release()
+	if engine == database.DriverSQLServer {
+		return serviceErrorWithCode[database.RestoreFileSelection](
+			http.StatusBadRequest,
+			errorCodeInvalidRequest,
+			"SQL Server uses server-side backup paths",
+			"Native .bak files are read by SQL Server and cannot be selected from the desktop filesystem.",
+			"Enter an absolute path visible to the SQL Server service in Database tools.",
+		)
+	}
 	parent := s.ctx
 	if parent == nil {
 		parent = context.Background()
@@ -1023,14 +1125,108 @@ func restoreFingerprint(
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
+func serverRestoreFingerprint(
+	connectionID string,
+	engine string,
+	databaseName string,
+	metadata database.ServerBackupMetadata,
+) string {
+	hash := sha256.New()
+	for _, value := range []string{
+		connectionID,
+		engine,
+		databaseName,
+		metadata.Path,
+		metadata.Database,
+		strconv.FormatInt(metadata.Bytes, 10),
+		strconv.Itoa(metadata.Position),
+		metadata.FinishedAt,
+		metadata.Identity,
+	} {
+		_, _ = hash.Write([]byte(value))
+		_, _ = hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
 func (s *Service) buildRestorePreview(
 	ctx context.Context,
 	request database.RestorePreviewRequest,
 ) (database.RestorePreview, restoreFileGrant, error) {
-	if strings.TrimSpace(request.ConnectionID) == "" ||
-		strings.TrimSpace(request.Token) == "" {
+	if strings.TrimSpace(request.ConnectionID) == "" {
 		return database.RestorePreview{}, restoreFileGrant{},
-			fmt.Errorf("connection and restore file are required")
+			fmt.Errorf("connection is required")
+	}
+	connection, release, err := s.pinnedConnection(request.ConnectionID)
+	if err != nil {
+		return database.RestorePreview{}, restoreFileGrant{}, err
+	}
+	engine := connection.Driver.Capabilities().Engine
+	databaseName := connection.Config.Db
+	transactional := engine == "sqlite"
+	capabilities := s.backupCapabilitiesForConnection(ctx, connection)
+	if capabilities.ServerSideFiles {
+		if !capabilities.RestoreReady {
+			release()
+			return database.RestorePreview{}, restoreFileGrant{},
+				fmt.Errorf("%s", capabilities.Message)
+		}
+		driver, ok := connection.Driver.(database.ServerSideBackupDriver)
+		if !ok {
+			release()
+			return database.RestorePreview{}, restoreFileGrant{},
+				fmt.Errorf(
+					"the connected driver does not expose server-side restore support",
+				)
+		}
+		serverPath := strings.TrimSpace(request.ServerPath)
+		if serverPath == "" {
+			release()
+			return database.RestorePreview{}, restoreFileGrant{},
+				fmt.Errorf(
+					"enter an absolute .bak path visible to SQL Server",
+				)
+		}
+		metadata, inspectErr := driver.InspectServerBackup(ctx, serverPath)
+		release()
+		if inspectErr != nil {
+			return database.RestorePreview{}, restoreFileGrant{}, inspectErr
+		}
+		if !strings.EqualFold(metadata.Database, databaseName) {
+			return database.RestorePreview{}, restoreFileGrant{},
+				fmt.Errorf(
+					"backup database %q does not match target database %q",
+					metadata.Database,
+					databaseName,
+				)
+		}
+		return database.RestorePreview{
+			ConnectionID:  request.ConnectionID,
+			Database:      databaseName,
+			Engine:        engine,
+			File:          metadata.Path,
+			Size:          metadata.Bytes,
+			Format:        capabilities.Format,
+			Destructive:   true,
+			Transactional: false,
+			Warnings: []string{
+				"Restore replaces the complete target database with the reviewed native backup.",
+				"SQL Server switches the target to single-user mode and rolls back every open transaction.",
+				"The .bak file is read by the SQL Server service account from the server filesystem.",
+				"Native restore is not transactional. Keep an independent backup until the result is verified.",
+			},
+			Fingerprint: serverRestoreFingerprint(
+				request.ConnectionID,
+				engine,
+				databaseName,
+				metadata,
+			),
+		}, restoreFileGrant{}, nil
+	}
+	release()
+	if strings.TrimSpace(request.Token) == "" {
+		return database.RestorePreview{}, restoreFileGrant{},
+			fmt.Errorf("restore file is required")
 	}
 	grant, err := s.restoreFile(request.ConnectionID, request.Token)
 	if err != nil {
@@ -1049,15 +1245,6 @@ func (s *Service) buildRestorePreview(
 	if err := validateRestoreHeader(grant); err != nil {
 		return database.RestorePreview{}, restoreFileGrant{}, err
 	}
-	connection, release, err := s.pinnedConnection(request.ConnectionID)
-	if err != nil {
-		return database.RestorePreview{}, restoreFileGrant{}, err
-	}
-	engine := connection.Driver.Capabilities().Engine
-	databaseName := connection.Config.Db
-	transactional := engine == "sqlite"
-	capabilities := s.backupCapabilitiesForConnection(ctx, connection)
-	release()
 	if grant.selection.Format != capabilities.Format {
 		return database.RestorePreview{}, restoreFileGrant{}, fmt.Errorf(
 			"backup format %s cannot be restored into %s",
@@ -1092,6 +1279,7 @@ func (s *Service) buildRestorePreview(
 	}
 	warnings := []string{
 		"Restore replaces existing objects and data in the selected database.",
+		"Any explicit Rolling Thunder transaction on the target connection is rolled back before restore starts.",
 		"Keep an independent backup until the restored database has been verified.",
 	}
 	if !transactional {
@@ -1195,6 +1383,15 @@ func (s *Service) runRestore(
 	request database.RestorePreviewRequest,
 	grant restoreFileGrant,
 ) error {
+	if strings.TrimSpace(request.ServerPath) != "" {
+		driver, ok := connection.Driver.(database.ServerSideBackupDriver)
+		if !ok {
+			return fmt.Errorf(
+				"the connected driver does not expose server-side native restore",
+			)
+		}
+		return driver.RestoreDatabaseFromServer(ctx, request.ServerPath)
+	}
 	config := connection.effectiveConfig()
 	switch grant.selection.Format {
 	case database.BackupFormatSQLiteNative:
@@ -1283,6 +1480,31 @@ func (s *Service) runRestore(
 	}
 }
 
+func (s *Service) exclusiveWritePinnedConnection(
+	connectionID string,
+) (*Connection, func(), error) {
+	if strings.TrimSpace(connectionID) == "" {
+		return nil, nil, fmt.Errorf("connection ID is required")
+	}
+	s.mu.RLock()
+	connection := s.connections[connectionID]
+	if connection == nil {
+		s.mu.RUnlock()
+		return nil, nil, fmt.Errorf("connection not found or disconnected")
+	}
+	connection.mu.Lock()
+	s.mu.RUnlock()
+	if connection.closed {
+		connection.mu.Unlock()
+		return nil, nil, fmt.Errorf("connection not found or disconnected")
+	}
+	if !connectionWriteAccessLocked(connection).WriteEnabled {
+		connection.mu.Unlock()
+		return nil, nil, errConnectionReadOnly
+	}
+	return connection, connection.mu.Unlock, nil
+}
+
 func (s *Service) ApplyDatabaseRestore(
 	request database.ApplyRestoreRequest,
 ) response.BaseResponse[database.RestoreResult] {
@@ -1319,7 +1541,7 @@ func (s *Service) ApplyDatabaseRestore(
 			"Review the refreshed restore preview before applying it.",
 		)
 	}
-	connection, release, err := s.writePinnedConnection(
+	connection, release, err := s.exclusiveWritePinnedConnection(
 		request.Restore.ConnectionID,
 	)
 	if err != nil {
@@ -1329,6 +1551,7 @@ func (s *Service) ApplyDatabaseRestore(
 		return serviceError[database.RestoreResult](err.Error())
 	}
 	defer release()
+	s.rollbackTransactionsForConnection(request.Restore.ConnectionID)
 	if err := s.runRestore(ctx, connection, request.Restore, grant); err != nil {
 		if errors.Is(err, context.Canceled) || job.cancelled.Load() {
 			return response.BaseResponse[database.RestoreResult]{
@@ -1346,9 +1569,11 @@ func (s *Service) ApplyDatabaseRestore(
 			"Inspect the database before retrying; external restores can be partially applied.",
 		)
 	}
-	s.restoreFileMu.Lock()
-	delete(s.restoreFiles, request.Restore.Token)
-	s.restoreFileMu.Unlock()
+	if strings.TrimSpace(request.Restore.Token) != "" {
+		s.restoreFileMu.Lock()
+		delete(s.restoreFiles, request.Restore.Token)
+		s.restoreFileMu.Unlock()
+	}
 	return response.BaseResponse[database.RestoreResult]{
 		Data: database.RestoreResult{
 			Restored:    true,

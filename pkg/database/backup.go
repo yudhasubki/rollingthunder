@@ -9,10 +9,11 @@ import (
 type BackupFormat string
 
 const (
-	BackupFormatSQLiteNative   BackupFormat = "sqlite"
-	BackupFormatPostgresCustom BackupFormat = "postgres_custom"
-	BackupFormatMySQLSQL       BackupFormat = "mysql_sql"
-	BackupFormatOracleDataPump BackupFormat = "oracle_datapump"
+	BackupFormatSQLiteNative    BackupFormat = "sqlite"
+	BackupFormatPostgresCustom  BackupFormat = "postgres_custom"
+	BackupFormatMySQLSQL        BackupFormat = "mysql_sql"
+	BackupFormatOracleDataPump  BackupFormat = "oracle_datapump"
+	BackupFormatSQLServerNative BackupFormat = "sqlserver_native"
 )
 
 type BackupDirectory struct {
@@ -32,6 +33,7 @@ type BackupCapabilities struct {
 	Message           string            `json:"message,omitempty"`
 	SupportsScope     bool              `json:"supportsScope"`
 	RequiresDirectory bool              `json:"requiresDirectory"`
+	ServerSideFiles   bool              `json:"serverSideFiles"`
 	Directories       []BackupDirectory `json:"directories"`
 }
 
@@ -40,6 +42,7 @@ type BackupRequest struct {
 	JobID        string `json:"jobId"`
 	Schema       string `json:"schema,omitempty"`
 	Directory    string `json:"directory,omitempty"`
+	ServerPath   string `json:"serverPath,omitempty"`
 	SchemaOnly   bool   `json:"schemaOnly"`
 	DataOnly     bool   `json:"dataOnly"`
 }
@@ -53,6 +56,9 @@ func (request BackupRequest) Validate() error {
 	}
 	if strings.ContainsAny(request.Directory, "\x00\r\n") {
 		return ErrBackupDirectoryInvalid
+	}
+	if strings.ContainsAny(request.ServerPath, "\x00\r\n") {
+		return ErrBackupServerPathInvalid
 	}
 	return nil
 }
@@ -76,6 +82,7 @@ type RestorePreviewRequest struct {
 	Token        string `json:"token"`
 	Schema       string `json:"schema,omitempty"`
 	Directory    string `json:"directory,omitempty"`
+	ServerPath   string `json:"serverPath,omitempty"`
 }
 
 type RestorePreview struct {
@@ -135,6 +142,38 @@ type StreamingBackupDriver interface {
 	) error
 }
 
+// ServerBackupMetadata identifies a native backup that remains on the
+// database server. Identity must change whenever the selected backup set
+// changes, allowing the service to reject stale restore confirmations without
+// treating a remote server path as a local application file.
+type ServerBackupMetadata struct {
+	Path       string `json:"path"`
+	Database   string `json:"database"`
+	Bytes      int64  `json:"bytes"`
+	Position   int    `json:"position"`
+	FinishedAt string `json:"finishedAt,omitempty"`
+	Identity   string `json:"identity"`
+}
+
+// ServerSideBackupDriver is implemented by engines whose native backup and
+// restore commands operate on paths visible to the database server, not paths
+// on the Rolling Thunder desktop host.
+type ServerSideBackupDriver interface {
+	GetBackupDirectories(ctx context.Context) ([]BackupDirectory, error)
+	BackupDatabaseToServer(
+		ctx context.Context,
+		request BackupRequest,
+	) (ServerBackupMetadata, error)
+	InspectServerBackup(
+		ctx context.Context,
+		path string,
+	) (ServerBackupMetadata, error)
+	RestoreDatabaseFromServer(
+		ctx context.Context,
+		path string,
+	) error
+}
+
 type backupError string
 
 func (err backupError) Error() string { return string(err) }
@@ -143,4 +182,5 @@ const (
 	ErrBackupConnectionRequired backupError = "backup connection is required"
 	ErrBackupScopeConflict      backupError = "schema-only and data-only cannot both be enabled"
 	ErrBackupDirectoryInvalid   backupError = "backup directory contains invalid characters"
+	ErrBackupServerPathInvalid  backupError = "server backup path contains invalid characters"
 )

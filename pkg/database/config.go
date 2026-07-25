@@ -31,6 +31,14 @@ const (
 	ConnectionAccessReadWrite = "read-write"
 	ConnectionAccessReadOnly  = "read-only"
 
+	SQLServerAuthSQL                   = "sql"
+	SQLServerAuthIntegrated            = "integrated"
+	SQLServerAuthEntraDefault          = "entra-default"
+	SQLServerAuthEntraPassword         = "entra-password"
+	SQLServerAuthEntraServicePrincipal = "entra-service-principal"
+	SQLServerAuthEntraManagedIdentity  = "entra-managed-identity"
+	SQLServerAuthEntraAzureCLI         = "entra-azure-cli"
+
 	MaxConnectionTags = 32
 )
 
@@ -67,6 +75,13 @@ type Config struct {
 	OracleTNSAlias       string `json:"oracleTnsAlias,omitempty"`
 	OracleWalletPath     string `json:"oracleWalletPath,omitempty"`
 	OracleWalletPassword string `json:"oracleWalletPassword,omitempty"`
+
+	// SQL Server authentication options. Password contains either the SQL
+	// login password, Entra user password, or service-principal client secret
+	// and remains transient in the operating-system credential store.
+	SQLServerAuthMode      string `json:"sqlServerAuthMode,omitempty"`
+	SQLServerEntraClientID string `json:"sqlServerEntraClientId,omitempty"`
+	SQLServerEntraTenantID string `json:"sqlServerEntraTenantId,omitempty"`
 
 	// SSH tunnel options. SSHPassword and SSHKeyPassphrase are transient
 	// secrets; saved profiles persist them only in the operating system
@@ -147,6 +162,39 @@ func NormalizeConnectionTags(values []string) []string {
 	return normalized
 }
 
+func NormalizeSQLServerAuthMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case SQLServerAuthIntegrated:
+		return SQLServerAuthIntegrated
+	case SQLServerAuthEntraDefault:
+		return SQLServerAuthEntraDefault
+	case SQLServerAuthEntraPassword:
+		return SQLServerAuthEntraPassword
+	case SQLServerAuthEntraServicePrincipal:
+		return SQLServerAuthEntraServicePrincipal
+	case SQLServerAuthEntraManagedIdentity:
+		return SQLServerAuthEntraManagedIdentity
+	case SQLServerAuthEntraAzureCLI:
+		return SQLServerAuthEntraAzureCLI
+	default:
+		return SQLServerAuthSQL
+	}
+}
+
+func (config Config) UsesDatabasePassword() bool {
+	if !strings.EqualFold(strings.TrimSpace(config.Driver), DriverSQLServer) {
+		return true
+	}
+	switch NormalizeSQLServerAuthMode(config.SQLServerAuthMode) {
+	case SQLServerAuthSQL,
+		SQLServerAuthEntraPassword,
+		SQLServerAuthEntraServicePrincipal:
+		return true
+	default:
+		return false
+	}
+}
+
 // NormalizeConfigMetadata removes deprecated presentation-only data and makes
 // the operational classification safe to consume throughout the application.
 func NormalizeConfigMetadata(config Config) Config {
@@ -217,6 +265,9 @@ func (config Config) ValidateSafety() error {
 		{"Oracle TNS configuration path", config.OracleTNSConfigPath, 4096},
 		{"Oracle TNS alias", config.OracleTNSAlias, 256},
 		{"Oracle Wallet path", config.OracleWalletPath, 4096},
+		{"SQL Server authentication mode", config.SQLServerAuthMode, 64},
+		{"SQL Server Entra client ID", config.SQLServerEntraClientID, 256},
+		{"SQL Server Entra tenant ID", config.SQLServerEntraTenantID, 256},
 		{"SSH host", config.SSHHost, 255},
 		{"SSH user", config.SSHUser, 256},
 		{"SSH authentication mode", config.SSHAuthMode, 32},
@@ -332,6 +383,91 @@ func (config Config) ValidateSafety() error {
 		config.OracleWalletPassword != "" {
 		return fmt.Errorf(
 			"Oracle connection options can only be used by the Oracle driver",
+		)
+	}
+	sqlServerMode := strings.ToLower(strings.TrimSpace(config.SQLServerAuthMode))
+	sqlServerClientID := strings.TrimSpace(config.SQLServerEntraClientID)
+	sqlServerTenantID := strings.TrimSpace(config.SQLServerEntraTenantID)
+	if strings.EqualFold(config.Driver, DriverSQLServer) {
+		normalizedMode := NormalizeSQLServerAuthMode(sqlServerMode)
+		if sqlServerMode != "" && normalizedMode != sqlServerMode {
+			return fmt.Errorf("SQL Server authentication mode is not supported")
+		}
+		switch normalizedMode {
+		case SQLServerAuthSQL:
+			if strings.TrimSpace(config.User) == "" {
+				return fmt.Errorf(
+					"SQL Server password authentication requires a username",
+				)
+			}
+			if sqlServerClientID != "" || sqlServerTenantID != "" {
+				return fmt.Errorf(
+					"SQL Server Entra identifiers require an Entra authentication mode",
+				)
+			}
+		case SQLServerAuthIntegrated:
+			if config.SSHEnabled {
+				return fmt.Errorf(
+					"SQL Server Integrated authentication cannot be combined with SSH because the Kerberos or SSPI server identity would be ambiguous",
+				)
+			}
+			if config.User != "" || config.Password != "" ||
+				sqlServerClientID != "" || sqlServerTenantID != "" {
+				return fmt.Errorf(
+					"SQL Server Integrated authentication uses the current Windows identity and does not accept profile credentials",
+				)
+			}
+		case SQLServerAuthEntraPassword:
+			if strings.TrimSpace(config.User) == "" ||
+				sqlServerClientID == "" {
+				return fmt.Errorf(
+					"Microsoft Entra password authentication requires a username and application client ID",
+				)
+			}
+			if sqlServerTenantID != "" {
+				return fmt.Errorf(
+					"Microsoft Entra password authentication discovers the tenant from SQL Server and does not accept a tenant override",
+				)
+			}
+		case SQLServerAuthEntraServicePrincipal:
+			if sqlServerClientID == "" ||
+				sqlServerTenantID == "" {
+				return fmt.Errorf(
+					"Microsoft Entra service-principal authentication requires a client ID and tenant ID",
+				)
+			}
+			if strings.TrimSpace(config.User) != "" {
+				return fmt.Errorf(
+					"Microsoft Entra service-principal authentication uses the client ID instead of a username",
+				)
+			}
+		case SQLServerAuthEntraManagedIdentity:
+			if config.User != "" || config.Password != "" ||
+				sqlServerTenantID != "" {
+				return fmt.Errorf(
+					"Microsoft Entra managed identity accepts only an optional user-assigned client ID",
+				)
+			}
+		case SQLServerAuthEntraDefault, SQLServerAuthEntraAzureCLI:
+			if config.User != "" || config.Password != "" ||
+				sqlServerClientID != "" || sqlServerTenantID != "" {
+				return fmt.Errorf(
+					"the selected Microsoft Entra authentication mode does not accept profile credentials",
+				)
+			}
+		}
+		if strings.HasPrefix(normalizedMode, "entra-") &&
+			(strings.TrimSpace(config.SSLMode) == "" ||
+				strings.EqualFold(config.SSLMode, "disable")) {
+			return fmt.Errorf(
+				"Microsoft Entra authentication requires encrypted SQL Server TLS",
+			)
+		}
+	} else if sqlServerMode != "" ||
+		sqlServerClientID != "" ||
+		sqlServerTenantID != "" {
+		return fmt.Errorf(
+			"SQL Server authentication options can only be used by the SQL Server driver",
 		)
 	}
 	return nil

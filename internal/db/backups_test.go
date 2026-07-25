@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -56,6 +57,166 @@ func TestBackupCapabilitiesReportToolReadiness(t *testing.T) {
 		oracle.SupportsScope ||
 		!oracle.RequiresDirectory {
 		t.Fatalf("oracle capabilities = %+v", oracle)
+	}
+
+	sqlServer := backupCapabilitiesFor(executableFixture(), "sqlserver")
+	if !sqlServer.Available ||
+		!sqlServer.BuiltIn ||
+		!sqlServer.RestoreReady ||
+		!sqlServer.ServerSideFiles ||
+		sqlServer.Format != database.BackupFormatSQLServerNative ||
+		sqlServer.Extension != ".bak" ||
+		sqlServer.SupportsScope {
+		t.Fatalf("SQL Server capabilities = %+v", sqlServer)
+	}
+}
+
+type serverBackupTestDriver struct {
+	routingTestDriver
+	metadata     database.ServerBackupMetadata
+	backupPath   string
+	restoredPath string
+}
+
+func (driver *serverBackupTestDriver) Capabilities() database.Capabilities {
+	capabilities := driver.routingTestDriver.Capabilities()
+	capabilities.Engine = database.DriverSQLServer
+	return capabilities
+}
+
+func (driver *serverBackupTestDriver) GetBackupDirectories(
+	context.Context,
+) ([]database.BackupDirectory, error) {
+	return []database.BackupDirectory{{
+		Name: "Default backup directory",
+		Path: "/var/opt/mssql/backup",
+	}}, nil
+}
+
+func (driver *serverBackupTestDriver) BackupDatabaseToServer(
+	_ context.Context,
+	request database.BackupRequest,
+) (database.ServerBackupMetadata, error) {
+	driver.backupPath = request.ServerPath
+	return driver.metadata, nil
+}
+
+func (driver *serverBackupTestDriver) InspectServerBackup(
+	_ context.Context,
+	path string,
+) (database.ServerBackupMetadata, error) {
+	metadata := driver.metadata
+	metadata.Path = path
+	return metadata, nil
+}
+
+func (driver *serverBackupTestDriver) RestoreDatabaseFromServer(
+	_ context.Context,
+	path string,
+) error {
+	driver.restoredPath = path
+	return nil
+}
+
+func TestSQLServerBackupAndReviewedRestoreStayOnServer(t *testing.T) {
+	const serverPath = "/var/opt/mssql/backup/rolling.bak"
+	driver := &serverBackupTestDriver{
+		metadata: database.ServerBackupMetadata{
+			Path:       serverPath,
+			Database:   "rolling",
+			Bytes:      4096,
+			Position:   1,
+			FinishedAt: "2026-07-26T10:00:00Z",
+			Identity:   "reviewed-backup",
+		},
+	}
+	service := NewService()
+	service.connections["sqlserver"] = &Connection{
+		ID:     "sqlserver",
+		Driver: driver,
+		Config: database.Config{
+			Driver:     database.DriverSQLServer,
+			Db:         "rolling",
+			AccessMode: database.ConnectionAccessReadWrite,
+		},
+	}
+
+	backup := service.BackupDatabase(database.BackupRequest{
+		ConnectionID: "sqlserver",
+		ServerPath:   serverPath,
+	})
+	if len(backup.Errors) != 0 ||
+		backup.Data.Path != serverPath ||
+		driver.backupPath != serverPath {
+		t.Fatalf("backup = %+v, driver path = %q", backup, driver.backupPath)
+	}
+
+	restore := database.RestorePreviewRequest{
+		ConnectionID: "sqlserver",
+		ServerPath:   serverPath,
+	}
+	preview := service.PreviewDatabaseRestore(restore)
+	if len(preview.Errors) != 0 ||
+		preview.Data.Format != database.BackupFormatSQLServerNative ||
+		preview.Data.Transactional ||
+		preview.Data.Fingerprint == "" {
+		t.Fatalf("preview = %+v", preview)
+	}
+	applied := service.ApplyDatabaseRestore(database.ApplyRestoreRequest{
+		Restore:     restore,
+		Fingerprint: preview.Data.Fingerprint,
+	})
+	if len(applied.Errors) != 0 ||
+		!applied.Data.Restored ||
+		driver.restoredPath != serverPath {
+		t.Fatalf("apply = %+v, driver path = %q", applied, driver.restoredPath)
+	}
+}
+
+func TestSQLServerRestoreRejectsChangedServerBackupAfterReview(t *testing.T) {
+	const serverPath = "/var/opt/mssql/backup/rolling.bak"
+	driver := &serverBackupTestDriver{
+		metadata: database.ServerBackupMetadata{
+			Path:       serverPath,
+			Database:   "rolling",
+			Bytes:      4096,
+			Position:   1,
+			FinishedAt: "2026-07-26T10:00:00Z",
+			Identity:   "reviewed-backup",
+		},
+	}
+	service := NewService()
+	service.connections["sqlserver"] = &Connection{
+		ID:     "sqlserver",
+		Driver: driver,
+		Config: database.Config{
+			Driver:     database.DriverSQLServer,
+			Db:         "rolling",
+			AccessMode: database.ConnectionAccessReadWrite,
+		},
+	}
+	restore := database.RestorePreviewRequest{
+		ConnectionID: "sqlserver",
+		ServerPath:   serverPath,
+	}
+	preview := service.PreviewDatabaseRestore(restore)
+	if len(preview.Errors) != 0 || preview.Data.Fingerprint == "" {
+		t.Fatalf("preview = %+v", preview)
+	}
+
+	driver.metadata.Identity = "replacement-backup"
+	applied := service.ApplyDatabaseRestore(database.ApplyRestoreRequest{
+		Restore:     restore,
+		Fingerprint: preview.Data.Fingerprint,
+	})
+	if len(applied.Errors) == 0 ||
+		applied.Data.Restored ||
+		driver.restoredPath != "" {
+		t.Fatalf(
+			"stale restore was not rejected: response=%+v path=%q",
+			applied,
+			driver.restoredPath,
+		)
 	}
 }
 

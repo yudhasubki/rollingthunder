@@ -111,11 +111,13 @@ func (m *MySQL) GetDatabaseActivity(
 		})
 	}
 	return database.DatabaseActivity{
-		Supported:        true,
-		Engine:           "mysql",
-		CurrentSessionID: currentID,
-		Sessions:         sessions,
-		CapturedAt:       now,
+		Supported:           true,
+		Engine:              "mysql",
+		CurrentSessionID:    currentID,
+		CanCancelQuery:      true,
+		CanTerminateSession: true,
+		Sessions:            sessions,
+		CapturedAt:          now,
 	}, nil
 }
 

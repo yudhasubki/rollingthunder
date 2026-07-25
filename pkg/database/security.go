@@ -9,8 +9,9 @@ import (
 type PrincipalKind string
 
 const (
-	PrincipalRole PrincipalKind = "role"
-	PrincipalUser PrincipalKind = "user"
+	PrincipalLogin PrincipalKind = "login"
+	PrincipalRole  PrincipalKind = "role"
+	PrincipalUser  PrincipalKind = "user"
 )
 
 type DatabasePrincipal struct {
@@ -26,6 +27,8 @@ type DatabasePrincipal struct {
 	BypassRLS   bool          `json:"bypassRls"`
 	Locked      bool          `json:"locked"`
 	AuthMethod  string        `json:"authMethod,omitempty"`
+	Scope       string        `json:"scope,omitempty"`
+	Login       string        `json:"login,omitempty"`
 }
 
 type DatabaseGrant struct {
@@ -36,6 +39,7 @@ type DatabaseGrant struct {
 	Object     string `json:"object,omitempty"`
 	Privilege  string `json:"privilege"`
 	Grantable  bool   `json:"grantable"`
+	State      string `json:"state,omitempty"`
 	Statement  string `json:"statement,omitempty"`
 }
 
@@ -79,6 +83,7 @@ type PrincipalOptions struct {
 	Name        string        `json:"name"`
 	Host        string        `json:"host,omitempty"`
 	Kind        PrincipalKind `json:"kind"`
+	Scope       string        `json:"scope,omitempty"`
 	Password    string        `json:"password,omitempty"`
 	CanLogin    bool          `json:"canLogin"`
 	Superuser   bool          `json:"superuser"`
@@ -88,6 +93,7 @@ type PrincipalOptions struct {
 	Replication bool          `json:"replication"`
 	BypassRLS   bool          `json:"bypassRls"`
 	Locked      bool          `json:"locked"`
+	Login       string        `json:"login,omitempty"`
 }
 
 type GrantOptions struct {
@@ -119,9 +125,10 @@ func (request SecurityChangeRequest) Validate() error {
 		if strings.TrimSpace(request.Principal.Name) == "" {
 			return fmt.Errorf("principal name is required")
 		}
-		if request.Principal.Kind != PrincipalRole &&
+		if request.Principal.Kind != PrincipalLogin &&
+			request.Principal.Kind != PrincipalRole &&
 			request.Principal.Kind != PrincipalUser {
-			return fmt.Errorf("principal kind must be role or user")
+			return fmt.Errorf("principal kind must be login, role, or user")
 		}
 	case SecurityGrantRole, SecurityRevokeRole:
 		if strings.TrimSpace(request.Grant.Grantee) == "" ||

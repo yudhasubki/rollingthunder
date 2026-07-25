@@ -35,6 +35,14 @@ export type ProviderId = 'postgres' | 'mysql' | 'sqlite' | 'oracle' | 'sqlserver
 export type ConnectionEnvironment = 'unclassified' | 'development' | 'staging' | 'production';
 export type ConnectionAccessMode = 'read-write' | 'read-only';
 export type OracleConnectionMode = 'direct' | 'tns';
+export type SQLServerAuthMode =
+	| 'sql'
+	| 'integrated'
+	| 'entra-default'
+	| 'entra-password'
+	| 'entra-service-principal'
+	| 'entra-managed-identity'
+	| 'entra-azure-cli';
 
 export const DATABASE_PROVIDERS: ReadonlyArray<{
 	id: ProviderId;
@@ -116,6 +124,7 @@ export const CONNECTION_DEFAULTS = Object.freeze({
 	sslMode: 'disable',
 	provider: 'postgres' as ProviderId,
 	oracleConnectionMode: 'direct' as OracleConnectionMode,
+	sqlServerAuthMode: 'sql' as SQLServerAuthMode,
 	environment: 'unclassified' as ConnectionEnvironment,
 	accessMode: 'read-write' as ConnectionAccessMode
 });
@@ -156,6 +165,48 @@ export const ORACLE_CONNECTION_MODES: ReadonlyArray<{
 }> = [
 	{ value: 'direct', label: 'Direct endpoint' },
 	{ value: 'tns', label: 'TNS alias' }
+];
+
+export const SQL_SERVER_AUTH_MODES: ReadonlyArray<{
+	value: SQLServerAuthMode;
+	label: string;
+	description: string;
+}> = [
+	{
+		value: 'sql',
+		label: 'SQL password',
+		description: 'Authenticate with a SQL Server login and password.'
+	},
+	{
+		value: 'integrated',
+		label: 'Windows Integrated',
+		description: 'Use the current Windows identity through SSPI.'
+	},
+	{
+		value: 'entra-default',
+		label: 'Microsoft Entra Default',
+		description: 'Use the Azure Identity default credential chain.'
+	},
+	{
+		value: 'entra-password',
+		label: 'Microsoft Entra password',
+		description: 'Use an Entra user, password, and approved application client ID.'
+	},
+	{
+		value: 'entra-service-principal',
+		label: 'Entra service principal',
+		description: 'Use an application client ID, tenant ID, and client secret.'
+	},
+	{
+		value: 'entra-managed-identity',
+		label: 'Entra managed identity',
+		description: 'Use a system-assigned or optional user-assigned managed identity.'
+	},
+	{
+		value: 'entra-azure-cli',
+		label: 'Azure CLI session',
+		description: 'Reuse the identity currently signed in through the Azure CLI.'
+	}
 ];
 
 export const CONNECTION_ENVIRONMENTS: ReadonlyArray<{

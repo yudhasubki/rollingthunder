@@ -50,6 +50,9 @@
 - Connect to Oracle through a direct endpoint or an explicitly selected `tnsnames.ora` alias, and
   use `ewallet.p12` or auto-login `cwallet.sso` Wallet directories for TCPS with `require` or
   hostname-verified `verify-full` TLS.
+- Authenticate to SQL Server with a SQL login, the current Windows identity, Microsoft Entra
+  Default, Entra username/password, a service principal, managed identity, or the current Azure CLI
+  session. Passwords and client secrets remain in the operating-system credential store.
 - Route direct network endpoints through an SSH tunnel using an SSH agent, private key, or password.
   Host keys must match a known-hosts entry or an explicitly pinned SHA256 fingerprint.
 - Keep SSH passwords, private-key passphrases, and Oracle Wallet passwords in the operating-system
@@ -66,6 +69,8 @@
   databases.
 - Explore and search tables, views, materialized views, routines, triggers, sequences, types,
   constraints, indexes, and PostgreSQL extensions according to each driver capability.
+- Inspect a compact, navigable dependency graph for objects exposed by each driver, including
+  SQL-expression, foreign-key, parent/child, index, trigger, and constraint relationships.
 - Inspect columns, constraints, relationships, indexes, and table DDL.
 - Identify primary and foreign keys explicitly and open referenced tables directly from Structure.
 - Open an interactive schema diagram.
@@ -109,12 +114,17 @@
   password file instead of exposing the password in the child-process environment.
 - Create and restore Oracle schema backups as local `.dmp` files through DBMS_DATAPUMP, using an
   explicitly selected server-side DIRECTORY object for bounded staging and cleanup.
+- Create and restore complete SQL Server native `.bak` backups through an explicitly entered path on
+  the database server. Restore requires a reviewed preview, and backup identity plus checksum are
+  revalidated immediately before it runs.
 - Preview every restore, verify the selected file has not changed, explicitly confirm the target,
   and cancel long-running external maintenance jobs.
-- Inspect PostgreSQL roles, MySQL/MariaDB users, or Oracle users and roles; review grants and preview
-  create/alter/drop, grant/revoke, and role-membership changes before applying them.
-- Monitor active PostgreSQL, MySQL/MariaDB, and Oracle sessions, waits, blockers, duration, and
-  current SQL; cancel a statement or terminate a session through an explicit confirmation flow.
+- Inspect PostgreSQL roles, MySQL/MariaDB users, Oracle users/roles, or SQL Server logins,
+  database users, and server/database roles; review grants and preview create/alter/drop,
+  grant/revoke, and role-membership changes before applying them.
+- Monitor active PostgreSQL, MySQL/MariaDB, Oracle, and SQL Server sessions, waits, blockers,
+  duration, and current SQL; expose only the cancellation or termination actions the engine can
+  perform through an explicit confirmation flow.
 
 ### Data export
 
@@ -193,13 +203,13 @@
 
 ## Database support
 
-| Engine          | Core data workflows | Object explorer                                       | Maintenance / admin                      | CI integration                    |
-| --------------- | ------------------- | ----------------------------------------------------- | ---------------------------------------- | --------------------------------- |
-| PostgreSQL      | Available           | Full capability-based explorer                        | Sync, backup, roles/grants, activity     | 14-18                             |
-| MySQL / MariaDB | Available           | Databases, tables, views, routines/triggers           | Sync, backup, users/grants, activity     | 8.4/9.7 + legacy 8.0; 10.11-12.3  |
-| SQLite          | Available           | Attached DBs, tables, views, triggers                 | Sync and built-in online backup/restore  | Bundled engine                    |
-| Oracle Database | Beta                | Schemas, tables, views, MVs, routines, triggers       | Sync, Data Pump, users/grants, activity  | Current Free image, weekly/manual |
-| SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences | Schema/data sync; no native backup/admin | 2022 and 2025                     |
+| Engine          | Core data workflows | Object explorer                                       | Maintenance / admin                       | CI integration                    |
+| --------------- | ------------------- | ----------------------------------------------------- | ----------------------------------------- | --------------------------------- |
+| PostgreSQL      | Available           | Full capability-based explorer                        | Sync, backup, roles/grants, activity      | 14-18                             |
+| MySQL / MariaDB | Available           | Databases, tables, views, routines/triggers           | Sync, backup, users/grants, activity      | 8.4/9.7 + legacy 8.0; 10.11-12.3  |
+| SQLite          | Available           | Attached DBs, tables, views, triggers                 | Sync and built-in online backup/restore   | Bundled engine                    |
+| Oracle Database | Beta                | Schemas, tables, views, MVs, routines, triggers, dependencies | Sync, Data Pump, users/grants, activity | Current Free image, weekly/manual |
+| SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences, dependencies | Sync, native backup, security, activity | 2022 and 2025 |
 
 ## Known gaps
 
@@ -213,8 +223,8 @@ Other important limitations include:
 - PostgreSQL backup/restore requires compatible `pg_dump` and `pg_restore` executables in `PATH`.
   MySQL/MariaDB backup/restore similarly requires `mysqldump`/`mariadb-dump` and
   `mysql`/`mariadb`.
-- Native backup/restore, security administration, and activity monitoring are not yet exposed for
-  SQL Server. Role/user management and the activity monitor are not applicable to SQLite.
+- Role/user management and the activity monitor are not applicable to SQLite; protect SQLite files
+  with operating-system permissions.
 - Oracle Data Pump currently backs up one non-Oracle-maintained application schema with structure
   and data together. The connected account needs Data Pump privileges plus `READ` and `WRITE` on a
   visible Oracle DIRECTORY object; Rolling Thunder removes its temporary server files after each
@@ -223,8 +233,18 @@ Other important limitations include:
 - Oracle TNS parsing deliberately does not follow `IFILE` includes. Choose the reviewed file that
   directly contains the alias. TNS and Wallet profiles cannot also use Rolling Thunder's SSH
   tunnel; use a direct endpoint profile when SSH forwarding is required.
-- SQL Server beta connections use SQL authentication; Microsoft Entra ID and platform-integrated
-  authentication are not yet exposed.
+- SQL Server native backup/restore operates on an absolute `.bak` path visible to the SQL Server
+  host, not a file path on the desktop. It handles a complete same-database backup only, replaces an
+  existing destination, and requires `BACKUP DATABASE`/restore permissions plus SQL Server
+  service-account access to the directory. Azure-managed deployments that require `BACKUP TO URL`
+  are not yet supported.
+- Windows Integrated SQL Server authentication is available only on Windows and cannot be combined
+  with Rolling Thunder's SSH tunnel. Microsoft Entra modes require encrypted TLS and the matching
+  local/Azure identity setup; Entra password and service-principal secrets stay in the OS credential
+  store.
+- SQL Server can terminate a selected session with `KILL`, but a separate monitoring session cannot
+  cancel only its currently running statement. Cancel Rolling Thunder-owned queries from their query
+  tabs; the Activity tool protects every Rolling Thunder session.
 - Oracle `INSERT` export rejects inline RAW values larger than 2,000 bytes instead of generating a
   script that Oracle cannot execute. Use CSV/JSON export for those rows.
 - Schema sync currently automates table, column, and index changes. Complex constraint drift is
@@ -234,6 +254,8 @@ Other important limitations include:
 - SQL Server table DDL reconstructs common columns, identity/computed metadata, key constraints,
   checks, and foreign keys. Advanced temporal, ledger, memory-optimized, partition, compression,
   masking, and encryption options still require native tooling and manual review.
+- Oracle and SQL Server remain labeled beta while their newly completed administration,
+  maintenance, authentication, and dependency workflows collect production feedback.
 - SSH host verification is deliberately strict. Rolling Thunder does not silently trust a host on
   first use; add it to `known_hosts` or pin the SHA256 host-key fingerprint.
 - Linux desktop packages currently target WebKitGTK 4.1 and require compatible GTK/WebKit runtime

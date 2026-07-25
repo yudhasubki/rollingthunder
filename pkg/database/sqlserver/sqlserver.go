@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"rollingthunder/pkg/database/sqladapter"
 
 	_ "github.com/microsoft/go-mssqldb"
+	"github.com/microsoft/go-mssqldb/azuread"
 )
 
 const (
@@ -38,6 +40,9 @@ type Config struct {
 	SSLCert       string
 	SSLKey        string
 	TLSServerName string
+	AuthMode      string
+	EntraClientID string
+	EntraTenantID string
 }
 
 type SQLServer struct {
@@ -91,6 +96,70 @@ func normalizeConfig(config Config) (Config, error) {
 			)
 		}
 	}
+	config.AuthMode = database.NormalizeSQLServerAuthMode(config.AuthMode)
+	switch config.AuthMode {
+	case database.SQLServerAuthSQL:
+		if strings.TrimSpace(config.User) == "" {
+			return Config{}, errors.New(
+				"SQL Server password authentication requires a username",
+			)
+		}
+		if strings.TrimSpace(config.EntraClientID) != "" ||
+			strings.TrimSpace(config.EntraTenantID) != "" {
+			return Config{}, errors.New(
+				"SQL Server Entra identifiers require an Entra authentication mode",
+			)
+		}
+	case database.SQLServerAuthIntegrated:
+		if config.User != "" || config.Password != "" ||
+			config.EntraClientID != "" || config.EntraTenantID != "" {
+			return Config{}, errors.New(
+				"SQL Server Integrated authentication uses the current Windows identity",
+			)
+		}
+	case database.SQLServerAuthEntraPassword:
+		if strings.TrimSpace(config.User) == "" ||
+			config.Password == "" ||
+			strings.TrimSpace(config.EntraClientID) == "" {
+			return Config{}, errors.New(
+				"Microsoft Entra password authentication requires username, password, and application client ID",
+			)
+		}
+	case database.SQLServerAuthEntraServicePrincipal:
+		if strings.TrimSpace(config.EntraClientID) == "" ||
+			strings.TrimSpace(config.EntraTenantID) == "" ||
+			config.Password == "" {
+			return Config{}, errors.New(
+				"Microsoft Entra service-principal authentication requires client ID, tenant ID, and client secret",
+			)
+		}
+	case database.SQLServerAuthEntraManagedIdentity:
+		if config.User != "" || config.Password != "" ||
+			config.EntraTenantID != "" {
+			return Config{}, errors.New(
+				"Microsoft Entra managed identity accepts only an optional user-assigned client ID",
+			)
+		}
+	case database.SQLServerAuthEntraDefault,
+		database.SQLServerAuthEntraAzureCLI:
+		if config.User != "" || config.Password != "" ||
+			config.EntraClientID != "" || config.EntraTenantID != "" {
+			return Config{}, errors.New(
+				"the selected Microsoft Entra authentication mode does not accept profile credentials",
+			)
+		}
+	default:
+		return Config{}, fmt.Errorf(
+			"unsupported SQL Server authentication mode %q",
+			config.AuthMode,
+		)
+	}
+	if strings.HasPrefix(config.AuthMode, "entra-") &&
+		config.SSLMode == "disable" {
+		return Config{}, errors.New(
+			"Microsoft Entra authentication requires encrypted SQL Server TLS",
+		)
+	}
 	return config, nil
 }
 
@@ -125,15 +194,85 @@ func buildConnectionURL(config Config) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported SQL Server TLS mode %q", config.SSLMode)
 	}
+	switch config.AuthMode {
+	case database.SQLServerAuthIntegrated:
+		query.Set("Integrated Security", "sspi")
+	case database.SQLServerAuthEntraDefault:
+		query.Set("fedauth", azuread.ActiveDirectoryDefault)
+	case database.SQLServerAuthEntraPassword:
+		query.Set("fedauth", azuread.ActiveDirectoryPassword)
+		query.Set("applicationclientid", config.EntraClientID)
+	case database.SQLServerAuthEntraServicePrincipal:
+		query.Set("fedauth", azuread.ActiveDirectoryServicePrincipal)
+	case database.SQLServerAuthEntraManagedIdentity:
+		query.Set("fedauth", azuread.ActiveDirectoryManagedIdentity)
+	case database.SQLServerAuthEntraAzureCLI:
+		query.Set("fedauth", azuread.ActiveDirectoryAzCli)
+	}
 	connectionURL := &url.URL{
 		Scheme:   "sqlserver",
 		Host:     net.JoinHostPort(config.Host, config.Port),
 		RawQuery: query.Encode(),
 	}
-	if config.User != "" || config.Password != "" {
+	switch config.AuthMode {
+	case database.SQLServerAuthSQL, database.SQLServerAuthEntraPassword:
 		connectionURL.User = url.UserPassword(config.User, config.Password)
+	case database.SQLServerAuthEntraServicePrincipal:
+		connectionURL.User = url.UserPassword(
+			config.EntraClientID+"@"+config.EntraTenantID,
+			config.Password,
+		)
+	case database.SQLServerAuthEntraManagedIdentity:
+		if strings.TrimSpace(config.EntraClientID) != "" {
+			connectionURL.User = url.User(config.EntraClientID)
+		}
 	}
 	return connectionURL.String(), nil
+}
+
+func sqlServerDriverName(config Config) string {
+	if strings.HasPrefix(
+		database.NormalizeSQLServerAuthMode(config.AuthMode),
+		"entra-",
+	) {
+		return azuread.DriverName
+	}
+	return "sqlserver"
+}
+
+func openSQLServerConnection(
+	ctx context.Context,
+	config Config,
+) (*sql.DB, Config, error) {
+	config, err := normalizeConfig(config)
+	if err != nil {
+		return nil, Config{}, err
+	}
+	if config.AuthMode == database.SQLServerAuthIntegrated &&
+		runtime.GOOS != "windows" {
+		return nil, Config{}, errors.New(
+			"SQL Server Integrated authentication is available only on Windows; use Microsoft Entra or SQL password authentication on this platform",
+		)
+	}
+	dsn, err := buildConnectionURL(config)
+	if err != nil {
+		return nil, Config{}, err
+	}
+	connection, err := sql.Open(sqlServerDriverName(config), dsn)
+	if err != nil {
+		return nil, Config{}, fmt.Errorf(
+			"initialize SQL Server connection: %w",
+			err,
+		)
+	}
+	connection.SetMaxIdleConns(defaultMaxIdleConnections)
+	connection.SetMaxOpenConns(defaultMaxOpenConnections)
+	connection.SetConnMaxLifetime(defaultConnectionLifetime)
+	if err := connection.PingContext(ctx); err != nil {
+		_ = connection.Close()
+		return nil, Config{}, fmt.Errorf("connect to SQL Server: %w", err)
+	}
+	return connection, config, nil
 }
 
 func (s *SQLServer) Connect(ctx context.Context) error {
@@ -148,20 +287,9 @@ func (s *SQLServer) Connect(ctx context.Context) error {
 			return fmt.Errorf("close previous SQL Server connection: %w", err)
 		}
 	}
-	dsn, err := buildConnectionURL(s.cfg)
+	connection, config, err := openSQLServerConnection(ctx, s.cfg)
 	if err != nil {
 		return err
-	}
-	connection, err := sql.Open("sqlserver", dsn)
-	if err != nil {
-		return fmt.Errorf("initialize SQL Server connection: %w", err)
-	}
-	connection.SetMaxIdleConns(defaultMaxIdleConnections)
-	connection.SetMaxOpenConns(defaultMaxOpenConnections)
-	connection.SetConnMaxLifetime(defaultConnectionLifetime)
-	if err := connection.PingContext(ctx); err != nil {
-		_ = connection.Close()
-		return fmt.Errorf("connect to SQL Server: %w", err)
 	}
 	var schema string
 	if err := connection.QueryRowContext(
@@ -172,6 +300,7 @@ func (s *SQLServer) Connect(ctx context.Context) error {
 		return fmt.Errorf("read SQL Server default schema: %w", err)
 	}
 	s.conn = connection
+	s.cfg = config
 	s.ctx = context.WithoutCancel(ctx)
 	s.currentSchema = schema
 	return nil

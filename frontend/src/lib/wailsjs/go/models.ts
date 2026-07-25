@@ -451,6 +451,7 @@ export namespace database {
 	    token: string;
 	    schema?: string;
 	    directory?: string;
+	    serverPath?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RestorePreviewRequest(source);
@@ -462,6 +463,7 @@ export namespace database {
 	        this.token = source["token"];
 	        this.schema = source["schema"];
 	        this.directory = source["directory"];
+	        this.serverPath = source["serverPath"];
 	    }
 	}
 	export class ApplyRestoreRequest {
@@ -582,6 +584,7 @@ export namespace database {
 	    name: string;
 	    host?: string;
 	    kind: string;
+	    scope?: string;
 	    password?: string;
 	    canLogin: boolean;
 	    superuser: boolean;
@@ -591,6 +594,7 @@ export namespace database {
 	    replication: boolean;
 	    bypassRls: boolean;
 	    locked: boolean;
+	    login?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PrincipalOptions(source);
@@ -601,6 +605,7 @@ export namespace database {
 	        this.name = source["name"];
 	        this.host = source["host"];
 	        this.kind = source["kind"];
+	        this.scope = source["scope"];
 	        this.password = source["password"];
 	        this.canLogin = source["canLogin"];
 	        this.superuser = source["superuser"];
@@ -610,6 +615,7 @@ export namespace database {
 	        this.replication = source["replication"];
 	        this.bypassRls = source["bypassRls"];
 	        this.locked = source["locked"];
+	        this.login = source["login"];
 	    }
 	}
 	export class SecurityChangeRequest {
@@ -704,6 +710,7 @@ export namespace database {
 	    message?: string;
 	    supportsScope: boolean;
 	    requiresDirectory: boolean;
+	    serverSideFiles: boolean;
 	    directories: BackupDirectory[];
 	
 	    static createFrom(source: any = {}) {
@@ -723,6 +730,7 @@ export namespace database {
 	        this.message = source["message"];
 	        this.supportsScope = source["supportsScope"];
 	        this.requiresDirectory = source["requiresDirectory"];
+	        this.serverSideFiles = source["serverSideFiles"];
 	        this.directories = this.convertValues(source["directories"], BackupDirectory);
 	    }
 
@@ -750,6 +758,7 @@ export namespace database {
 	    jobId: string;
 	    schema?: string;
 	    directory?: string;
+	    serverPath?: string;
 	    schemaOnly: boolean;
 	    dataOnly: boolean;
 	
@@ -763,6 +772,7 @@ export namespace database {
 	        this.jobId = source["jobId"];
 	        this.schema = source["schema"];
 	        this.directory = source["directory"];
+	        this.serverPath = source["serverPath"];
 	        this.schemaOnly = source["schemaOnly"];
 	        this.dataOnly = source["dataOnly"];
 	    }
@@ -983,6 +993,9 @@ export namespace database {
 	    oracleTnsAlias?: string;
 	    oracleWalletPath?: string;
 	    oracleWalletPassword?: string;
+	    sqlServerAuthMode?: string;
+	    sqlServerEntraClientId?: string;
+	    sqlServerEntraTenantId?: string;
 	    sshEnabled: boolean;
 	    sshHost: string;
 	    sshPort: string;
@@ -1021,6 +1034,9 @@ export namespace database {
 	        this.oracleTnsAlias = source["oracleTnsAlias"];
 	        this.oracleWalletPath = source["oracleWalletPath"];
 	        this.oracleWalletPassword = source["oracleWalletPassword"];
+	        this.sqlServerAuthMode = source["sqlServerAuthMode"];
+	        this.sqlServerEntraClientId = source["sqlServerEntraClientId"];
+	        this.sqlServerEntraTenantId = source["sqlServerEntraTenantId"];
 	        this.sshEnabled = source["sshEnabled"];
 	        this.sshHost = source["sshHost"];
 	        this.sshPort = source["sshPort"];
@@ -1240,6 +1256,8 @@ export namespace database {
 	    supported: boolean;
 	    engine: string;
 	    currentSessionId?: string;
+	    canCancelQuery: boolean;
+	    canTerminateSession: boolean;
 	    sessions: DatabaseSession[];
 	    // Go type: time
 	    capturedAt: any;
@@ -1254,6 +1272,8 @@ export namespace database {
 	        this.supported = source["supported"];
 	        this.engine = source["engine"];
 	        this.currentSessionId = source["currentSessionId"];
+	        this.canCancelQuery = source["canCancelQuery"];
+	        this.canTerminateSession = source["canTerminateSession"];
 	        this.sessions = this.convertValues(source["sessions"], DatabaseSession);
 	        this.capturedAt = this.convertValues(source["capturedAt"], null);
 	        this.message = source["message"];
@@ -1285,6 +1305,7 @@ export namespace database {
 	    object?: string;
 	    privilege: string;
 	    grantable: boolean;
+	    state?: string;
 	    statement?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -1300,6 +1321,7 @@ export namespace database {
 	        this.object = source["object"];
 	        this.privilege = source["privilege"];
 	        this.grantable = source["grantable"];
+	        this.state = source["state"];
 	        this.statement = source["statement"];
 	    }
 	}
@@ -1374,6 +1396,8 @@ export namespace database {
 	    bypassRls: boolean;
 	    locked: boolean;
 	    authMethod?: string;
+	    scope?: string;
+	    login?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new DatabasePrincipal(source);
@@ -1393,6 +1417,8 @@ export namespace database {
 	        this.bypassRls = source["bypassRls"];
 	        this.locked = source["locked"];
 	        this.authMethod = source["authMethod"];
+	        this.scope = source["scope"];
+	        this.login = source["login"];
 	    }
 	}
 	

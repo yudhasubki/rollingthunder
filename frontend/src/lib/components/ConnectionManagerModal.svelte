@@ -33,6 +33,7 @@
 		CONNECTION_ENVIRONMENTS,
 		DATABASE_PROVIDERS,
 		ORACLE_CONNECTION_MODES,
+		SQL_SERVER_AUTH_MODES,
 		SSH_AUTH_OPTIONS,
 		SSL_OPTIONS,
 		connectionEnvironmentOption,
@@ -41,7 +42,8 @@
 		type ConnectionAccessMode,
 		type ConnectionEnvironment,
 		type OracleConnectionMode,
-		type ProviderId
+		type ProviderId,
+		type SQLServerAuthMode
 	} from '$lib/config/application';
 	import {
 		AlertCircle,
@@ -94,6 +96,10 @@
 		label
 	}));
 	const oracleConnectionModeOptions = ORACLE_CONNECTION_MODES.map((option) => ({ ...option }));
+	const sqlServerAuthModeOptions = SQL_SERVER_AUTH_MODES.map(({ value, label }) => ({
+		value,
+		label
+	}));
 
 	let profiles = $state<db.SavedConnection[]>([]);
 	let searchQuery = $state('');
@@ -132,6 +138,11 @@
 	let hasStoredOracleWalletPassword = $state(false);
 	let showOracleWalletPassword = $state(false);
 	let clearOracleWalletPasswordConfirm = $state(false);
+	let sqlServerAuthMode = $state<SQLServerAuthMode>(CONNECTION_DEFAULTS.sqlServerAuthMode);
+	let loadedSQLServerAuthMode = $state<SQLServerAuthMode>(CONNECTION_DEFAULTS.sqlServerAuthMode);
+	let loadedProvider = $state<ProviderId | ''>('');
+	let sqlServerEntraClientId = $state('');
+	let sqlServerEntraTenantId = $state('');
 	let loadedForOpen = $state(false);
 	let connectionAttemptID = $state<string | null>(null);
 	let connectionElapsedSeconds = $state(0);
@@ -184,10 +195,48 @@
 
 	const oracleUsesTNS = $derived(provider === 'oracle' && oracleConnectionMode === 'tns');
 	const oracleUsesWallet = $derived(provider === 'oracle' && Boolean(oracleWalletPath.trim()));
+	const sqlServerIntegrated = $derived(
+		provider === 'sqlserver' && sqlServerAuthMode === 'integrated'
+	);
+	const sqlServerUsesUsername = $derived(
+		provider !== 'sqlserver' ||
+			sqlServerAuthMode === 'sql' ||
+			sqlServerAuthMode === 'entra-password'
+	);
+	const sqlServerUsesPassword = $derived(
+		provider !== 'sqlserver' ||
+			sqlServerAuthMode === 'sql' ||
+			sqlServerAuthMode === 'entra-password' ||
+			sqlServerAuthMode === 'entra-service-principal'
+	);
+	const sqlServerUsesClientId = $derived(
+		provider === 'sqlserver' &&
+			(sqlServerAuthMode === 'entra-password' ||
+				sqlServerAuthMode === 'entra-service-principal' ||
+				sqlServerAuthMode === 'entra-managed-identity')
+	);
+	const sqlServerUsesTenantId = $derived(
+		provider === 'sqlserver' && sqlServerAuthMode === 'entra-service-principal'
+	);
+	const selectedSQLServerAuth = $derived(
+		SQL_SERVER_AUTH_MODES.find((option) => option.value === sqlServerAuthMode) ??
+			SQL_SERVER_AUTH_MODES[0]
+	);
+	const storedPasswordMatchesAuth = $derived(
+		hasStoredPassword &&
+			loadedProvider === provider &&
+			(provider !== 'sqlserver' || loadedSQLServerAuthMode === sqlServerAuthMode)
+	);
 	const sslOptions = $derived(
-		SSL_OPTIONS.filter((option) => !oracleUsesWallet || option.value !== 'verify-ca').map(
-			(option) => ({ ...option })
-		)
+		SSL_OPTIONS.filter(
+			(option) =>
+				(!oracleUsesWallet || option.value !== 'verify-ca') &&
+				!(
+					provider === 'sqlserver' &&
+					sqlServerAuthMode.startsWith('entra-') &&
+					option.value === 'disable'
+				)
+		).map((option) => ({ ...option }))
 	);
 	const oracleTnsAliasOptions = $derived(
 		oracleTnsAliases.map((alias) => ({ value: alias, label: alias }))
@@ -323,6 +372,15 @@
 		oracleWalletPassword = '';
 		showOracleWalletPassword = false;
 		clearOracleWalletPasswordConfirm = false;
+		sqlServerAuthMode =
+			profileProvider === 'sqlserver' &&
+			SQL_SERVER_AUTH_MODES.some((option) => option.value === config.sqlServerAuthMode)
+				? (config.sqlServerAuthMode as SQLServerAuthMode)
+				: CONNECTION_DEFAULTS.sqlServerAuthMode;
+		loadedSQLServerAuthMode = sqlServerAuthMode;
+		loadedProvider = profileProvider;
+		sqlServerEntraClientId = config.sqlServerEntraClientId || '';
+		sqlServerEntraTenantId = config.sqlServerEntraTenantId || '';
 		provider = profileProvider;
 		deleteConfirm = false;
 		message = '';
@@ -375,6 +433,11 @@
 		hasStoredOracleWalletPassword = false;
 		showOracleWalletPassword = false;
 		clearOracleWalletPasswordConfirm = false;
+		sqlServerAuthMode = CONNECTION_DEFAULTS.sqlServerAuthMode;
+		loadedSQLServerAuthMode = CONNECTION_DEFAULTS.sqlServerAuthMode;
+		loadedProvider = '';
+		sqlServerEntraClientId = '';
+		sqlServerEntraTenantId = '';
 		provider = '';
 		deleteConfirm = false;
 		showPassword = false;
@@ -395,9 +458,10 @@
 	function buildConfig() {
 		const sqlite = provider === 'sqlite';
 		const oracle = provider === 'oracle';
+		const sqlServer = provider === 'sqlserver';
 		const oracleTNS = oracle && oracleConnectionMode === 'tns';
 		const wallet = oracle && Boolean(oracleWalletPath.trim());
-		const allowSSH = !sqlite && !oracleTNS && !wallet;
+		const allowSSH = !sqlite && !oracleTNS && !wallet && !(sqlServer && sqlServerIntegrated);
 		return new database.Config({
 			name: connectionName.trim(),
 			environment: connectionEnvironment,
@@ -410,8 +474,8 @@
 			driver: provider || CONNECTION_DEFAULTS.provider,
 			host: sqlite || oracleTNS ? '' : host.trim(),
 			port: sqlite || oracleTNS ? '' : port.trim(),
-			user: sqlite ? '' : username.trim(),
-			password: sqlite ? '' : password,
+			user: sqlite || (sqlServer && !sqlServerUsesUsername) ? '' : username.trim(),
+			password: sqlite || (sqlServer && !sqlServerUsesPassword) ? '' : password,
 			db: oracleTNS ? oracleTnsAlias.trim() : databaseName.trim(),
 			sslMode: sqlite ? CONNECTION_DEFAULTS.sslMode : sslMode,
 			sslRootCert: sqlite || wallet ? '' : sslRootCert.trim(),
@@ -422,6 +486,11 @@
 			oracleTnsAlias: oracleTNS ? oracleTnsAlias.trim() : '',
 			oracleWalletPath: oracle ? oracleWalletPath.trim() : '',
 			oracleWalletPassword: oracle && wallet ? oracleWalletPassword : '',
+			sqlServerAuthMode: sqlServer ? sqlServerAuthMode : '',
+			sqlServerEntraClientId:
+				sqlServer && sqlServerUsesClientId ? sqlServerEntraClientId.trim() : '',
+			sqlServerEntraTenantId:
+				sqlServer && sqlServerUsesTenantId ? sqlServerEntraTenantId.trim() : '',
 			sshEnabled: allowSSH && sshEnabled,
 			sshHost: allowSSH && sshEnabled ? sshHost.trim() : '',
 			sshPort: allowSSH && sshEnabled ? sshPort.trim() || CONNECTION_DEFAULTS.sshPort : '',
@@ -468,6 +537,43 @@
 				'error'
 			);
 			return false;
+		}
+		if (provider === 'sqlserver') {
+			if (
+				(sqlServerAuthMode === 'sql' || sqlServerAuthMode === 'entra-password') &&
+				!username.trim()
+			) {
+				showMessage(
+					'Enter the username required by the selected SQL Server authentication.',
+					'error'
+				);
+				return false;
+			}
+			if (sqlServerUsesPassword && !password && !(editingId && storedPasswordMatchesAuth)) {
+				showMessage(
+					sqlServerAuthMode === 'entra-service-principal'
+						? 'Enter the Microsoft Entra client secret.'
+						: 'Enter the password required by the selected authentication.',
+					'error'
+				);
+				return false;
+			}
+			if (
+				sqlServerUsesClientId &&
+				sqlServerAuthMode !== 'entra-managed-identity' &&
+				!sqlServerEntraClientId.trim()
+			) {
+				showMessage('Enter the Microsoft Entra application client ID.', 'error');
+				return false;
+			}
+			if (sqlServerUsesTenantId && !sqlServerEntraTenantId.trim()) {
+				showMessage('Enter the Microsoft Entra tenant ID.', 'error');
+				return false;
+			}
+			if (sqlServerAuthMode.startsWith('entra-') && sslMode === 'disable') {
+				showMessage('Microsoft Entra authentication requires encrypted SQL Server TLS.', 'error');
+				return false;
+			}
 		}
 		if (
 			provider === 'oracle' &&
@@ -519,6 +625,15 @@
 			showOracleWalletPassword = false;
 			clearOracleWalletPasswordConfirm = false;
 		}
+		if (nextProvider.id !== 'sqlserver') {
+			sqlServerAuthMode = CONNECTION_DEFAULTS.sqlServerAuthMode;
+			loadedSQLServerAuthMode = CONNECTION_DEFAULTS.sqlServerAuthMode;
+			sqlServerEntraClientId = '';
+			sqlServerEntraTenantId = '';
+		} else if (currentProvider?.id !== 'sqlserver') {
+			sqlServerAuthMode = CONNECTION_DEFAULTS.sqlServerAuthMode;
+			loadedSQLServerAuthMode = CONNECTION_DEFAULTS.sqlServerAuthMode;
+		}
 		if (nextProvider.id === 'sqlite') {
 			host = '';
 			port = '';
@@ -542,6 +657,30 @@
 		if (!accessModeTouched) {
 			accessMode = connectionEnvironment === 'production' ? 'read-only' : 'read-write';
 		}
+	}
+
+	function selectSQLServerAuthMode(value: string) {
+		const nextMode = value as SQLServerAuthMode;
+		sqlServerAuthMode = nextMode;
+		password = '';
+		clearPasswordConfirm = false;
+		if (nextMode !== 'sql' && nextMode !== 'entra-password') username = '';
+		if (
+			nextMode !== 'entra-password' &&
+			nextMode !== 'entra-service-principal' &&
+			nextMode !== 'entra-managed-identity'
+		) {
+			sqlServerEntraClientId = '';
+		}
+		if (nextMode !== 'entra-service-principal') sqlServerEntraTenantId = '';
+		if (nextMode.startsWith('entra-') && sslMode === 'disable') {
+			sslMode = 'verify-full';
+		}
+		if (nextMode === 'integrated') {
+			sshEnabled = false;
+			sshExpanded = false;
+		}
+		message = '';
 	}
 
 	function profileEndpoint(profile: db.SavedConnection): string {
@@ -1366,56 +1505,127 @@
 										<Lock class="text-muted-foreground h-3.5 w-3.5" />
 										<span class="text-[10px] font-bold">Authentication & TLS</span>
 									</div>
-									<div>
-										<label for="modal-username">Username</label>
-										<input
-											id="modal-username"
-											bind:value={username}
-											placeholder={selectedProvider.defaultUser}
-											disabled={action !== null}
-										/>
-									</div>
-									<div>
-										<div class="mb-1.5 flex items-center justify-between gap-2">
-											<label for="modal-password" class="!mb-0">Password</label>
-											{#if hasStoredPassword}
-												<button
-													type="button"
-													class="text-muted-foreground hover:text-destructive cursor-pointer text-[8px] font-semibold"
-													onclick={clearStoredPassword}
-													disabled={action !== null}
-												>
-													{clearPasswordConfirm
-														? 'Remove stored password'
-														: 'Stored securely · remove'}
-												</button>
-											{/if}
+									{#if provider === 'sqlserver'}
+										<div class="col-span-2">
+											<label for="modal-sqlserver-auth">Authentication method</label>
+											<FilterCombobox
+												id="modal-sqlserver-auth"
+												options={sqlServerAuthModeOptions}
+												value={sqlServerAuthMode}
+												onChange={selectSQLServerAuthMode}
+												searchable={false}
+												disabled={action !== null}
+												triggerClass="h-9 px-3 text-xs"
+											/>
+											<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
+												{selectedSQLServerAuth.description}
+												{#if sqlServerAuthMode === 'integrated'}
+													This mode is available in the Windows desktop build.
+												{/if}
+												{#if hasStoredPassword && !storedPasswordMatchesAuth}
+													The previous authentication secret will be removed when this profile is
+													saved.
+												{/if}
+											</p>
 										</div>
-										<div class="relative">
+									{/if}
+									{#if sqlServerUsesUsername}
+										<div class={sqlServerUsesPassword ? '' : 'col-span-2'}>
+											<label for="modal-username">
+												{provider === 'sqlserver' && sqlServerAuthMode === 'entra-password'
+													? 'Microsoft Entra username'
+													: 'Username'}
+											</label>
 											<input
-												id="modal-password"
-												type={showPassword ? 'text' : 'password'}
-												bind:value={password}
-												placeholder={hasStoredPassword
-													? 'Stored by the operating system - leave blank to keep'
-													: 'Enter password'}
-												class="!pr-10"
+												id="modal-username"
+												bind:value={username}
+												placeholder={provider === 'sqlserver' &&
+												sqlServerAuthMode === 'entra-password'
+													? 'user@example.com'
+													: selectedProvider.defaultUser}
 												disabled={action !== null}
 											/>
-											<button
-												type="button"
-												class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
-												onclick={() => (showPassword = !showPassword)}
-												aria-label={showPassword ? 'Hide password' : 'Show password'}
-											>
-												{#if showPassword}
-													<EyeOff class="h-3.5 w-3.5" />
-												{:else}
-													<Eye class="h-3.5 w-3.5" />
-												{/if}
-											</button>
 										</div>
-									</div>
+									{/if}
+									{#if sqlServerUsesPassword}
+										<div class={!sqlServerUsesUsername ? 'col-span-2' : ''}>
+											<div class="mb-1.5 flex items-center justify-between gap-2">
+												<label for="modal-password" class="!mb-0">
+													{provider === 'sqlserver' &&
+													sqlServerAuthMode === 'entra-service-principal'
+														? 'Client secret'
+														: 'Password'}
+												</label>
+												{#if hasStoredPassword && storedPasswordMatchesAuth}
+													<button
+														type="button"
+														class="text-muted-foreground hover:text-destructive cursor-pointer text-[8px] font-semibold"
+														onclick={clearStoredPassword}
+														disabled={action !== null}
+													>
+														{clearPasswordConfirm
+															? 'Remove stored password'
+															: 'Stored securely · remove'}
+													</button>
+												{/if}
+											</div>
+											<div class="relative">
+												<input
+													id="modal-password"
+													type={showPassword ? 'text' : 'password'}
+													bind:value={password}
+													placeholder={storedPasswordMatchesAuth
+														? 'Stored by the operating system - leave blank to keep'
+														: provider === 'sqlserver' &&
+															  sqlServerAuthMode === 'entra-service-principal'
+															? 'Enter client secret'
+															: 'Enter password'}
+													class="!pr-10"
+													disabled={action !== null}
+												/>
+												<button
+													type="button"
+													class="rt-toolbar-button absolute top-1/2 right-1.5 h-7 w-7 -translate-y-1/2"
+													onclick={() => (showPassword = !showPassword)}
+													aria-label={showPassword ? 'Hide password' : 'Show password'}
+												>
+													{#if showPassword}
+														<EyeOff class="h-3.5 w-3.5" />
+													{:else}
+														<Eye class="h-3.5 w-3.5" />
+													{/if}
+												</button>
+											</div>
+										</div>
+									{/if}
+									{#if sqlServerUsesClientId}
+										<div class={sqlServerUsesTenantId ? '' : 'col-span-2'}>
+											<label for="modal-sqlserver-client-id">
+												{sqlServerAuthMode === 'entra-managed-identity'
+													? 'User-assigned client ID (optional)'
+													: 'Application client ID'}
+											</label>
+											<input
+												id="modal-sqlserver-client-id"
+												bind:value={sqlServerEntraClientId}
+												placeholder={sqlServerAuthMode === 'entra-managed-identity'
+													? 'Empty uses system-assigned identity'
+													: '00000000-0000-0000-0000-000000000000'}
+												disabled={action !== null}
+											/>
+										</div>
+									{/if}
+									{#if sqlServerUsesTenantId}
+										<div>
+											<label for="modal-sqlserver-tenant-id">Tenant ID</label>
+											<input
+												id="modal-sqlserver-tenant-id"
+												bind:value={sqlServerEntraTenantId}
+												placeholder="00000000-0000-0000-0000-000000000000"
+												disabled={action !== null}
+											/>
+										</div>
+									{/if}
 									<div class="col-span-2">
 										<label for="modal-ssl">TLS mode</label>
 										<FilterCombobox
@@ -1581,7 +1791,7 @@
 										{/if}
 									{/if}
 
-									{#if provider === 'oracle' && (oracleUsesTNS || oracleUsesWallet)}
+									{#if (provider === 'oracle' && (oracleUsesTNS || oracleUsesWallet)) || sqlServerIntegrated}
 										<div
 											class="col-span-2 flex items-start gap-3 rounded-lg border bg-[var(--surface-sunken)] px-3.5 py-3"
 										>
@@ -1589,9 +1799,11 @@
 											<div>
 												<p class="text-[9px] font-bold">SSH tunnel unavailable</p>
 												<p class="text-muted-foreground mt-1 text-[8px] leading-relaxed">
-													{oracleUsesTNS
-														? 'TNS descriptors control their own endpoints. Use Direct endpoint mode when Oracle must be reached through SSH.'
-														: 'Wallet certificate verification must target the reviewed Oracle endpoint directly.'}
+													{sqlServerIntegrated
+														? 'Windows Integrated authentication must preserve the reviewed SQL Server identity for SSPI and cannot be routed through an SSH endpoint.'
+														: oracleUsesTNS
+															? 'TNS descriptors control their own endpoints. Use Direct endpoint mode when Oracle must be reached through SSH.'
+															: 'Wallet certificate verification must target the reviewed Oracle endpoint directly.'}
 												</p>
 											</div>
 										</div>

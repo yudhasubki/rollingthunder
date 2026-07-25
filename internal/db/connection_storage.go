@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	connectionStorageVersion             = 6
+	connectionStorageVersion             = 7
 	sshPasswordCredentialSuffix          = ":ssh-password"
 	sshPassphraseCredentialSuffix        = ":ssh-key-passphrase"
 	oracleWalletPasswordCredentialSuffix = ":oracle-wallet-password"
@@ -202,6 +202,8 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 		return nil, err
 	}
 	needsRewrite := legacyFormat
+	var obsoleteCredentialPrevious []credentialState
+	var obsoleteCredentialDesired []credentialState
 	for index := range connections {
 		connection := &connections[index]
 		normalizedConfig := database.NormalizeConfigMetadata(connection.Config)
@@ -209,16 +211,51 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 			connection.Config = normalizedConfig
 			needsRewrite = true
 		}
-		passwordMigrated, err := s.migratePlaintextSecret(
-			connection.Config.Password,
-			connection.ID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"migrate password for %q to the operating system credential store: %w",
-				connection.Config.Name,
-				err,
+		passwordMigrated := false
+		if connection.Config.UsesDatabasePassword() {
+			passwordMigrated, err = s.migratePlaintextSecret(
+				connection.Config.Password,
+				connection.ID,
 			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"migrate password for %q to the operating system credential store: %w",
+					connection.Config.Name,
+					err,
+				)
+			}
+		} else {
+			if connection.Config.Password != "" {
+				needsRewrite = true
+			}
+			if connection.HasPassword {
+				previous := credentialState{
+					id:     connection.ID,
+					exists: true,
+				}
+				previous.value, err = s.credentialStore.Get(connection.ID)
+				if errors.Is(err, ErrCredentialNotFound) {
+					previous.exists = false
+					err = nil
+				}
+				if err != nil {
+					return nil, fmt.Errorf(
+						"inspect obsolete password for %q before migration: %w",
+						connection.Config.Name,
+						err,
+					)
+				}
+				obsoleteCredentialPrevious = append(
+					obsoleteCredentialPrevious,
+					previous,
+				)
+				obsoleteCredentialDesired = append(
+					obsoleteCredentialDesired,
+					credentialState{id: connection.ID},
+				)
+				connection.HasPassword = false
+				needsRewrite = true
+			}
 		}
 		sshPasswordMigrated, err := s.migratePlaintextSecret(
 			connection.Config.SSHPassword,
@@ -273,8 +310,22 @@ func (s *Service) loadSavedConnections() ([]SavedConnection, error) {
 			needsRewrite = true
 		}
 	}
+	if err := applyCredentialStates(
+		s.credentialStore,
+		obsoleteCredentialPrevious,
+		obsoleteCredentialDesired,
+	); err != nil {
+		return nil, fmt.Errorf(
+			"remove obsolete passwordless profile credentials: %w",
+			err,
+		)
+	}
 	if needsRewrite {
 		if err := s.connectionStorage.Save(connections); err != nil {
+			restoreCredentialStates(
+				s.credentialStore,
+				obsoleteCredentialPrevious,
+			)
 			return nil, fmt.Errorf(
 				"remove migrated plaintext passwords from profile storage: %w",
 				err,
@@ -440,7 +491,7 @@ func (s *Service) SaveConnection(
 	connection := SavedConnection{
 		ID:          uuid.NewString(),
 		Config:      config,
-		HasPassword: password != "",
+		HasPassword: config.UsesDatabasePassword() && password != "",
 		HasSSHPassword: config.SSHEnabled &&
 			sshAuthMode == "password" &&
 			sshPassword != "",
@@ -557,9 +608,22 @@ func (s *Service) UpdateConnection(
 	config.SSHKeyPassphrase = ""
 	config.OracleWalletPassword = ""
 	passwordState := previousCredentials[0]
-	if newPassword != "" {
+	passwordPurposeChanged := !strings.EqualFold(
+		previous.Config.Driver,
+		config.Driver,
+	) || (strings.EqualFold(config.Driver, database.DriverSQLServer) &&
+		database.NormalizeSQLServerAuthMode(
+			previous.Config.SQLServerAuthMode,
+		) != database.NormalizeSQLServerAuthMode(config.SQLServerAuthMode))
+	if !config.UsesDatabasePassword() {
+		passwordState.value = ""
+		passwordState.exists = false
+	} else if newPassword != "" {
 		passwordState.value = newPassword
 		passwordState.exists = true
+	} else if passwordPurposeChanged {
+		passwordState.value = ""
+		passwordState.exists = false
 	}
 	sshPasswordState := previousCredentials[1]
 	if !config.SSHEnabled || sshAuthMode != "password" {
@@ -867,7 +931,9 @@ func (s *Service) hydrateProfileCredentials(
 	profile SavedConnection,
 	config database.Config,
 ) (database.Config, error) {
-	if config.Password == "" && profile.HasPassword {
+	if config.UsesDatabasePassword() &&
+		config.Password == "" &&
+		profile.HasPassword {
 		password, err := s.credentialStore.Get(profile.ID)
 		if err != nil {
 			return database.Config{}, fmt.Errorf(

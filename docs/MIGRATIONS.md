@@ -6,14 +6,14 @@ must be versioned and migrated explicitly.
 
 ## Current formats
 
-| Data                      | Current version | Location                                              | Contains secrets    |
-| ------------------------- | --------------: | ----------------------------------------------------- | ------------------- |
-| Saved connection profiles |               6 | `connections.json` in the OS config directory         | No                  |
-| Database/SSH/Wallet secrets |    OS-managed | Keychain, Credential Manager, or Secret Service       | Yes                 |
-| Query workspaces          |               1 | Webview local storage, `rollingthunder.workspace`     | Query text          |
-| Named queries             |               1 | Webview local storage, `rollingthunder.saved-queries` | Query text          |
-| Diagnostics preferences   |               1 | `diagnostics.json` in the OS config directory         | No                  |
-| Diagnostic reports        |    1 per report | OS cache directory                                    | Redacted error data |
+| Data                        | Current version | Location                                              | Contains secrets    |
+| --------------------------- | --------------: | ----------------------------------------------------- | ------------------- |
+| Saved connection profiles   |               7 | `connections.json` in the OS config directory         | No                  |
+| Database/SSH/Wallet secrets |      OS-managed | Keychain, Credential Manager, or Secret Service       | Yes                 |
+| Query workspaces            |               1 | Webview local storage, `rollingthunder.workspace`     | Query text          |
+| Named queries               |               1 | Webview local storage, `rollingthunder.saved-queries` | Query text          |
+| Diagnostics preferences     |               1 | `diagnostics.json` in the OS config directory         | No                  |
+| Diagnostic reports          |    1 per report | OS cache directory                                    | Redacted error data |
 
 The application config directory is normally:
 
@@ -90,6 +90,23 @@ Version 6 adds non-secret Oracle direct/TNS and Wallet metadata plus
 `hasOracleWalletPassword`. Any legacy plaintext `oracleWalletPassword` is moved to the operating
 system credential store under a namespaced profile key before the profile file is atomically
 rewritten. A failed credential-store write leaves the original version-5 file unchanged.
+
+## Version 6 to version 7 saved profiles
+
+Version 7 adds non-secret SQL Server authentication metadata:
+`sqlServerAuthMode`, `sqlServerEntraClientId`, and `sqlServerEntraTenantId`. An existing SQL Server
+profile without a mode remains SQL-password authentication, preserving version-6 behavior.
+
+SQL passwords, Microsoft Entra user passwords, and service-principal client secrets share the
+profile's database-secret credential slot because only one authentication mode is active at a time.
+Switching between secret purposes requires an explicit replacement secret; Rolling Thunder does not
+silently reuse a SQL password as an Entra secret. Switching to Integrated, Entra Default, managed
+identity, or Azure CLI authentication removes an obsolete stored database credential before the
+version-7 metadata is committed. Credential deletion failure leaves the version-6 source unchanged,
+and a metadata-write failure restores the previous credential.
+
+Version-6 applications reject the newer envelope rather than guessing how to authenticate it. To
+downgrade, restore the profile backup made before upgrading.
 
 ## Backup before upgrade
 

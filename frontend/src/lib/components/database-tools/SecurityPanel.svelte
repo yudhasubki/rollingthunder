@@ -45,6 +45,7 @@
 	let principalName = $state('');
 	let principalHost = $state('%');
 	let principalKind = $state('user');
+	let principalScope = $state('database');
 	let password = $state('');
 	let canLogin = $state(true);
 	let superuser = $state(false);
@@ -54,11 +55,13 @@
 	let replication = $state(false);
 	let bypassRls = $state(false);
 	let locked = $state(false);
+	let principalLogin = $state('');
 
 	let grantee = $state('');
 	let granteeHost = $state('');
 	let role = $state('');
 	let roleHost = $state('');
+	let roleScope = $state('');
 	let objectType = $state('table');
 	let grantSchema = $state('');
 	let grantObject = $state('');
@@ -87,7 +90,7 @@
 		(overview?.principals ?? []).filter((principal) => {
 			const term = search.trim().toLowerCase();
 			if (!term) return true;
-			return `${principal.name} ${principal.host ?? ''} ${principal.kind}`
+			return `${principal.name} ${principal.host ?? ''} ${principal.kind} ${principal.scope ?? ''}`
 				.toLowerCase()
 				.includes(term);
 		})
@@ -103,133 +106,233 @@
 	);
 	const isPostgres = $derived(overview?.engine === 'postgres');
 	const isOracle = $derived(overview?.engine === 'oracle');
-	const usesAccountHost = $derived(!isPostgres && !isOracle);
-	const principalKindOptions = [
-		{ value: 'user', label: 'User / login' },
-		{ value: 'role', label: 'Role' }
-	];
-	const objectTypeOptions = $derived(
-		isOracle
+	const isSQLServer = $derived(overview?.engine === 'sqlserver');
+	const usesAccountHost = $derived(overview?.engine === 'mysql');
+	const principalKindOptions = $derived(
+		isSQLServer
 			? [
-					{ value: 'system', label: 'System' },
-					{ value: 'table', label: 'Table' },
-					{ value: 'view', label: 'View' },
-					{ value: 'materialized view', label: 'Materialized view' },
-					{ value: 'sequence', label: 'Sequence' },
-					{ value: 'procedure', label: 'Procedure' },
-					{ value: 'function', label: 'Function' },
-					{ value: 'package', label: 'Package' },
-					{ value: 'type', label: 'Type' },
-					{ value: 'directory', label: 'Directory' }
+					{ value: 'login', label: 'Server login' },
+					{ value: 'user', label: 'Database user' },
+					{ value: 'role', label: 'Server / database role' }
 				]
-			: isPostgres
-				? [
+			: [
+					{ value: 'user', label: 'User / login' },
+					{ value: 'role', label: 'Role' }
+				]
+	);
+	const loginOptions = $derived([
+		{ value: '', label: 'Contained user / no mapped login' },
+		...(overview?.principals ?? [])
+			.filter((principal) => principal.kind === 'login')
+			.map((principal) => ({ value: principal.name, label: principal.name }))
+	]);
+	const objectTypeOptions = $derived(
+		isSQLServer
+			? selectedPrincipal?.scope === 'server'
+				? [{ value: 'server', label: 'Server' }]
+				: [
 						{ value: 'database', label: 'Database' },
 						{ value: 'schema', label: 'Schema' },
 						{ value: 'table', label: 'Table' },
-						{ value: 'all_tables_in_schema', label: 'All tables in schema' },
-						{ value: 'sequence', label: 'Sequence' }
+						{ value: 'view', label: 'View' },
+						{ value: 'procedure', label: 'Procedure' },
+						{ value: 'function', label: 'Function' }
 					]
-				: [
-						{ value: 'global', label: 'Global' },
-						{ value: 'database', label: 'Database' },
-						{ value: 'table', label: 'Table' }
+			: isOracle
+				? [
+						{ value: 'system', label: 'System' },
+						{ value: 'table', label: 'Table' },
+						{ value: 'view', label: 'View' },
+						{ value: 'materialized view', label: 'Materialized view' },
+						{ value: 'sequence', label: 'Sequence' },
+						{ value: 'procedure', label: 'Procedure' },
+						{ value: 'function', label: 'Function' },
+						{ value: 'package', label: 'Package' },
+						{ value: 'type', label: 'Type' },
+						{ value: 'directory', label: 'Directory' }
 					]
+				: isPostgres
+					? [
+							{ value: 'database', label: 'Database' },
+							{ value: 'schema', label: 'Schema' },
+							{ value: 'table', label: 'Table' },
+							{ value: 'all_tables_in_schema', label: 'All tables in schema' },
+							{ value: 'sequence', label: 'Sequence' }
+						]
+					: [
+							{ value: 'global', label: 'Global' },
+							{ value: 'database', label: 'Database' },
+							{ value: 'table', label: 'Table' }
+						]
 	);
 	const privilegeOptions = $derived(
-		isOracle
-			? objectType === 'system'
+		isSQLServer
+			? objectType === 'server'
 				? [
-						'ALTER SYSTEM',
-						'ALTER USER',
-						'CREATE ANY INDEX',
-						'CREATE PROCEDURE',
-						'CREATE ROLE',
-						'CREATE SEQUENCE',
-						'CREATE SESSION',
-						'CREATE TABLE',
-						'CREATE TRIGGER',
-						'CREATE TYPE',
-						'CREATE USER',
-						'CREATE VIEW',
-						'DELETE ANY TABLE',
-						'DROP USER',
-						'EXECUTE ANY PROCEDURE',
-						'GRANT ANY ROLE',
-						'INSERT ANY TABLE',
-						'SELECT ANY DICTIONARY',
-						'SELECT ANY TABLE',
-						'UPDATE ANY TABLE'
+						'CONNECT SQL',
+						'ALTER ANY LOGIN',
+						'ALTER ANY SERVER ROLE',
+						'CONTROL SERVER',
+						'VIEW ANY DATABASE',
+						'VIEW SERVER STATE',
+						'VIEW SERVER PERFORMANCE STATE'
 					]
-				: objectType === 'table'
+				: objectType === 'database'
 					? [
+							'CONNECT',
+							'CONTROL',
+							'CREATE TABLE',
+							'CREATE VIEW',
+							'CREATE PROCEDURE',
+							'CREATE FUNCTION',
+							'ALTER ANY USER',
+							'ALTER ANY ROLE',
+							'ALTER ANY SCHEMA',
+							'BACKUP DATABASE',
+							'BACKUP LOG',
+							'VIEW DATABASE STATE',
+							'VIEW DEFINITION'
+						]
+					: objectType === 'schema'
+						? [
+								'SELECT',
+								'INSERT',
+								'UPDATE',
+								'DELETE',
+								'EXECUTE',
+								'ALTER',
+								'CONTROL',
+								'REFERENCES',
+								'VIEW DEFINITION'
+							]
+						: objectType === 'procedure'
+							? ['EXECUTE', 'CONTROL', 'VIEW DEFINITION']
+							: objectType === 'function'
+								? ['SELECT', 'EXECUTE', 'REFERENCES', 'CONTROL', 'VIEW DEFINITION']
+								: [
+										'SELECT',
+										'INSERT',
+										'UPDATE',
+										'DELETE',
+										'REFERENCES',
+										'ALTER',
+										'CONTROL',
+										'VIEW DEFINITION'
+									]
+			: isOracle
+				? objectType === 'system'
+					? [
+							'ALTER SYSTEM',
+							'ALTER USER',
+							'CREATE ANY INDEX',
+							'CREATE PROCEDURE',
+							'CREATE ROLE',
+							'CREATE SEQUENCE',
+							'CREATE SESSION',
+							'CREATE TABLE',
+							'CREATE TRIGGER',
+							'CREATE TYPE',
+							'CREATE USER',
+							'CREATE VIEW',
+							'DELETE ANY TABLE',
+							'DROP USER',
+							'EXECUTE ANY PROCEDURE',
+							'GRANT ANY ROLE',
+							'INSERT ANY TABLE',
+							'SELECT ANY DICTIONARY',
+							'SELECT ANY TABLE',
+							'UPDATE ANY TABLE'
+						]
+					: objectType === 'table'
+						? [
+								'SELECT',
+								'READ',
+								'INSERT',
+								'UPDATE',
+								'DELETE',
+								'ALTER',
+								'FLASHBACK',
+								'INDEX',
+								'REFERENCES'
+							]
+						: objectType === 'view'
+							? ['SELECT', 'READ', 'INSERT', 'UPDATE', 'DELETE']
+							: objectType === 'materialized view'
+								? ['SELECT', 'READ']
+								: objectType === 'sequence'
+									? ['SELECT', 'ALTER']
+									: objectType === 'type'
+										? ['EXECUTE', 'DEBUG', 'UNDER']
+										: objectType === 'directory'
+											? ['READ', 'WRITE', 'EXECUTE']
+											: ['EXECUTE', 'DEBUG']
+				: isPostgres
+					? objectType === 'database'
+						? ['CONNECT', 'CREATE', 'TEMPORARY']
+						: objectType === 'schema'
+							? ['USAGE', 'CREATE']
+							: objectType === 'sequence'
+								? ['USAGE', 'SELECT', 'UPDATE', 'ALL']
+								: [
+										'SELECT',
+										'INSERT',
+										'UPDATE',
+										'DELETE',
+										'TRUNCATE',
+										'REFERENCES',
+										'TRIGGER',
+										'ALL'
+									]
+					: [
 							'SELECT',
-							'READ',
 							'INSERT',
 							'UPDATE',
 							'DELETE',
+							'CREATE',
+							'DROP',
 							'ALTER',
-							'FLASHBACK',
 							'INDEX',
-							'REFERENCES'
+							'REFERENCES',
+							'EXECUTE',
+							'CREATE VIEW',
+							'SHOW VIEW',
+							'TRIGGER',
+							'EVENT',
+							'CREATE ROUTINE',
+							'ALTER ROUTINE',
+							'PROCESS',
+							'ALL'
 						]
-					: objectType === 'view'
-						? ['SELECT', 'READ', 'INSERT', 'UPDATE', 'DELETE']
-						: objectType === 'materialized view'
-							? ['SELECT', 'READ']
-							: objectType === 'sequence'
-								? ['SELECT', 'ALTER']
-								: objectType === 'type'
-									? ['EXECUTE', 'DEBUG', 'UNDER']
-									: objectType === 'directory'
-										? ['READ', 'WRITE', 'EXECUTE']
-										: ['EXECUTE', 'DEBUG']
-			: isPostgres
-				? objectType === 'database'
-					? ['CONNECT', 'CREATE', 'TEMPORARY']
-					: objectType === 'schema'
-						? ['USAGE', 'CREATE']
-						: objectType === 'sequence'
-							? ['USAGE', 'SELECT', 'UPDATE', 'ALL']
-							: ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'ALL']
-				: [
-						'SELECT',
-						'INSERT',
-						'UPDATE',
-						'DELETE',
-						'CREATE',
-						'DROP',
-						'ALTER',
-						'INDEX',
-						'REFERENCES',
-						'EXECUTE',
-						'CREATE VIEW',
-						'SHOW VIEW',
-						'TRIGGER',
-						'EVENT',
-						'CREATE ROUTINE',
-						'ALTER ROUTINE',
-						'PROCESS',
-						'ALL'
-					]
 	);
 	const needsGrantSchema = $derived(
-		isOracle
-			? objectType !== 'system' && objectType !== 'directory'
-			: objectType !== 'global' && objectType !== 'database'
+		isSQLServer
+			? ['schema', 'table', 'view', 'procedure', 'function'].includes(objectType)
+			: isOracle
+				? objectType !== 'system' && objectType !== 'directory'
+				: objectType !== 'global' && objectType !== 'database'
 	);
 	const needsGrantObject = $derived(
-		isOracle
-			? objectType !== 'system'
-			: objectType === 'database' || objectType === 'table' || objectType === 'sequence'
+		isSQLServer
+			? ['table', 'view', 'procedure', 'function'].includes(objectType)
+			: isOracle
+				? objectType !== 'system'
+				: objectType === 'database' || objectType === 'table' || objectType === 'sequence'
 	);
 	const privilegeSelectOptions = $derived(
 		privilegeOptions.map((item) => ({ value: item, label: item }))
 	);
 	const roleOptions = $derived(
 		(overview?.principals ?? [])
-			.filter((principal) => principal.kind === 'role' && principal.name !== grantee)
-			.map((principal) => ({ value: principal.name, label: principal.name }))
+			.filter(
+				(principal) =>
+					principal.kind === 'role' &&
+					principal.name !== grantee &&
+					(!isSQLServer || principal.scope === (selectedPrincipal?.scope ?? 'database'))
+			)
+			.map((principal) => ({
+				value: principal.name,
+				label: principal.scope ? `${principal.name} · ${principal.scope}` : principal.name
+			}))
 	);
 
 	$effect(() => {
@@ -240,15 +343,19 @@
 	});
 
 	function principalKey(principal: database.DatabasePrincipal): string {
-		return `${principal.name}\u0000${principal.host ?? ''}`;
+		return `${principal.name}\u0000${principal.host ?? ''}\u0000${principal.kind}\u0000${principal.scope ?? ''}`;
 	}
 
-	async function loadOverview(preferredName = '', preferredHost = ''): Promise<void> {
+	function principalLookupContext(principal: database.DatabasePrincipal): string {
+		return principal.scope || principal.host || '';
+	}
+
+	async function loadOverview(preferredName = '', preferredContext = ''): Promise<void> {
 		if (!connectionId) return;
 		loading = true;
 		error = '';
 		try {
-			let response = await GetSecurityOverview(connectionId, preferredName, preferredHost);
+			let response = await GetSecurityOverview(connectionId, preferredName, preferredContext);
 			if (response.errors?.length) {
 				throw createServiceError(response.errors[0], 'Could not load database security');
 			}
@@ -258,17 +365,23 @@
 					(principal) => principalKey(principal) === selectedKey
 				);
 				const first = existing ?? loaded.principals[0];
-				response = await GetSecurityOverview(connectionId, first.name, first.host ?? '');
+				response = await GetSecurityOverview(
+					connectionId,
+					first.name,
+					principalLookupContext(first)
+				);
 				if (response.errors?.length) {
 					throw createServiceError(response.errors[0], 'Could not load grants');
 				}
 				loaded = response.data ?? loaded;
 				selectedKey = principalKey(first);
 			} else if (preferredName && loaded) {
-				const selected = loaded.principals.find(
-					(principal) =>
-						principal.name === preferredName && (principal.host ?? '') === preferredHost
-				);
+				const selected =
+					loaded.principals.find(
+						(principal) =>
+							principal.name === preferredName &&
+							principalLookupContext(principal) === preferredContext
+					) ?? loaded.principals.find((principal) => principalKey(principal) === selectedKey);
 				if (selected) selectedKey = principalKey(selected);
 			}
 			overview = loaded;
@@ -282,7 +395,7 @@
 
 	async function selectPrincipal(principal: database.DatabasePrincipal): Promise<void> {
 		selectedKey = principalKey(principal);
-		await loadOverview(principal.name, principal.host ?? '');
+		await loadOverview(principal.name, principalLookupContext(principal));
 	}
 
 	function resetPreview(): void {
@@ -303,6 +416,7 @@
 		principalName = principal?.name ?? '';
 		principalHost = principal?.host ?? '%';
 		principalKind = principal?.kind ?? 'user';
+		principalScope = principal?.scope ?? (principal?.kind === 'login' ? 'server' : 'database');
 		password = '';
 		canLogin = principal?.canLogin ?? true;
 		superuser = principal?.superuser ?? false;
@@ -312,6 +426,7 @@
 		replication = principal?.replication ?? false;
 		bypassRls = principal?.bypassRls ?? false;
 		locked = principal?.locked ?? false;
+		principalLogin = principal?.login ?? '';
 		resetPreview();
 	}
 
@@ -335,9 +450,11 @@
 		objectType =
 			existing?.objectType && existing.objectType !== 'statement'
 				? existing.objectType
-				: isPostgres || isOracle
-					? 'table'
-					: 'database';
+				: isSQLServer && selectedPrincipal.scope === 'server'
+					? 'server'
+					: isPostgres || isOracle
+						? 'table'
+						: 'database';
 		grantSchema = existing?.schema ?? '';
 		grantObject = existing?.object ?? '';
 		privilege =
@@ -358,6 +475,13 @@
 		granteeHost = selectedPrincipal.host ?? '';
 		role = existing?.role ?? '';
 		roleHost = '';
+		roleScope =
+			(overview?.principals ?? []).find(
+				(principal) =>
+					principal.kind === 'role' &&
+					principal.name === role &&
+					(!isSQLServer || principal.scope === selectedPrincipal.scope)
+			)?.scope ?? '';
 		grantable = existing?.grantable ?? false;
 		resetPreview();
 	}
@@ -376,6 +500,7 @@
 				name: principalName.trim(),
 				host: principalHost.trim(),
 				kind: principalKind,
+				scope: principalScope,
 				password,
 				canLogin,
 				superuser,
@@ -384,14 +509,15 @@
 				inherit,
 				replication,
 				bypassRls,
-				locked
+				locked,
+				login: principalLogin.trim()
 			}),
 			grant: new database.GrantOptions({
 				grantee: grantee.trim(),
 				granteeHost: granteeHost.trim(),
 				role: role.trim(),
 				roleHost: roleHost.trim(),
-				objectType,
+				objectType: editorKind === 'membership' && isSQLServer ? roleScope : objectType,
 				schema: grantSchema.trim(),
 				object: grantObject.trim(),
 				privilege,
@@ -448,9 +574,15 @@
 			addConsoleLog(`Security change applied: ${summary}`, 'success');
 			const reloadName =
 				editorAction === 'drop_principal' ? '' : editorKind === 'account' ? principalName : grantee;
-			const reloadHost = editorKind === 'account' ? principalHost : granteeHost;
+			const reloadContext = isSQLServer
+				? editorKind === 'account'
+					? principalScope
+					: (selectedPrincipal?.scope ?? '')
+				: editorKind === 'account'
+					? principalHost
+					: granteeHost;
 			closeEditor();
-			await loadOverview(reloadName, reloadHost);
+			await loadOverview(reloadName, reloadContext);
 		} catch (applyError: any) {
 			editorError = applyError?.message ?? 'Security change failed.';
 			updateStatus(editorError, 'error');
@@ -468,7 +600,9 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-	<div class="flex h-13 shrink-0 items-center gap-3 border-b bg-[var(--surface-sunken)] px-4">
+	<div
+		class="flex min-h-13 shrink-0 flex-wrap items-center gap-3 border-b bg-[var(--surface-sunken)] px-4 py-2"
+	>
 		<label class="flex min-w-0 flex-1 items-center gap-2">
 			<span class="text-muted-foreground text-[8px] font-bold">Connection</span>
 			<FilterCombobox
@@ -494,7 +628,11 @@
 		<button
 			type="button"
 			class="rt-toolbar-button h-8 w-8 cursor-pointer"
-			onclick={() => loadOverview(selectedPrincipal?.name, selectedPrincipal?.host ?? '')}
+			onclick={() =>
+				loadOverview(
+					selectedPrincipal?.name,
+					selectedPrincipal ? principalLookupContext(selectedPrincipal) : ''
+				)}
 			disabled={loading}
 			title="Refresh security"
 		>
@@ -524,8 +662,12 @@
 			</div>
 		</div>
 	{:else if overview}
-		<div class="grid min-h-0 flex-1 grid-cols-[270px_minmax(0,1fr)] overflow-hidden">
-			<aside class="flex min-h-0 flex-col border-r bg-[var(--surface-sunken)]">
+		<div
+			class="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(150px,0.45fr)_minmax(0,1fr)] overflow-hidden md:grid-cols-[220px_minmax(0,1fr)] md:grid-rows-1 xl:grid-cols-[270px_minmax(0,1fr)]"
+		>
+			<aside
+				class="flex min-h-0 flex-col border-b bg-[var(--surface-sunken)] md:border-r md:border-b-0"
+			>
 				<div class="space-y-2 border-b p-3">
 					<div class="rt-input flex h-8 items-center gap-2 px-2">
 						<Search class="text-muted-foreground h-3.5 w-3.5" />
@@ -541,7 +683,7 @@
 						onclick={() => openAccountEditor('create_principal')}
 					>
 						<Plus class="h-3.5 w-3.5" />
-						New user or role
+						New principal
 					</button>
 				</div>
 				<div class="min-h-0 flex-1 overflow-y-auto p-2">
@@ -567,7 +709,9 @@
 							<span class="min-w-0 flex-1">
 								<span class="block truncate text-[9px] font-bold">{principal.name}</span>
 								<span class="text-muted-foreground mt-0.5 block truncate text-[7px]">
-									{principal.host ? `@${principal.host} · ` : ''}{principal.kind}
+									{principal.host ? `@${principal.host} · ` : ''}{principal.kind}{principal.scope
+										? ` · ${principal.scope}`
+										: ''}
 								</span>
 							</span>
 							{#if principal.locked}
@@ -581,7 +725,7 @@
 
 			<section class="flex min-h-0 min-w-0 flex-col overflow-hidden">
 				{#if selectedPrincipal}
-					<header class="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+					<header class="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-3">
 						<span
 							class="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--surface-sunken)]"
 						>
@@ -592,7 +736,9 @@
 								{selectedPrincipal.name}{selectedPrincipal.host ? `@${selectedPrincipal.host}` : ''}
 							</h3>
 							<p class="text-muted-foreground mt-0.5 text-[8px]">
-								{selectedPrincipal.kind} · {selectedPrincipal.canLogin
+								{selectedPrincipal.kind}{selectedPrincipal.scope
+									? ` · ${selectedPrincipal.scope}`
+									: ''} · {selectedPrincipal.canLogin
 									? 'login enabled'
 									: 'no login'}{selectedPrincipal.authMethod
 									? ` · ${selectedPrincipal.authMethod}`
@@ -615,13 +761,15 @@
 							<KeyRound class="h-3.5 w-3.5" />
 							Grant
 						</button>
-						<button
-							type="button"
-							class="rt-toolbar-button h-8 cursor-pointer px-2.5 text-[8px] font-bold"
-							onclick={() => openAccountEditor('alter_principal', selectedPrincipal)}
-						>
-							Edit
-						</button>
+						{#if !(isSQLServer && selectedPrincipal.kind === 'role')}
+							<button
+								type="button"
+								class="rt-toolbar-button h-8 cursor-pointer px-2.5 text-[8px] font-bold"
+								onclick={() => openAccountEditor('alter_principal', selectedPrincipal)}
+							>
+								Edit
+							</button>
+						{/if}
 						<button
 							type="button"
 							class="rt-toolbar-button hover:text-destructive h-8 w-8 cursor-pointer"
@@ -681,7 +829,8 @@
 										</span>
 										<span class="min-w-0 flex-1">
 											<span class="block truncate font-mono text-[8px]">
-												{grant.statement || `${grant.privilege} · ${objectLabel(grant)}`}
+												{grant.statement ||
+													`${grant.state === 'deny' ? 'DENY ' : ''}${grant.privilege} · ${objectLabel(grant)}`}
 											</span>
 											{#if !grant.statement}
 												<span class="text-muted-foreground mt-0.5 block text-[7px]">
@@ -728,7 +877,7 @@
 			aria-label="Close security editor"
 		></button>
 		<aside
-			class="relative flex h-full w-[440px] flex-col border-l bg-[var(--surface-raised)] shadow-2xl"
+			class="relative flex h-full w-full max-w-[440px] flex-col border-l bg-[var(--surface-raised)] shadow-2xl"
 		>
 			<header class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
 				<span
@@ -790,7 +939,11 @@
 								/>
 							</label>
 						{/if}
-						<label class={!usesAccountHost ? 'col-span-2' : ''}>
+						<label
+							class={!usesAccountHost && !(isSQLServer && principalKind === 'role')
+								? 'col-span-2'
+								: ''}
+						>
 							<span class="text-muted-foreground mb-1 block text-[8px]">Kind</span>
 							<FilterCombobox
 								id="security-principal-kind"
@@ -798,6 +951,8 @@
 								value={principalKind}
 								onChange={(value) => {
 									principalKind = value;
+									principalScope = value === 'login' ? 'server' : 'database';
+									if (value !== 'user') principalLogin = '';
 									resetPreview();
 								}}
 								disabled={editorAction !== 'create_principal'}
@@ -805,7 +960,51 @@
 								triggerClass="h-9 px-2 text-[9px]"
 							/>
 						</label>
-						{#if editorKind !== 'drop' && principalKind === 'user'}
+						{#if isSQLServer && principalKind === 'role'}
+							<label>
+								<span class="text-muted-foreground mb-1 block text-[8px]">Role scope</span>
+								<FilterCombobox
+									id="security-principal-scope"
+									options={[
+										{ value: 'database', label: 'Database' },
+										{ value: 'server', label: 'Server' }
+									]}
+									value={principalScope}
+									onChange={(value) => {
+										principalScope = value;
+										resetPreview();
+									}}
+									disabled={editorAction !== 'create_principal'}
+									searchable={false}
+									triggerClass="h-9 px-2 text-[9px]"
+								/>
+							</label>
+						{/if}
+						{#if editorKind !== 'drop' && isSQLServer && principalKind === 'user'}
+							<label class="col-span-2">
+								<span class="text-muted-foreground mb-1 block text-[8px]">
+									Mapped server login
+								</span>
+								<FilterCombobox
+									id="security-principal-login"
+									options={loginOptions}
+									value={principalLogin}
+									onChange={(value) => {
+										principalLogin = value;
+										if (value) password = '';
+										resetPreview();
+									}}
+									searchable={loginOptions.length > 8}
+									searchPlaceholder="Find login…"
+									triggerClass="h-9 px-2 text-[9px]"
+								/>
+								<p class="text-muted-foreground mt-1 text-[7px] leading-relaxed">
+									Leave empty for a contained user with a password, or a user without login when the
+									password is also empty.
+								</p>
+							</label>
+						{/if}
+						{#if editorKind !== 'drop' && (principalKind === 'login' || (principalKind === 'user' && (!isSQLServer || !principalLogin)))}
 							<label class="col-span-2">
 								<span class="text-muted-foreground mb-1 block text-[8px]">
 									Password {editorAction === 'alter_principal' ? '(leave blank to keep)' : ''}
@@ -871,12 +1070,21 @@
 								</label>
 							{/each}
 						</div>
-					{:else}
+					{:else if principalKind !== 'role'}
 						<label
 							class="mt-4 flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-[8px]"
 						>
-							<input type="checkbox" bind:checked={locked} onchange={resetPreview} />
-							Lock this account
+							<input
+								type="checkbox"
+								bind:checked={locked}
+								onchange={() => {
+									canLogin = !locked;
+									resetPreview();
+								}}
+							/>
+							{isSQLServer && principalKind === 'user'
+								? 'Deny database connection'
+								: 'Lock this account'}
 						</label>
 					{/if}
 				{:else if editorKind === 'privilege'}
@@ -968,6 +1176,10 @@
 								value={role}
 								onChange={(value) => {
 									role = value;
+									roleScope =
+										(overview?.principals ?? []).find(
+											(principal) => principal.kind === 'role' && principal.name === value
+										)?.scope ?? '';
 									resetPreview();
 								}}
 								placeholder="Choose a role"
@@ -977,7 +1189,7 @@
 								triggerClass="h-9 px-2 text-[9px]"
 							/>
 						</label>
-						{#if editorAction === 'grant_role'}
+						{#if editorAction === 'grant_role' && !isSQLServer}
 							<label
 								class="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-[8px]"
 							>

@@ -720,6 +720,13 @@ func (s *SQLServer) GetObjectDetail(
 		Definition: definition,
 		Properties: selected.Properties,
 	}
+	detail.Dependencies, detail.Dependents, err = s.objectDependencies(
+		ctx,
+		selected.Reference,
+	)
+	if err != nil {
+		return database.ObjectDetail{}, err
+	}
 	if reference.Kind == database.ObjectKindTable ||
 		reference.Kind == database.ObjectKindView {
 		detail.Columns, err = s.GetCollectionStructures(database.Table{

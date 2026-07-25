@@ -80,6 +80,9 @@ func NewDriver(ctx context.Context, driver string, cfg database.Config) (databas
 			SSLCert:       cfg.SSLCert,
 			SSLKey:        cfg.SSLKey,
 			TLSServerName: cfg.TLSServerName,
+			AuthMode:      cfg.SQLServerAuthMode,
+			EntraClientID: cfg.SQLServerEntraClientID,
+			EntraTenantID: cfg.SQLServerEntraTenantID,
 		}), nil
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", driver)

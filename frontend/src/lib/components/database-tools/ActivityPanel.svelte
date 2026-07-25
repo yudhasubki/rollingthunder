@@ -193,6 +193,8 @@
 			!selectedSession ||
 			!action ||
 			selectedSession.isCurrent ||
+			(action === 'cancel' && !activity?.canCancelQuery) ||
+			(action === 'terminate' && !activity?.canTerminateSession) ||
 			(action === 'cancel' && !actionConfirmed) ||
 			(action === 'terminate' && terminateConfirmation !== selectedSession.id)
 		) {
@@ -470,6 +472,13 @@
 							This session belongs to {APPLICATION.name}. Stop its query from the query tab.
 						</div>
 					{/if}
+					{#if activity.message && (!activity.canCancelQuery || !activity.canTerminateSession)}
+						<div
+							class="rounded-lg border bg-[var(--surface-sunken)] px-3 py-2 text-[8px] leading-relaxed"
+						>
+							{activity.message}
+						</div>
+					{/if}
 					<div class="grid grid-cols-2 gap-2">
 						{#each [['State', selectedSession.state || '-', Play], ['Duration', formatDuration(selectedSession.durationMs), Clock3], ['Client', selectedSession.client || 'local', UserRound], ['Application', selectedSession.application || selectedSession.command || '-', Database]] as detail}
 							{@const DetailIcon = detail[2]}
@@ -570,24 +579,28 @@
 						</div>
 					{:else}
 						<div class="flex gap-2">
-							<button
-								type="button"
-								class="rt-toolbar-button h-9 flex-1 cursor-pointer gap-2 text-[8px] font-bold"
-								onclick={() => (action = 'cancel')}
-								disabled={selectedSession.isCurrent}
-							>
-								<Square class="h-3 w-3 fill-current" />
-								Cancel query
-							</button>
-							<button
-								type="button"
-								class="border-danger-border text-danger hover:bg-danger-soft h-9 flex-1 cursor-pointer rounded-md border text-[8px] font-bold disabled:cursor-not-allowed disabled:opacity-35"
-								onclick={() => (action = 'terminate')}
-								disabled={selectedSession.isCurrent}
-							>
-								<ServerCrash class="mr-2 inline h-3.5 w-3.5" />
-								Terminate
-							</button>
+							{#if activity.canCancelQuery}
+								<button
+									type="button"
+									class="rt-toolbar-button h-9 flex-1 cursor-pointer gap-2 text-[8px] font-bold"
+									onclick={() => (action = 'cancel')}
+									disabled={selectedSession.isCurrent}
+								>
+									<Square class="h-3 w-3 fill-current" />
+									Cancel query
+								</button>
+							{/if}
+							{#if activity.canTerminateSession}
+								<button
+									type="button"
+									class="border-danger-border text-danger hover:bg-danger-soft h-9 flex-1 cursor-pointer rounded-md border text-[8px] font-bold disabled:cursor-not-allowed disabled:opacity-35"
+									onclick={() => (action = 'terminate')}
+									disabled={selectedSession.isCurrent}
+								>
+									<ServerCrash class="mr-2 inline h-3.5 w-3.5" />
+									Terminate
+								</button>
+							{/if}
 						</div>
 					{/if}
 				</footer>

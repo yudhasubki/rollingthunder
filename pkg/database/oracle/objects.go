@@ -614,6 +614,13 @@ func (o *Oracle) GetObjectDetail(
 		Definition: definition,
 		Properties: selected.Properties,
 	}
+	detail.Dependencies, detail.Dependents, err = o.objectDependencies(
+		ctx,
+		selected.Reference,
+	)
+	if err != nil {
+		return database.ObjectDetail{}, err
+	}
 	if reference.Kind == database.ObjectKindTable ||
 		reference.Kind == database.ObjectKindView ||
 		reference.Kind == database.ObjectKindMaterializedView {

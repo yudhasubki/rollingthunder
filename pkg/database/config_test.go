@@ -162,3 +162,94 @@ func TestOracleConnectionSafetyValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSQLServerAuthenticationSafetyValidation(t *testing.T) {
+	valid := []Config{
+		{
+			Driver:            DriverSQLServer,
+			User:              "sa",
+			Password:          "secret",
+			SSLMode:           "require",
+			SQLServerAuthMode: SQLServerAuthSQL,
+		},
+		{
+			Driver:                 DriverSQLServer,
+			User:                   "user@example.com",
+			Password:               "secret",
+			SSLMode:                "verify-full",
+			SQLServerAuthMode:      SQLServerAuthEntraPassword,
+			SQLServerEntraClientID: "application-id",
+		},
+		{
+			Driver:                 DriverSQLServer,
+			Password:               "client-secret",
+			SSLMode:                "verify-full",
+			SQLServerAuthMode:      SQLServerAuthEntraServicePrincipal,
+			SQLServerEntraClientID: "client-id",
+			SQLServerEntraTenantID: "tenant-id",
+		},
+		{
+			Driver:                 DriverSQLServer,
+			User:                   "user@example.com",
+			SSLMode:                "verify-full",
+			SQLServerAuthMode:      SQLServerAuthEntraPassword,
+			SQLServerEntraClientID: "application-id",
+		},
+		{
+			Driver:                 DriverSQLServer,
+			SSLMode:                "verify-full",
+			SQLServerAuthMode:      SQLServerAuthEntraServicePrincipal,
+			SQLServerEntraClientID: "client-id",
+			SQLServerEntraTenantID: "tenant-id",
+		},
+		{
+			Driver:            DriverSQLServer,
+			SSLMode:           "verify-full",
+			SQLServerAuthMode: SQLServerAuthEntraDefault,
+		},
+	}
+	for _, config := range valid {
+		if err := config.ValidateSafety(); err != nil {
+			t.Errorf("valid SQL Server auth config failed: %+v: %v", config, err)
+		}
+	}
+
+	invalid := []Config{
+		{
+			Driver:            DriverSQLServer,
+			SSLMode:           "require",
+			SQLServerAuthMode: SQLServerAuthSQL,
+		},
+		{
+			Driver:            DriverSQLServer,
+			User:              "unexpected",
+			SSLMode:           "require",
+			SQLServerAuthMode: SQLServerAuthIntegrated,
+		},
+		{
+			Driver:                 DriverSQLServer,
+			User:                   "user@example.com",
+			Password:               "secret",
+			SSLMode:                "disable",
+			SQLServerAuthMode:      SQLServerAuthEntraPassword,
+			SQLServerEntraClientID: "application-id",
+		},
+		{
+			Driver:                 DriverSQLServer,
+			Password:               "client-secret",
+			SSLMode:                "verify-full",
+			SQLServerAuthMode:      SQLServerAuthEntraServicePrincipal,
+			SQLServerEntraClientID: "client-id",
+		},
+		{
+			Driver:                 DriverPostgres,
+			SQLServerAuthMode:      SQLServerAuthEntraDefault,
+			SQLServerEntraClientID: "client-id",
+		},
+	}
+	for _, config := range invalid {
+		if err := config.ValidateSafety(); err == nil {
+			t.Errorf("expected unsafe SQL Server auth config to fail: %+v", config)
+		}
+	}
+}

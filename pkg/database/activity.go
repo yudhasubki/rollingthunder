@@ -27,12 +27,14 @@ type DatabaseSession struct {
 }
 
 type DatabaseActivity struct {
-	Supported        bool              `json:"supported"`
-	Engine           string            `json:"engine"`
-	CurrentSessionID string            `json:"currentSessionId,omitempty"`
-	Sessions         []DatabaseSession `json:"sessions"`
-	CapturedAt       time.Time         `json:"capturedAt"`
-	Message          string            `json:"message,omitempty"`
+	Supported           bool              `json:"supported"`
+	Engine              string            `json:"engine"`
+	CurrentSessionID    string            `json:"currentSessionId,omitempty"`
+	CanCancelQuery      bool              `json:"canCancelQuery"`
+	CanTerminateSession bool              `json:"canTerminateSession"`
+	Sessions            []DatabaseSession `json:"sessions"`
+	CapturedAt          time.Time         `json:"capturedAt"`
+	Message             string            `json:"message,omitempty"`
 }
 
 type CancelSessionRequest struct {
