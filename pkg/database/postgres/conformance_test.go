@@ -28,6 +28,9 @@ func TestPostgresLiveConformance(t *testing.T) {
 		SSLRootCert: os.Getenv("ROLLINGTHUNDER_POSTGRES_TEST_SSL_ROOT_CERT"),
 		SSLCert:     os.Getenv("ROLLINGTHUNDER_POSTGRES_TEST_SSL_CERT"),
 		SSLKey:      os.Getenv("ROLLINGTHUNDER_POSTGRES_TEST_SSL_KEY"),
+		TLSServerName: os.Getenv(
+			"ROLLINGTHUNDER_POSTGRES_TEST_TLS_SERVER_NAME",
+		),
 	}
 	driver := NewPostgres(context.Background(), config)
 	if err := driver.Connect(context.Background()); err != nil {

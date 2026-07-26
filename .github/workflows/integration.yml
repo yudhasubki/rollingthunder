@@ -51,7 +51,7 @@ jobs:
   postgres:
     name: PostgreSQL ${{ matrix.version }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -101,10 +101,50 @@ jobs:
           ROLLINGTHUNDER_TEST_PRIVILEGED: "1"
         run: go test ./pkg/database/postgres -run TestPostgresLiveConformance -count=1 -v
 
+      - name: Configure required PostgreSQL TLS
+        env:
+          POSTGRES_SERVICE_CONTAINER: ${{ job.services.postgres.id }}
+          POSTGRES_TLS_FIXTURES: ${{ github.workspace }}/.database-ci-tls/postgres
+          POSTGRES_TLS_CLIENT_ROLE: rolling_tls
+        run: >-
+          bash .github/scripts/configure-postgres-tls.sh
+          "$POSTGRES_SERVICE_CONTAINER"
+          "$POSTGRES_TLS_FIXTURES"
+          "$POSTGRES_TLS_CLIENT_ROLE"
+
+      - name: Run PostgreSQL TLS conformance
+        env:
+          ROLLINGTHUNDER_POSTGRES_TEST_HOST: 127.0.0.1
+          ROLLINGTHUNDER_POSTGRES_TEST_PORT: "5432"
+          ROLLINGTHUNDER_POSTGRES_TEST_USER: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_PASSWORD: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_DATABASE: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_REQUIRE_TLS: "1"
+          ROLLINGTHUNDER_POSTGRES_TEST_TLS_SERVER_NAME: localhost
+          ROLLINGTHUNDER_POSTGRES_TEST_TLS_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/postgres/ca-cert.pem
+          ROLLINGTHUNDER_POSTGRES_TEST_TLS_WRONG_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/postgres/wrong-ca-cert.pem
+          ROLLINGTHUNDER_POSTGRES_TEST_TLS_CLIENT_CERT: ${{ github.workspace }}/.database-ci-tls/postgres/client-cert.pem
+          ROLLINGTHUNDER_POSTGRES_TEST_TLS_CLIENT_KEY: ${{ github.workspace }}/.database-ci-tls/postgres/client-key.pem
+          ROLLINGTHUNDER_POSTGRES_TEST_TLS_CLIENT_ROLE: rolling_tls
+        run: go test ./pkg/database/postgres -run TestPostgresTLSLiveConformance -count=1 -v
+
+      - name: Run PostgreSQL driver conformance over verified TLS
+        env:
+          ROLLINGTHUNDER_POSTGRES_TEST_HOST: 127.0.0.1
+          ROLLINGTHUNDER_POSTGRES_TEST_PORT: "5432"
+          ROLLINGTHUNDER_POSTGRES_TEST_USER: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_PASSWORD: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_DATABASE: rolling
+          ROLLINGTHUNDER_POSTGRES_TEST_SSL_MODE: verify-full
+          ROLLINGTHUNDER_POSTGRES_TEST_SSL_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/postgres/ca-cert.pem
+          ROLLINGTHUNDER_POSTGRES_TEST_TLS_SERVER_NAME: localhost
+          ROLLINGTHUNDER_TEST_PRIVILEGED: "1"
+        run: go test ./pkg/database/postgres -run TestPostgresLiveConformance -count=1 -v
+
   mysql-compatible:
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -180,6 +220,46 @@ jobs:
           ROLLINGTHUNDER_MYSQL_TEST_PASSWORD: rolling
           ROLLINGTHUNDER_MYSQL_TEST_DATABASE: rolling
           ROLLINGTHUNDER_MYSQL_TEST_SSL_MODE: disable
+          ROLLINGTHUNDER_TEST_PRIVILEGED: "1"
+        run: go test ./pkg/database/mysql -run TestMySQLLiveConformance -count=1 -v
+
+      - name: Configure required MySQL-compatible TLS
+        env:
+          MYSQL_SERVICE_CONTAINER: ${{ job.services.database.id }}
+          MYSQL_TLS_FIXTURES: ${{ github.workspace }}/.database-ci-tls/mysql
+          MYSQL_TLS_CLIENT_USER: rolling_tls
+        run: >-
+          bash .github/scripts/configure-mysql-tls.sh
+          "$MYSQL_SERVICE_CONTAINER"
+          "$MYSQL_TLS_FIXTURES"
+          "$MYSQL_TLS_CLIENT_USER"
+
+      - name: Run MySQL-compatible TLS conformance
+        env:
+          ROLLINGTHUNDER_MYSQL_TEST_HOST: 127.0.0.1
+          ROLLINGTHUNDER_MYSQL_TEST_PORT: "3306"
+          ROLLINGTHUNDER_MYSQL_TEST_USER: root
+          ROLLINGTHUNDER_MYSQL_TEST_PASSWORD: rolling
+          ROLLINGTHUNDER_MYSQL_TEST_DATABASE: rolling
+          ROLLINGTHUNDER_MYSQL_TEST_REQUIRE_TLS: "1"
+          ROLLINGTHUNDER_MYSQL_TEST_TLS_SERVER_NAME: localhost
+          ROLLINGTHUNDER_MYSQL_TEST_TLS_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/mysql/ca-cert.pem
+          ROLLINGTHUNDER_MYSQL_TEST_TLS_WRONG_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/mysql/wrong-ca-cert.pem
+          ROLLINGTHUNDER_MYSQL_TEST_TLS_CLIENT_CERT: ${{ github.workspace }}/.database-ci-tls/mysql/client-cert.pem
+          ROLLINGTHUNDER_MYSQL_TEST_TLS_CLIENT_KEY: ${{ github.workspace }}/.database-ci-tls/mysql/client-key.pem
+          ROLLINGTHUNDER_MYSQL_TEST_TLS_CLIENT_USER: rolling_tls
+        run: go test ./pkg/database/mysql -run TestMySQLTLSLiveConformance -count=1 -v
+
+      - name: Run MySQL-compatible driver conformance over verified TLS
+        env:
+          ROLLINGTHUNDER_MYSQL_TEST_HOST: 127.0.0.1
+          ROLLINGTHUNDER_MYSQL_TEST_PORT: "3306"
+          ROLLINGTHUNDER_MYSQL_TEST_USER: root
+          ROLLINGTHUNDER_MYSQL_TEST_PASSWORD: rolling
+          ROLLINGTHUNDER_MYSQL_TEST_DATABASE: rolling
+          ROLLINGTHUNDER_MYSQL_TEST_SSL_MODE: verify-full
+          ROLLINGTHUNDER_MYSQL_TEST_SSL_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/mysql/ca-cert.pem
+          ROLLINGTHUNDER_MYSQL_TEST_TLS_SERVER_NAME: localhost
           ROLLINGTHUNDER_TEST_PRIVILEGED: "1"
         run: go test ./pkg/database/mysql -run TestMySQLLiveConformance -count=1 -v
 

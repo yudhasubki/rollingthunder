@@ -2,4 +2,5 @@ build/bin
 node_modules
 frontend/dist
 .oracle-ci-wallet/
+.database-ci-tls/
 ref/**

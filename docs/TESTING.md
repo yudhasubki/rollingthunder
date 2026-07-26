@@ -82,6 +82,42 @@ ROLLINGTHUNDER_POSTGRES_TEST_SSL_MODE=disable \
 go test ./pkg/database/postgres -run TestPostgresLiveConformance -count=1 -v
 ```
 
+Every PostgreSQL matrix job then enables TLS on its disposable container and runs a required live
+TLS suite. The fixture generator uses Go's `crypto/x509` standard library, writes private keys with
+mode `0600`, and does not require repository secrets. The setup rewrites the disposable server's
+TLS and host-authentication configuration, rejects plaintext TCP connections, and restarts it:
+
+```bash
+bash .github/scripts/configure-postgres-tls.sh \
+  rollingthunder-postgres \
+  .database-ci-tls/postgres \
+  rolling_tls
+```
+
+Run the TLS suite with:
+
+```bash
+ROLLINGTHUNDER_POSTGRES_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_POSTGRES_TEST_PORT=5432 \
+ROLLINGTHUNDER_POSTGRES_TEST_USER=rolling \
+ROLLINGTHUNDER_POSTGRES_TEST_PASSWORD=rolling \
+ROLLINGTHUNDER_POSTGRES_TEST_DATABASE=rolling \
+ROLLINGTHUNDER_POSTGRES_TEST_REQUIRE_TLS=1 \
+ROLLINGTHUNDER_POSTGRES_TEST_TLS_SERVER_NAME=localhost \
+ROLLINGTHUNDER_POSTGRES_TEST_TLS_ROOT_CERT="$PWD/.database-ci-tls/postgres/ca-cert.pem" \
+ROLLINGTHUNDER_POSTGRES_TEST_TLS_WRONG_ROOT_CERT="$PWD/.database-ci-tls/postgres/wrong-ca-cert.pem" \
+ROLLINGTHUNDER_POSTGRES_TEST_TLS_CLIENT_CERT="$PWD/.database-ci-tls/postgres/client-cert.pem" \
+ROLLINGTHUNDER_POSTGRES_TEST_TLS_CLIENT_KEY="$PWD/.database-ci-tls/postgres/client-key.pem" \
+ROLLINGTHUNDER_POSTGRES_TEST_TLS_CLIENT_ROLE=rolling_tls \
+go test ./pkg/database/postgres -run TestPostgresTLSLiveConformance -count=1 -v
+```
+
+It proves `require`, `verify-ca`, and `verify-full` create encrypted sessions; rejects plaintext,
+an unrelated CA, and a wrong hostname; and verifies PostgreSQL `cert` authentication both rejects a
+missing client certificate and exposes the expected client DN after a successful connection. CI
+then reruns `TestPostgresLiveConformance` with `SSL_MODE=verify-full` so the complete shared driver
+contract, not only the handshake probes, executes over verified TLS.
+
 ### MySQL
 
 ```bash
@@ -109,6 +145,40 @@ ROLLINGTHUNDER_MYSQL_TEST_DATABASE=rolling \
 ROLLINGTHUNDER_MYSQL_TEST_SSL_MODE=disable \
 go test ./pkg/database/mysql -run TestMySQLLiveConformance -count=1 -v
 ```
+
+The required MySQL/MariaDB TLS gate uses the same Go-generated certificate model. Run the setup
+only against a disposable container: it installs a private server key, enables
+`require_secure_transport`, and restarts the server.
+
+```bash
+bash .github/scripts/configure-mysql-tls.sh \
+  rollingthunder-mysql \
+  .database-ci-tls/mysql \
+  rolling_tls
+```
+
+Then run:
+
+```bash
+ROLLINGTHUNDER_MYSQL_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_MYSQL_TEST_PORT=3306 \
+ROLLINGTHUNDER_MYSQL_TEST_USER=root \
+ROLLINGTHUNDER_MYSQL_TEST_PASSWORD=rolling \
+ROLLINGTHUNDER_MYSQL_TEST_DATABASE=rolling \
+ROLLINGTHUNDER_MYSQL_TEST_REQUIRE_TLS=1 \
+ROLLINGTHUNDER_MYSQL_TEST_TLS_SERVER_NAME=localhost \
+ROLLINGTHUNDER_MYSQL_TEST_TLS_ROOT_CERT="$PWD/.database-ci-tls/mysql/ca-cert.pem" \
+ROLLINGTHUNDER_MYSQL_TEST_TLS_WRONG_ROOT_CERT="$PWD/.database-ci-tls/mysql/wrong-ca-cert.pem" \
+ROLLINGTHUNDER_MYSQL_TEST_TLS_CLIENT_CERT="$PWD/.database-ci-tls/mysql/client-cert.pem" \
+ROLLINGTHUNDER_MYSQL_TEST_TLS_CLIENT_KEY="$PWD/.database-ci-tls/mysql/client-key.pem" \
+ROLLINGTHUNDER_MYSQL_TEST_TLS_CLIENT_USER=rolling_tls \
+go test ./pkg/database/mysql -run TestMySQLTLSLiveConformance -count=1 -v
+```
+
+The suite checks the negotiated session cipher, all three supported TLS modes, trust and hostname
+failures, plaintext rejection, and a disposable `REQUIRE X509` account with and without its client
+certificate. CI runs it for every supported MySQL and MariaDB image, then repeats the complete
+`TestMySQLLiveConformance` contract over `verify-full`.
 
 ### Oracle Database
 

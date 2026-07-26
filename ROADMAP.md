@@ -36,6 +36,8 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Built-in SQLite backup/restore and native PostgreSQL/MySQL/MariaDB maintenance workflows
 - [x] PostgreSQL role and MySQL/MariaDB user/grant administration
 - [x] PostgreSQL/MySQL/MariaDB activity and blocker monitoring
+- [x] Required live PostgreSQL/MySQL/MariaDB TLS conformance with CA and hostname verification,
+      negative trust cases, plaintext rejection, and client-certificate authentication
 - [x] Strictly verified SSH tunnels with OS-managed secrets
 - [x] Oracle users/roles/grants, activity monitoring, native Data Pump backup/restore, TNS aliases,
       and Wallet-based TCPS
