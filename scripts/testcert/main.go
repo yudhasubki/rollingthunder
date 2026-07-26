@@ -41,6 +41,12 @@ type fixtureOptions struct {
 	now              time.Time
 }
 
+type fixtureFile struct {
+	name  string
+	block *pem.Block
+	mode  os.FileMode
+}
+
 func main() {
 	outputDirectory := flag.String(
 		"output",
@@ -50,7 +56,7 @@ func main() {
 	clientCommonName := flag.String(
 		"client-common-name",
 		"",
-		"common name embedded in the client certificate",
+		"optional common name embedded in a generated client certificate",
 	)
 	flag.Parse()
 
@@ -68,7 +74,8 @@ func generateFixtures(options fixtureOptions) error {
 	if options.outputDirectory == "" {
 		return errors.New("output directory is required")
 	}
-	if !commonNamePattern.MatchString(options.clientCommonName) {
+	if options.clientCommonName != "" &&
+		!commonNamePattern.MatchString(options.clientCommonName) {
 		return errors.New("client common name contains unsupported characters")
 	}
 	if options.now.IsZero() {
@@ -113,25 +120,7 @@ func generateFixtures(options fixtureOptions) error {
 	if err != nil {
 		return err
 	}
-	clientCertificate, clientKey, err := newLeafCertificate(
-		root,
-		leafOptions{
-			commonName: options.clientCommonName,
-			extendedKeyUsage: []x509.ExtKeyUsage{
-				x509.ExtKeyUsageClientAuth,
-			},
-			now: options.now,
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	files := []struct {
-		name  string
-		block *pem.Block
-		mode  os.FileMode
-	}{
+	files := []fixtureFile{
 		{
 			name:  "ca-cert.pem",
 			block: &pem.Block{Type: "CERTIFICATE", Bytes: rootPEM},
@@ -154,22 +143,6 @@ func generateFixtures(options fixtureOptions) error {
 			mode: privateFileMode,
 		},
 		{
-			name: "client-cert.pem",
-			block: &pem.Block{
-				Type:  "CERTIFICATE",
-				Bytes: clientCertificate,
-			},
-			mode: publicFileMode,
-		},
-		{
-			name: "client-key.pem",
-			block: &pem.Block{
-				Type:  "RSA PRIVATE KEY",
-				Bytes: x509.MarshalPKCS1PrivateKey(clientKey),
-			},
-			mode: privateFileMode,
-		},
-		{
 			name: "wrong-ca-cert.pem",
 			block: &pem.Block{
 				Type:  "CERTIFICATE",
@@ -178,6 +151,39 @@ func generateFixtures(options fixtureOptions) error {
 			mode: publicFileMode,
 		},
 	}
+	if options.clientCommonName != "" {
+		clientCertificate, clientKey, err := newLeafCertificate(
+			root,
+			leafOptions{
+				commonName: options.clientCommonName,
+				extendedKeyUsage: []x509.ExtKeyUsage{
+					x509.ExtKeyUsageClientAuth,
+				},
+				now: options.now,
+			},
+		)
+		if err != nil {
+			return err
+		}
+		files = append(files,
+			fixtureFile{
+				name: "client-cert.pem",
+				block: &pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: clientCertificate,
+				},
+				mode: publicFileMode,
+			},
+			fixtureFile{
+				name: "client-key.pem",
+				block: &pem.Block{
+					Type:  "RSA PRIVATE KEY",
+					Bytes: x509.MarshalPKCS1PrivateKey(clientKey),
+				},
+				mode: privateFileMode,
+			},
+		)
+	}
 	for _, file := range files {
 		if err := writePEMAtomically(
 			filepath.Join(options.outputDirectory, file.name),
@@ -185,6 +191,15 @@ func generateFixtures(options fixtureOptions) error {
 			file.mode,
 		); err != nil {
 			return err
+		}
+	}
+	if options.clientCommonName == "" {
+		for _, name := range []string{"client-cert.pem", "client-key.pem"} {
+			if err := os.Remove(
+				filepath.Join(options.outputDirectory, name),
+			); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove stale TLS fixture %s: %w", name, err)
+			}
 		}
 	}
 	return nil

@@ -296,6 +296,39 @@ Set `ROLLINGTHUNDER_SQLSERVER_TEST_BACKUP_PATH` when the server does not expose
 `/var/opt/mssql/data/rt_native_backup_conformance.bak`. The path is evaluated on the SQL Server
 host and its service account must be able to create and restore that file.
 
+Every SQL Server matrix job next installs a short-lived CA-signed server certificate, restricts its
+private key to the `mssql` account, enables TLS 1.2 and `network.forceencryption`, and restarts the
+disposable container. The setup follows
+[Microsoft's SQL Server on Linux TLS settings](https://learn.microsoft.com/en-us/sql/linux/security/encrypted-connections):
+
+```bash
+bash .github/scripts/configure-sqlserver-tls.sh \
+  rollingthunder-sqlserver \
+  .database-ci-tls/sqlserver
+```
+
+Run the required transport probes with:
+
+```bash
+ROLLINGTHUNDER_SQLSERVER_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_PORT=1433 \
+ROLLINGTHUNDER_SQLSERVER_TEST_USER=sa \
+ROLLINGTHUNDER_SQLSERVER_TEST_PASSWORD='RollingThunder_2026!' \
+ROLLINGTHUNDER_SQLSERVER_TEST_DATABASE=master \
+ROLLINGTHUNDER_SQLSERVER_TEST_REQUIRE_TLS=1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME=localhost \
+ROLLINGTHUNDER_SQLSERVER_TEST_TLS_ROOT_CERT="$PWD/.database-ci-tls/sqlserver/ca-cert.pem" \
+ROLLINGTHUNDER_SQLSERVER_TEST_TLS_WRONG_ROOT_CERT="$PWD/.database-ci-tls/sqlserver/wrong-ca-cert.pem" \
+go test ./pkg/database/sqlserver -run TestSQLServerTLSLiveConformance -count=1 -v
+```
+
+The suite verifies that `require`, `verify-ca`, and `verify-full` negotiate an encrypted TCP
+session, while plaintext, an unrelated CA, and a wrong hostname fail closed. CI then repeats
+`TestSQLServerLiveConformance` with `SSL_MODE=verify-full`, including privileged security and native
+backup/restore. SQL Server TLS authenticates the server; its database connection does not use the
+PostgreSQL/MySQL-style client certificate fields. Windows Integrated and Microsoft Entra
+authentication retain their separate environment-specific checks.
+
 ## SSH tunnel checks
 
 The unit suite starts an in-process SSH server and TCP target where local listeners are permitted.

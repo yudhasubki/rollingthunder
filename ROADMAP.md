@@ -38,6 +38,8 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] PostgreSQL/MySQL/MariaDB activity and blocker monitoring
 - [x] Required live PostgreSQL/MySQL/MariaDB TLS conformance with CA and hostname verification,
       negative trust cases, plaintext rejection, and client-certificate authentication
+- [x] Required live SQL Server TLS conformance with server-forced encryption, pinned CA and hostname
+      verification, negative trust cases, and the full driver contract over `verify-full`
 - [x] Strictly verified SSH tunnels with OS-managed secrets
 - [x] Oracle users/roles/grants, activity monitoring, native Data Pump backup/restore, TNS aliases,
       and Wallet-based TCPS

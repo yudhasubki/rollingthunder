@@ -112,6 +112,44 @@ func TestGenerateFixturesRejectsUnsafeClientCommonName(t *testing.T) {
 	}
 }
 
+func TestGenerateFixturesCanOmitClientCertificate(t *testing.T) {
+	t.Parallel()
+	outputDirectory := filepath.Join(t.TempDir(), "fixtures")
+	if err := os.MkdirAll(outputDirectory, outputDirectoryMode); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"client-cert.pem", "client-key.pem"} {
+		if err := os.WriteFile(
+			filepath.Join(outputDirectory, name),
+			[]byte("stale"),
+			privateFileMode,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := generateFixtures(fixtureOptions{
+		outputDirectory: outputDirectory,
+		now:             time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"ca-cert.pem",
+		"server-cert.pem",
+		"server-key.pem",
+		"wrong-ca-cert.pem",
+	} {
+		if _, err := os.Stat(filepath.Join(outputDirectory, name)); err != nil {
+			t.Fatalf("expected server fixture %s: %v", name, err)
+		}
+	}
+	for _, name := range []string{"client-cert.pem", "client-key.pem"} {
+		if _, err := os.Stat(filepath.Join(outputDirectory, name)); !os.IsNotExist(err) {
+			t.Fatalf("unexpected client fixture %s: %v", name, err)
+		}
+	}
+}
+
 func readCertificate(t *testing.T, path string) *x509.Certificate {
 	t.Helper()
 	contents, err := os.ReadFile(path)

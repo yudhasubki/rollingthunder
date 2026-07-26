@@ -198,9 +198,10 @@
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.4/9.7 LTS with legacy 8.0
   compatibility, MariaDB 10.11/11.4/11.8/12.3 LTS, SQL Server 2022/2025, and Oracle Database Free
   23.x. PostgreSQL and MySQL/MariaDB require live TLS, CA/hostname rejection, and client-certificate
-  conformance on every matrix job. Oracle core, least-privilege, edge-type, cancellation, TNS, TLS,
-  and Wallet conformance is a pull-request gate; repeated runs and Data Pump remain scheduled
-  extended checks.
+  conformance on every matrix job. SQL Server requires forced encryption, CA/hostname rejection,
+  and full driver conformance over verified TLS. Oracle core, least-privilege, edge-type,
+  cancellation, TNS, TLS, and Wallet conformance is a pull-request gate; repeated runs and Data Pump
+  remain scheduled extended checks.
 - Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
   attestations. Platform signing is optional and never required for preview builds.
 
@@ -212,7 +213,7 @@
 | MySQL / MariaDB | Available           | Databases, tables, views, routines/triggers           | Sync, backup, users/grants, activity      | 8.0/8.4/9.7; MariaDB 10.11-12.3 + TLS/mTLS |
 | SQLite          | Available           | Attached DBs, tables, views, triggers                 | Sync and built-in online backup/restore   | Bundled engine                    |
 | Oracle Database Free | Stable         | Schemas, tables, views, MVs, routines, triggers, dependencies | Sync, Data Pump, users/grants, activity | 23.x required core + weekly extended |
-| SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences, dependencies | Sync, native backup, security, activity | 2022 and 2025 |
+| SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences, dependencies | Sync, native backup, security, activity | 2022/2025 + required TLS |
 
 The stable Oracle scope is Oracle Database Free 23.x, currently tested with the pinned full 23.26
 image. Enterprise/Standard editions, RAC, and Autonomous Database are not part of that compatibility

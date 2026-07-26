@@ -266,7 +266,7 @@ jobs:
   sql-server:
     name: SQL Server ${{ matrix.version }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       RT_INTEGRATION_SQLSERVER: "1"
       RT_DATABASE_HOST: 127.0.0.1
@@ -316,6 +316,30 @@ jobs:
         run: go test ./integration -run TestSQLServerDriverWorkflow -count=1 -v
 
       - name: Run SQL Server driver conformance
+        run: go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v
+
+      - name: Configure required SQL Server TLS
+        env:
+          SQLSERVER_SERVICE_CONTAINER: ${{ job.services.database.id }}
+          SQLSERVER_TLS_FIXTURES: ${{ github.workspace }}/.database-ci-tls/sqlserver
+        run: >-
+          bash .github/scripts/configure-sqlserver-tls.sh
+          "$SQLSERVER_SERVICE_CONTAINER"
+          "$SQLSERVER_TLS_FIXTURES"
+
+      - name: Run SQL Server TLS conformance
+        env:
+          ROLLINGTHUNDER_SQLSERVER_TEST_REQUIRE_TLS: "1"
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME: localhost
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/sqlserver/ca-cert.pem
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_WRONG_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/sqlserver/wrong-ca-cert.pem
+        run: go test ./pkg/database/sqlserver -run TestSQLServerTLSLiveConformance -count=1 -v
+
+      - name: Run SQL Server driver conformance over verified TLS
+        env:
+          ROLLINGTHUNDER_SQLSERVER_TEST_SSL_MODE: verify-full
+          ROLLINGTHUNDER_SQLSERVER_TEST_SSL_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/sqlserver/ca-cert.pem
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME: localhost
         run: go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v
 
   oracle:

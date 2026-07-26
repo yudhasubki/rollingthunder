@@ -3,9 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const workflowPath = new URL('../../.github/workflows/integration.yml', import.meta.url);
+const tlsSetupPath = new URL('../../.github/scripts/configure-sqlserver-tls.sh', import.meta.url);
 
-test('SQL Server CI exercises privileged security and native backup restore', async () => {
+test('SQL Server CI exercises administration and required verified TLS', async () => {
 	const workflow = await readFile(workflowPath, 'utf8');
+	const tlsSetup = await readFile(tlsSetupPath, 'utf8');
 	const start = workflow.indexOf('\n  sql-server:');
 	const end = workflow.indexOf('\n  oracle:', start);
 	const sqlServerJob = workflow.slice(start, end);
@@ -17,4 +19,19 @@ test('SQL Server CI exercises privileged security and native backup restore', as
 		sqlServerJob,
 		/go test \.\/pkg\/database\/sqlserver -run TestSQLServerLiveConformance/
 	);
+	assert.match(sqlServerJob, /configure-sqlserver-tls\.sh/);
+	assert.match(sqlServerJob, /ROLLINGTHUNDER_SQLSERVER_TEST_REQUIRE_TLS: "1"/);
+	assert.match(sqlServerJob, /ROLLINGTHUNDER_SQLSERVER_TEST_TLS_WRONG_ROOT_CERT:/);
+	assert.match(
+		sqlServerJob,
+		/go test \.\/pkg\/database\/sqlserver -run TestSQLServerTLSLiveConformance/
+	);
+	assert.match(sqlServerJob, /Run SQL Server driver conformance over verified TLS/);
+	assert.match(sqlServerJob, /ROLLINGTHUNDER_SQLSERVER_TEST_SSL_MODE: verify-full/);
+	assert.match(tlsSetup, /go run \.\/scripts\/testcert/);
+	assert.match(tlsSetup, /chown -R mssql:mssql/);
+	assert.match(tlsSetup, /chmod 0400/);
+	assert.match(tlsSetup, /network\.tlsprotocols 1\.2/);
+	assert.match(tlsSetup, /network\.forceencryption 1/);
+	assert.match(tlsSetup, /docker restart/);
 });

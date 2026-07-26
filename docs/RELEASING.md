@@ -11,9 +11,10 @@ the input is provided.
 - `ci.yml`: Go tests, race detector, vet, frontend tests/lint/build, and a Linux Wails build.
 - `integration.yml`: SQLite plus PostgreSQL 14-18, MySQL 8.4/9.7 LTS with legacy 8.0
   compatibility, MariaDB 10.11/11.4/11.8/12.3 LTS, and SQL Server 2022/2025 on every relevant
-  change. SQL Server conformance includes disposable security administration and a native
-  backup/restore round trip. The larger official Oracle Database Free image runs on the weekly
-  schedule and manual workflow dispatches.
+  change. Every SQL Server matrix entry requires server-forced encryption, negative CA/hostname
+  checks, and the full driver contract over verified TLS, including disposable security
+  administration and a native backup/restore round trip. The larger official Oracle Database Free
+  image runs on the weekly schedule and manual workflow dispatches.
 - `release.yml`: validates the source, builds native macOS arm64/amd64, Windows amd64, and Linux
   amd64 packages, optionally signs Windows/Linux builds, creates SHA-256 checksums, emits a
   GitHub/Sigstore provenance attestation, and uploads the assets to the published release.
