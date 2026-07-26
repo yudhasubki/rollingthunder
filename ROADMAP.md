@@ -209,10 +209,12 @@ change schema, security, or database contents.
 - [x] Preserve the original database endpoint in profile/UI metadata while drivers and maintenance
       tools use the tunnel endpoint.
 
-## Milestone 7 - Oracle and SQL Server beta
+## Milestone 7 - Oracle stable scope and SQL Server beta
 
 The new drivers share the same safety and capability contracts as the established engines while
-remaining explicitly labeled beta until production feedback closes their engine-specific gaps.
+exposing engine-specific behavior honestly. Oracle Database Free 23.x graduates to stable through
+required live conformance; SQL Server remains explicitly labeled beta until production feedback
+closes its engine-specific gaps.
 
 ### Core driver workflows
 
@@ -232,11 +234,19 @@ remaining explicitly labeled beta until production feedback closes their engine-
 - [x] Disclose Oracle's auto-committing DDL behavior instead of claiming transactional rollback.
 - [x] Include Oracle and SQL Server in same-engine schema sync and atomic data sync.
 
-### Verification and remaining beta scope
+### Verification and support graduation
 
 - [x] Add shared live conformance entry points for both drivers.
 - [x] Test SQL Server 2022 and 2025 in the regular CI matrix.
-- [x] Test the current official Oracle Database Free image weekly and on manual workflow runs.
+- [x] Run Oracle core conformance on pull requests and the default branch using the pinned full
+      Oracle Database Free image.
+- [x] Exercise Oracle core workflows through a disposable application user with object-owner
+      privileges and a bounded tablespace quota.
+- [x] Round-trip Oracle CLOB, BLOB, RAW, Unicode, NULL, timestamp/time-zone, and quoted-identifier
+      values.
+- [x] Verify Oracle reconnect, deadline, explicit query cancellation, direct/TNS connections,
+      certificate verification, auto-login/password Wallets, and TNS over TCPS.
+- [x] Repeat Oracle stable conformance and Data Pump backup/restore on weekly and manual runs.
 - [x] Add native Oracle Data Pump backup/restore with reviewed server DIRECTORY staging.
 - [x] Add native SQL Server backup/restore workflows.
 - [x] Add Oracle security administration and activity monitoring.
@@ -245,12 +255,14 @@ remaining explicitly labeled beta until production feedback closes their engine-
 - [x] Add SQL Server Entra/integrated authentication.
 - [x] Add dependency graphs beyond normalized table relationships.
 
-All seven planned milestones now have implemented, testable core scope. Oracle and SQL Server remain
-beta while their administration, native maintenance, authentication, and dependency workflows
-collect production feedback. Future work is intentionally feedback-driven rather than an open
-milestone: candidates include richer visual explain plans, migration support for complex
-constraints, Azure SQL `BACKUP TO URL`, broader managed-cloud conformance, and signed/notarized
-macOS distribution when project signing resources become available.
+All seven planned milestones now have implemented, testable core scope. Oracle Database Free 23.x
+is stable within the tested scope; Enterprise/Standard editions, RAC, and Autonomous Database
+remain unverified until dedicated live environments are available. SQL Server remains beta while
+its administration, native maintenance, authentication, and dependency workflows collect
+production feedback. Future work is intentionally feedback-driven rather than an open milestone:
+candidates include richer visual explain plans, migration support for complex constraints, Azure
+SQL `BACKUP TO URL`, broader managed-cloud conformance, and signed/notarized macOS distribution when
+project signing resources become available.
 
 ## Prioritization principles
 

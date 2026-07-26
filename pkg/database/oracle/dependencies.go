@@ -129,9 +129,9 @@ func (o *Oracle) catalogDependencies(
 			referenced_name,
 			referenced_type
 		FROM all_dependencies
-		WHERE owner = :1
-			AND name = :2
-			AND type = :3
+		WHERE owner = :owner
+			AND name = :object_name
+			AND type = :object_type
 			AND referenced_owner IS NOT NULL
 			AND referenced_name IS NOT NULL
 			AND referenced_owner NOT IN ('SYS', 'PUBLIC')
@@ -144,9 +144,9 @@ func (o *Oracle) catalogDependencies(
 				name,
 				type
 			FROM all_dependencies
-			WHERE referenced_owner = :1
-				AND referenced_name = :2
-				AND referenced_type = :3
+			WHERE referenced_owner = :owner
+				AND referenced_name = :object_name
+				AND referenced_type = :object_type
 				AND owner NOT IN ('SYS', 'PUBLIC')
 			ORDER BY owner, type, name`
 		description = "References this object"
@@ -154,9 +154,9 @@ func (o *Oracle) catalogDependencies(
 	rows, err := o.conn.QueryContext(
 		ctx,
 		query,
-		selected.Schema,
-		selected.Name,
-		objectType,
+		sql.Named("owner", selected.Schema),
+		sql.Named("object_name", selected.Name),
+		sql.Named("object_type", objectType),
 	)
 	if err != nil {
 		return err
@@ -355,13 +355,16 @@ func (o *Oracle) tableChildDependencies(
 			AND object_name IN (
 				SELECT index_name
 				FROM all_indexes
-				WHERE table_owner = :1 AND table_name = :2
+				WHERE table_owner = :2 AND table_name = :3
 				UNION ALL
 				SELECT trigger_name
 				FROM all_triggers
-				WHERE table_owner = :1 AND table_name = :2
+				WHERE table_owner = :4 AND table_name = :5
 			)
 		ORDER BY object_type, object_name`,
+		selected.Schema,
+		selected.Schema,
+		selected.Name,
 		selected.Schema,
 		selected.Name,
 	)

@@ -537,8 +537,9 @@ func (o *Oracle) objectDefinition(
 	var definition sql.NullString
 	metadataErr := o.conn.QueryRowContext(
 		ctx,
-		"SELECT DBMS_METADATA.GET_DDL(:1, :2, :3) FROM dual",
-		objectType,
+		"SELECT DBMS_METADATA.GET_DDL('"+
+			objectType+
+			"', :1, :2) FROM dual",
 		reference.Name,
 		o.defaultSchema(reference.Schema),
 	).Scan(&definition)
@@ -607,7 +608,11 @@ func (o *Oracle) GetObjectDetail(
 	}
 	definition, err := o.objectDefinition(ctx, selected.Reference)
 	if err != nil {
-		return database.ObjectDetail{}, err
+		return database.ObjectDetail{}, fmt.Errorf(
+			"read Oracle %s definition: %w",
+			selected.Reference.Kind,
+			err,
+		)
 	}
 	detail := database.ObjectDetail{
 		Object:     *selected,
@@ -619,7 +624,11 @@ func (o *Oracle) GetObjectDetail(
 		selected.Reference,
 	)
 	if err != nil {
-		return database.ObjectDetail{}, err
+		return database.ObjectDetail{}, fmt.Errorf(
+			"read Oracle %s dependencies: %w",
+			selected.Reference.Kind,
+			err,
+		)
 	}
 	if reference.Kind == database.ObjectKindTable ||
 		reference.Kind == database.ObjectKindView ||
@@ -629,7 +638,11 @@ func (o *Oracle) GetObjectDetail(
 			Name:   reference.Name,
 		})
 		if err != nil {
-			return database.ObjectDetail{}, err
+			return database.ObjectDetail{}, fmt.Errorf(
+				"read Oracle %s columns: %w",
+				selected.Reference.Kind,
+				err,
+			)
 		}
 	}
 	return detail, nil

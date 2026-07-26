@@ -302,37 +302,42 @@ func TestOracleCatalogViewDDL(t *testing.T) {
 }
 
 func TestOracleLiveConformance(t *testing.T) {
-	host := os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_HOST")
-	if host == "" {
-		t.Skip("set ROLLINGTHUNDER_ORACLE_TEST_HOST to run live Oracle conformance")
-	}
-	config := Config{
-		Host:     host,
-		Port:     os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_PORT"),
-		User:     os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_USER"),
-		Password: os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_PASSWORD"),
-		Db:       os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_SERVICE"),
-		SSLMode:  os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_SSL_MODE"),
-	}
-	driver := NewOracle(context.Background(), config)
-	if err := driver.Connect(context.Background()); err != nil {
-		t.Fatalf("Connect() error = %v", err)
-	}
-	t.Cleanup(func() {
-		if err := driver.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
+	config := oracleLiveConfig(t)
+	admin := connectOracleLive(t, config)
+	t.Run("privileged_driver_contract", func(t *testing.T) {
+		schema := admin.currentSchema
+		if strings.TrimSpace(schema) == "" {
+			t.Fatal("Oracle current schema is empty")
 		}
+		drivertest.RunLiveContract(t, drivertest.LiveConfig{
+			Driver:             admin,
+			Schema:             schema,
+			IntegerType:        "NUMBER(10)",
+			TextType:           "VARCHAR2(255)",
+			ExercisePrivileged: os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_PRIVILEGED") == "1",
+		})
 	})
-	schema := driver.currentSchema
-	if strings.TrimSpace(schema) == "" {
-		t.Fatal("Oracle current schema is empty")
+	t.Run("least_privilege_driver_contract", func(t *testing.T) {
+		runOracleLeastPrivilegeConformance(t, admin)
+	})
+	t.Run("edge_type_round_trip", func(t *testing.T) {
+		runOracleEdgeTypeConformance(t, admin)
+	})
+	t.Run("connection_resilience", func(t *testing.T) {
+		runOracleConnectionResilienceConformance(t, config)
+	})
+	t.Run("tns_alias", func(t *testing.T) {
+		runOracleTNSConformance(t, config)
+	})
+	t.Run("secure_connectivity", func(t *testing.T) {
+		runOracleSecureConnectivityConformance(t, config)
+	})
+}
+
+func TestOracleDataPumpLiveConformance(t *testing.T) {
+	if os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP") != "1" {
+		t.Skip("set ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP=1 to run Data Pump conformance")
 	}
-	drivertest.RunLiveContract(t, drivertest.LiveConfig{
-		Driver:             driver,
-		Schema:             schema,
-		IntegerType:        "NUMBER(10)",
-		TextType:           "VARCHAR2(255)",
-		ExercisePrivileged: os.Getenv("ROLLINGTHUNDER_ORACLE_TEST_PRIVILEGED") == "1",
-	})
+	driver := connectOracleLive(t, oracleLiveConfig(t))
 	runOracleDataPumpLiveConformance(t, driver)
 }

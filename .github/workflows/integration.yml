@@ -7,12 +7,14 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
+      - ".github/scripts/**"
       - ".github/workflows/integration.yml"
   pull_request:
     paths:
       - "**/*.go"
       - go.mod
       - go.sum
+      - ".github/scripts/**"
       - ".github/workflows/integration.yml"
   schedule:
     - cron: "23 3 * * 1"
@@ -238,7 +240,7 @@ jobs:
 
   oracle:
     name: Oracle Database Free
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -257,7 +259,13 @@ jobs:
       ROLLINGTHUNDER_ORACLE_TEST_SERVICE: FREEPDB1
       ROLLINGTHUNDER_ORACLE_TEST_SSL_MODE: disable
       ROLLINGTHUNDER_ORACLE_TEST_PRIVILEGED: "1"
-      ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP: "1"
+      ROLLINGTHUNDER_ORACLE_TEST_REQUIRE_SECURE: "1"
+      ROLLINGTHUNDER_ORACLE_TEST_TLS_PORT: "2484"
+      ROLLINGTHUNDER_ORACLE_TEST_TLS_SERVER_NAME: localhost
+      ROLLINGTHUNDER_ORACLE_TEST_TLS_ROOT_CERT: ${{ github.workspace }}/.oracle-ci-wallet/server-cert.pem
+      ROLLINGTHUNDER_ORACLE_TEST_WALLET_PATH: ${{ github.workspace }}/.oracle-ci-wallet
+      ROLLINGTHUNDER_ORACLE_TEST_WALLET_PASSWORD_FILE: ${{ github.workspace }}/.oracle-ci-wallet/wallet-password
+      ORACLE_STABILITY_REPETITIONS: "3"
     services:
       database:
         # Data Pump and DBMS_METADATA require XDB, which Oracle's lite image
@@ -268,6 +276,7 @@ jobs:
           ORACLE_PWD: "RollingThunder_2026"
         ports:
           - 1521:1521
+          - 2484:2484
         options: >-
           --shm-size=1g
     steps:
@@ -280,8 +289,31 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Configure Oracle TCPS and test Wallet
+        env:
+          ORACLE_SERVICE_CONTAINER: ${{ job.services.database.id }}
+        run: >-
+          bash .github/scripts/configure-oracle-tcps.sh
+          "$ORACLE_SERVICE_CONTAINER"
+          "$ROLLINGTHUNDER_ORACLE_TEST_WALLET_PATH"
+          "$ROLLINGTHUNDER_ORACLE_TEST_TLS_PORT"
+
       - name: Run Oracle workflow
         run: go test ./integration -run TestOracleDriverWorkflow -count=1 -v
 
-      - name: Run Oracle driver conformance
+      - name: Run required Oracle stable conformance
         run: go test ./pkg/database/oracle -run TestOracleLiveConformance -count=1 -v
+
+      - name: Repeat Oracle stable conformance
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: >-
+          go test ./pkg/database/oracle
+          -run TestOracleLiveConformance
+          -count="$ORACLE_STABILITY_REPETITIONS"
+          -v
+
+      - name: Run extended Oracle Data Pump conformance
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP: "1"
+        run: go test ./pkg/database/oracle -run TestOracleDataPumpLiveConformance -count=1 -v

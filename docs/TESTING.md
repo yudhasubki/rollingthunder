@@ -124,21 +124,38 @@ RT_DATABASE_SSL_MODE=disable \
 go test ./integration -run TestOracleDriverWorkflow -count=1 -v
 ```
 
-The package-level shared conformance suite uses the equivalent connection variables. The privileged
-and Data Pump flags below create and remove a disposable role and application schema, then
-round-trip that schema through `DATA_PUMP_DIR`; enable them only against a disposable Oracle
-instance. Use the full Oracle Database Free image, not `-lite`, because the lite image omits XDB
-components used by Data Pump. Give the container at least `1g` of shared memory:
+The stable package conformance gate additionally runs the shared driver contract as a disposable
+application user with a bounded tablespace quota, round-trips LOB/binary/Unicode/time-zone/quoted
+identifier values, interrupts real long-running queries, reconnects, and connects through TCP TNS,
+verified TLS, auto-login/password Wallets, and TNS over TCPS. It creates and removes users, roles,
+tables, and other test objects, so run it only against a disposable Oracle instance.
+
+Use the full Oracle Database Free image, not `-lite`, because the lite image omits XDB components
+used by Data Pump and DBMS metadata. Give the container at least `1g` of shared memory. Colima users
+should allocate at least 4 CPUs and 8 GiB while running the Oracle suite:
 
 ```bash
 docker run --rm --name rollingthunder-oracle \
+  --cap-add=SYS_NICE \
   --shm-size=1g \
   -p 1521:1521 \
+  -p 2484:2484 \
   -e ORACLE_PWD=RollingThunder_2026 \
   container-registry.oracle.com/database/free:23.26.0.0
 ```
 
-Then run:
+After the database reports healthy, create the disposable TCPS listener and Wallet fixtures. The
+script writes a random Wallet password to a private `0600` file and never requires a repository
+secret:
+
+```bash
+bash .github/scripts/configure-oracle-tcps.sh \
+  rollingthunder-oracle \
+  .oracle-ci-wallet \
+  2484
+```
+
+Then run the required stable gate:
 
 ```bash
 ROLLINGTHUNDER_ORACLE_TEST_HOST=127.0.0.1 \
@@ -148,12 +165,30 @@ ROLLINGTHUNDER_ORACLE_TEST_PASSWORD=RollingThunder_2026 \
 ROLLINGTHUNDER_ORACLE_TEST_SERVICE=FREEPDB1 \
 ROLLINGTHUNDER_ORACLE_TEST_SSL_MODE=disable \
 ROLLINGTHUNDER_ORACLE_TEST_PRIVILEGED=1 \
-ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP=1 \
+ROLLINGTHUNDER_ORACLE_TEST_REQUIRE_SECURE=1 \
+ROLLINGTHUNDER_ORACLE_TEST_TLS_PORT=2484 \
+ROLLINGTHUNDER_ORACLE_TEST_TLS_SERVER_NAME=localhost \
+ROLLINGTHUNDER_ORACLE_TEST_TLS_ROOT_CERT="$PWD/.oracle-ci-wallet/server-cert.pem" \
+ROLLINGTHUNDER_ORACLE_TEST_WALLET_PATH="$PWD/.oracle-ci-wallet" \
+ROLLINGTHUNDER_ORACLE_TEST_WALLET_PASSWORD_FILE="$PWD/.oracle-ci-wallet/wallet-password" \
 go test ./pkg/database/oracle -run TestOracleLiveConformance -count=1 -v
 ```
 
-The standard activity and security read paths are exercised whenever the Oracle driver advertises
-those capabilities.
+The standard activity and security read paths are exercised through the privileged connection;
+the second contract proves ordinary core workflows do not require those administration privileges.
+Pull requests run this gate once. Weekly and manual workflows repeat it three times and separately
+run the extended Data Pump round-trip:
+
+```bash
+ROLLINGTHUNDER_ORACLE_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_ORACLE_TEST_PORT=1521 \
+ROLLINGTHUNDER_ORACLE_TEST_USER=system \
+ROLLINGTHUNDER_ORACLE_TEST_PASSWORD=RollingThunder_2026 \
+ROLLINGTHUNDER_ORACLE_TEST_SERVICE=FREEPDB1 \
+ROLLINGTHUNDER_ORACLE_TEST_SSL_MODE=disable \
+ROLLINGTHUNDER_ORACLE_TEST_DATAPUMP=1 \
+go test ./pkg/database/oracle -run TestOracleDataPumpLiveConformance -count=1 -v
+```
 
 ### SQL Server
 

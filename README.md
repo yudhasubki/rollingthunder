@@ -196,8 +196,9 @@
 - Keyboard focus traps, skip navigation, live status announcements, and reduced-motion support.
 - Headless end-to-end coverage for connect, edit, export, truncate, and drop workflows.
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.4/9.7 LTS with legacy 8.0
-  compatibility, MariaDB 10.11/11.4/11.8/12.3 LTS, SQL Server 2022/2025, and the current Oracle
-  Database Free image.
+  compatibility, MariaDB 10.11/11.4/11.8/12.3 LTS, SQL Server 2022/2025, and Oracle Database Free
+  23.x. Oracle core, least-privilege, edge-type, cancellation, TNS, TLS, and Wallet conformance is a
+  pull-request gate; repeated runs and Data Pump remain scheduled extended checks.
 - Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
   attestations. Platform signing is optional and never required for preview builds.
 
@@ -208,8 +209,12 @@
 | PostgreSQL      | Available           | Full capability-based explorer                        | Sync, backup, roles/grants, activity      | 14-18                             |
 | MySQL / MariaDB | Available           | Databases, tables, views, routines/triggers           | Sync, backup, users/grants, activity      | 8.4/9.7 + legacy 8.0; 10.11-12.3  |
 | SQLite          | Available           | Attached DBs, tables, views, triggers                 | Sync and built-in online backup/restore   | Bundled engine                    |
-| Oracle Database | Beta                | Schemas, tables, views, MVs, routines, triggers, dependencies | Sync, Data Pump, users/grants, activity | Current Free image, weekly/manual |
+| Oracle Database Free | Stable         | Schemas, tables, views, MVs, routines, triggers, dependencies | Sync, Data Pump, users/grants, activity | 23.x required core + weekly extended |
 | SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences, dependencies | Sync, native backup, security, activity | 2022 and 2025 |
+
+The stable Oracle scope is Oracle Database Free 23.x, currently tested with the pinned full 23.26
+image. Enterprise/Standard editions, RAC, and Autonomous Database are not part of that compatibility
+claim until they receive their own live conformance environments.
 
 ## Known gaps
 
@@ -254,8 +259,10 @@ Other important limitations include:
 - SQL Server table DDL reconstructs common columns, identity/computed metadata, key constraints,
   checks, and foreign keys. Advanced temporal, ledger, memory-optimized, partition, compression,
   masking, and encryption options still require native tooling and manual review.
-- Oracle and SQL Server remain labeled beta while their newly completed administration,
-  maintenance, authentication, and dependency workflows collect production feedback.
+- Oracle Enterprise/Standard editions, RAC, and Autonomous Database remain unverified outside the
+  stable Oracle Database Free 23.x scope. SQL Server remains labeled beta while its newly completed
+  administration, maintenance, authentication, and dependency workflows collect production
+  feedback.
 - SSH host verification is deliberately strict. Rolling Thunder does not silently trust a host on
   first use; add it to `known_hosts` or pin the SHA256 host-key fingerprint.
 - Linux desktop packages currently target WebKitGTK 4.1 and require compatible GTK/WebKit runtime
@@ -354,9 +361,9 @@ release matrix.
 ## Roadmap
 
 Milestones 1-7 cover reliable data workflows, the complete object explorer, multi-engine drivers,
-power-user query tooling, release readiness, reviewed administration/portability workflows, and
-Oracle/SQL Server beta support. See [ROADMAP.md](ROADMAP.md) for acceptance criteria, limitations,
-and shipped scope.
+power-user query tooling, release readiness, reviewed administration/portability workflows, stable
+Oracle Database Free support, and SQL Server beta support. See [ROADMAP.md](ROADMAP.md) for
+acceptance criteria, limitations, and shipped scope.
 
 ## Contributing
 
