@@ -45,8 +45,10 @@
 - Choose read-write or read-only access per profile; newly classified Production profiles default
   to read-only. This application guardrail complements rather than replaces database-side
   least-privilege roles.
-- Configure TLS modes for PostgreSQL, MySQL/MariaDB, Oracle, and SQL Server. PostgreSQL,
-  MySQL/MariaDB, and Oracle also accept client-certificate settings.
+- Configure TLS modes for PostgreSQL, MySQL/MariaDB, Oracle, and SQL Server. Compatible SQL Server
+  2022+ platforms additionally expose certificate- and hostname-verified TDS 8.0 Strict mode;
+  SQL Server 2025 is the required Linux live fixture. PostgreSQL, MySQL/MariaDB, and Oracle also
+  accept client-certificate settings.
 - Connect to Oracle through a direct endpoint or an explicitly selected `tnsnames.ora` alias, and
   use `ewallet.p12` or auto-login `cwallet.sso` Wallet directories for TCPS with `require` or
   hostname-verified `verify-full` TLS.
@@ -198,10 +200,11 @@
 - Live integration matrices for PostgreSQL 14–18, MySQL 8.4/9.7 LTS with legacy 8.0
   compatibility, MariaDB 10.11/11.4/11.8/12.3 LTS, SQL Server 2022/2025, and Oracle Database Free
   23.x. PostgreSQL and MySQL/MariaDB require live TLS, CA/hostname rejection, and client-certificate
-  conformance on every matrix job. SQL Server requires forced encryption, CA/hostname rejection,
-  and full driver conformance over verified TLS. Oracle core, least-privilege, edge-type,
-  cancellation, TNS, TLS, and Wallet conformance is a pull-request gate; repeated runs and Data Pump
-  remain scheduled extended checks.
+  conformance on every matrix job. SQL Server requires forced encryption and CA/hostname rejection
+  on 2022/2025; the 2025 Linux job additionally proves explicit TDS 8.0 negotiation and runs the
+  full driver contract over Strict verified TLS. Oracle core, least-privilege, edge-type,
+  cancellation, TNS, TLS, and Wallet conformance is a pull-request gate;
+  repeated runs and Data Pump remain scheduled extended checks.
 - Automated native macOS, Windows, and Linux builds with checksums and GitHub/Sigstore provenance
   attestations. Platform signing is optional and never required for preview builds.
 
@@ -213,7 +216,7 @@
 | MySQL / MariaDB | Available           | Databases, tables, views, routines/triggers           | Sync, backup, users/grants, activity      | 8.0/8.4/9.7; MariaDB 10.11-12.3 + TLS/mTLS |
 | SQLite          | Available           | Attached DBs, tables, views, triggers                 | Sync and built-in online backup/restore   | Bundled engine                    |
 | Oracle Database Free | Stable         | Schemas, tables, views, MVs, routines, triggers, dependencies | Sync, Data Pump, users/grants, activity | 23.x required core + weekly extended |
-| SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences, dependencies | Sync, native backup, security, activity | 2022/2025 + required TLS |
+| SQL Server      | Beta                | Schemas, tables, views, routines, triggers, sequences, dependencies | Sync, native backup, security, activity | 2022 verified TLS; 2025 + required TDS 8.0 Strict |
 
 The stable Oracle scope is Oracle Database Free 23.x, currently tested with the pinned full 23.26
 image. Enterprise/Standard editions, RAC, and Autonomous Database are not part of that compatibility
@@ -250,6 +253,11 @@ Other important limitations include:
   with Rolling Thunder's SSH tunnel. Microsoft Entra modes require encrypted TLS and the matching
   local/Azure identity setup; Entra password and service-principal secrets stay in the OS credential
   store.
+- SQL Server `Strict (TDS 8.0)` requires a compatible SQL Server 2022+ platform and always verifies
+  the server certificate and hostname. SQL Server 2022 Linux rejects client-requested TDS 8.0, so
+  use `verify-full` there; Rolling Thunder requires live Strict conformance on SQL Server 2025
+  Linux. SQL Server 2022 Windows and Azure SQL can also support Strict. Selecting Strict never
+  silently downgrades the protocol.
 - SQL Server can terminate a selected session with `KILL`, but a separate monitoring session cannot
   cancel only its currently running statement. Cancel Rolling Thunder-owned queries from their query
   tabs; the Activity tool protects every Rolling Thunder session.

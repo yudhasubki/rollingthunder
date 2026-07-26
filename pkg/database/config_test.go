@@ -169,6 +169,13 @@ func TestSQLServerAuthenticationSafetyValidation(t *testing.T) {
 			Driver:            DriverSQLServer,
 			User:              "sa",
 			Password:          "secret",
+			SSLMode:           "strict",
+			SQLServerAuthMode: SQLServerAuthSQL,
+		},
+		{
+			Driver:            DriverSQLServer,
+			User:              "sa",
+			Password:          "secret",
 			SSLMode:           "require",
 			SQLServerAuthMode: SQLServerAuthSQL,
 		},
@@ -215,6 +222,26 @@ func TestSQLServerAuthenticationSafetyValidation(t *testing.T) {
 	}
 
 	invalid := []Config{
+		{
+			Driver:  DriverPostgres,
+			SSLMode: "strict",
+		},
+		{
+			Driver:  DriverMySQL,
+			SSLMode: "strict",
+		},
+		{
+			Driver:  DriverMariaDB,
+			SSLMode: "strict",
+		},
+		{
+			Driver:  DriverSQLite,
+			SSLMode: "strict",
+		},
+		{
+			Driver:  DriverOracle,
+			SSLMode: "strict",
+		},
 		{
 			Driver:            DriverSQLServer,
 			SSLMode:           "require",

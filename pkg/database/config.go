@@ -63,7 +63,7 @@ type Config struct {
 	Db       string `json:"db"`
 
 	// SSL options
-	SSLMode     string `json:"sslMode"`     // disable, require, verify-ca, verify-full
+	SSLMode     string `json:"sslMode"`     // disable, require, verify-ca, verify-full; strict is SQL Server-only
 	SSLCert     string `json:"sslCert"`     // Client certificate path
 	SSLKey      string `json:"sslKey"`      // Client key path
 	SSLRootCert string `json:"sslRootCert"` // CA certificate path
@@ -296,7 +296,8 @@ func (config Config) ValidateSafety() error {
 	default:
 		return fmt.Errorf("connection access mode is not supported")
 	}
-	switch strings.ToLower(strings.TrimSpace(config.Driver)) {
+	driver := strings.ToLower(strings.TrimSpace(config.Driver))
+	switch driver {
 	case "",
 		DriverPostgres,
 		DriverMySQL,
@@ -315,6 +316,12 @@ func (config Config) ValidateSafety() error {
 	}
 	switch strings.ToLower(strings.TrimSpace(config.SSLMode)) {
 	case "", "disable", "require", "verify-ca", "verify-full":
+	case "strict":
+		if driver != DriverSQLServer {
+			return fmt.Errorf(
+				"strict TLS mode is supported only by the SQL Server driver",
+			)
+		}
 	default:
 		return fmt.Errorf("TLS mode is not supported")
 	}

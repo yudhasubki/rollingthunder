@@ -38,6 +38,7 @@ type certificateAuthority struct {
 type fixtureOptions struct {
 	outputDirectory  string
 	clientCommonName string
+	serverCommonName string
 	now              time.Time
 }
 
@@ -58,11 +59,17 @@ func main() {
 		"",
 		"optional common name embedded in a generated client certificate",
 	)
+	serverCommonName := flag.String(
+		"server-common-name",
+		"localhost",
+		"common name embedded in the generated server certificate",
+	)
 	flag.Parse()
 
 	if err := generateFixtures(fixtureOptions{
 		outputDirectory:  *outputDirectory,
 		clientCommonName: *clientCommonName,
+		serverCommonName: *serverCommonName,
 		now:              time.Now().UTC(),
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -77,6 +84,12 @@ func generateFixtures(options fixtureOptions) error {
 	if options.clientCommonName != "" &&
 		!commonNamePattern.MatchString(options.clientCommonName) {
 		return errors.New("client common name contains unsupported characters")
+	}
+	if options.serverCommonName == "" {
+		options.serverCommonName = "localhost"
+	}
+	if !commonNamePattern.MatchString(options.serverCommonName) {
+		return errors.New("server common name contains unsupported characters")
 	}
 	if options.now.IsZero() {
 		options.now = time.Now().UTC()
@@ -106,8 +119,10 @@ func generateFixtures(options fixtureOptions) error {
 	serverCertificate, serverKey, err := newLeafCertificate(
 		root,
 		leafOptions{
-			commonName: "localhost",
-			dnsNames:   []string{"localhost"},
+			commonName: options.serverCommonName,
+			dnsNames: uniqueStrings(
+				[]string{options.serverCommonName, "localhost"},
+			),
 			ipAddresses: []net.IP{
 				net.ParseIP("127.0.0.1"),
 			},
@@ -205,6 +220,19 @@ func generateFixtures(options fixtureOptions) error {
 	return nil
 }
 
+func uniqueStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
 func newCertificateAuthority(
 	commonName string,
 	now time.Time,
@@ -276,10 +304,11 @@ func newLeafCertificate(
 		return nil, nil, err
 	}
 	template := &x509.Certificate{
-		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: options.commonName},
-		NotBefore:    options.now.Add(-time.Minute),
-		NotAfter:     options.now.Add(certificateValidity),
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: options.commonName},
+		NotBefore:             options.now.Add(-time.Minute),
+		NotAfter:              options.now.Add(certificateValidity),
+		BasicConstraintsValid: true,
 		KeyUsage: x509.KeyUsageDigitalSignature |
 			x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: options.extendedKeyUsage,

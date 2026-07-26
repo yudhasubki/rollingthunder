@@ -287,16 +287,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ["2022", "2025"]
+        include:
+          - version: "2022"
+            image: mcr.microsoft.com/mssql/server:2022-latest
+          - version: "2025"
+            # Pin the live TDS 8 fixture to a real database image. The current
+            # 2025-latest registry reference can resolve to lifecycle metadata.
+            image: mcr.microsoft.com/mssql/server:2025-CU7-ubuntu-22.04
     services:
       database:
-        image: mcr.microsoft.com/mssql/server:${{ matrix.version }}-latest
+        image: ${{ matrix.image }}
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: "RollingThunder_2026!"
         ports:
           - 1433:1433
         options: >-
+          --hostname sqlserver.test
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'RollingThunder_2026!' -C -Q 'SELECT 1' -b -o /dev/null"
           --health-interval 5s
           --health-timeout 5s
@@ -338,6 +345,30 @@ jobs:
       - name: Run SQL Server driver conformance over verified TLS
         env:
           ROLLINGTHUNDER_SQLSERVER_TEST_SSL_MODE: verify-full
+          ROLLINGTHUNDER_SQLSERVER_TEST_SSL_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/sqlserver/ca-cert.pem
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME: localhost
+        run: go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v
+
+      # SQL Server 2022 Linux accepts verified TLS over TDS 7.4 but rejects
+      # client-requested TDS 8.0. SQL Server 2025 Linux is the required live
+      # fixture for Strict protocol negotiation.
+      - name: Run SQL Server TDS 8.0 Strict TLS conformance
+        if: matrix.version == '2025'
+        env:
+          ROLLINGTHUNDER_SQLSERVER_TEST_REQUIRE_TLS: "1"
+          ROLLINGTHUNDER_SQLSERVER_TEST_TDS8_STRICT: "1"
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME: localhost
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/sqlserver/ca-cert.pem
+          ROLLINGTHUNDER_SQLSERVER_TEST_TLS_WRONG_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/sqlserver/wrong-ca-cert.pem
+        run: >-
+          go test ./pkg/database/sqlserver
+          -run 'TestSQLServerTLSLiveConformance/strict'
+          -count=1 -v
+
+      - name: Run SQL Server driver conformance over TDS 8.0 Strict
+        if: matrix.version == '2025'
+        env:
+          ROLLINGTHUNDER_SQLSERVER_TEST_SSL_MODE: strict
           ROLLINGTHUNDER_SQLSERVER_TEST_SSL_ROOT_CERT: ${{ github.workspace }}/.database-ci-tls/sqlserver/ca-cert.pem
           ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME: localhost
         run: go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v

@@ -322,12 +322,55 @@ ROLLINGTHUNDER_SQLSERVER_TEST_TLS_WRONG_ROOT_CERT="$PWD/.database-ci-tls/sqlserv
 go test ./pkg/database/sqlserver -run TestSQLServerTLSLiveConformance -count=1 -v
 ```
 
-The suite verifies that `require`, `verify-ca`, and `verify-full` negotiate an encrypted TCP
-session, while plaintext, an unrelated CA, and a wrong hostname fail closed. CI then repeats
-`TestSQLServerLiveConformance` with `SSL_MODE=verify-full`, including privileged security and native
-backup/restore. SQL Server TLS authenticates the server; its database connection does not use the
-PostgreSQL/MySQL-style client certificate fields. Windows Integrated and Microsoft Entra
-authentication retain their separate environment-specific checks.
+That command covers required encrypted TDS 7.4 behavior on both matrix entries and skips the
+platform-specific Strict group. On the SQL Server 2025 Linux fixture, enable the Strict group to
+prove a successful `08000000` protocol session before its negative trust cases:
+
+```bash
+ROLLINGTHUNDER_SQLSERVER_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_PORT=1433 \
+ROLLINGTHUNDER_SQLSERVER_TEST_USER=sa \
+ROLLINGTHUNDER_SQLSERVER_TEST_PASSWORD='RollingThunder_2026!' \
+ROLLINGTHUNDER_SQLSERVER_TEST_DATABASE=master \
+ROLLINGTHUNDER_SQLSERVER_TEST_REQUIRE_TLS=1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_TDS8_STRICT=1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME=localhost \
+ROLLINGTHUNDER_SQLSERVER_TEST_TLS_ROOT_CERT="$PWD/.database-ci-tls/sqlserver/ca-cert.pem" \
+ROLLINGTHUNDER_SQLSERVER_TEST_TLS_WRONG_ROOT_CERT="$PWD/.database-ci-tls/sqlserver/wrong-ca-cert.pem" \
+go test ./pkg/database/sqlserver \
+  -run 'TestSQLServerTLSLiveConformance/strict' -count=1 -v
+```
+
+Then run the complete driver contract over TDS 8.0 Strict:
+
+```bash
+ROLLINGTHUNDER_SQLSERVER_TEST_HOST=127.0.0.1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_PORT=1433 \
+ROLLINGTHUNDER_SQLSERVER_TEST_USER=sa \
+ROLLINGTHUNDER_SQLSERVER_TEST_PASSWORD='RollingThunder_2026!' \
+ROLLINGTHUNDER_SQLSERVER_TEST_DATABASE=master \
+ROLLINGTHUNDER_SQLSERVER_TEST_SSL_MODE=strict \
+ROLLINGTHUNDER_SQLSERVER_TEST_SSL_ROOT_CERT="$PWD/.database-ci-tls/sqlserver/ca-cert.pem" \
+ROLLINGTHUNDER_SQLSERVER_TEST_TLS_SERVER_NAME=localhost \
+ROLLINGTHUNDER_TEST_PRIVILEGED=1 \
+ROLLINGTHUNDER_SQLSERVER_TEST_BACKUP=1 \
+go test ./pkg/database/sqlserver -run TestSQLServerLiveConformance -count=1 -v
+```
+
+The suite verifies that `require`, `verify-ca`, and `verify-full` negotiate encrypted TDS 7.4
+sessions, while `strict` negotiates TDS 8.0 and verifies both the server certificate and hostname.
+Plaintext, an unrelated CA, and a wrong hostname fail closed. CI runs the shared verified-TLS
+contract on SQL Server 2022 and 2025, then repeats the Strict transport and full driver contracts on
+the pinned SQL Server 2025 CU Linux image, including privileged security and native backup/restore.
+SQL Server 2022 Linux rejects client-requested TDS 8.0; use `verify-full` for that platform. This
+matches the behavior tracked in
+[Microsoft's SQL Server container issue #878](https://github.com/microsoft/mssql-docker/issues/878).
+Compatible SQL Server 2022 Windows and Azure SQL deployments can still use Strict. Rolling Thunder
+never downgrades a Strict request to TDS 7.4. SQL Server TLS authenticates the server; its database
+connection does not use the PostgreSQL/MySQL-style client certificate fields. Windows Integrated
+and Microsoft Entra authentication retain their separate environment-specific checks. See
+[Microsoft's TDS 8.0 documentation](https://learn.microsoft.com/en-us/sql/relational-databases/security/networking/tds-8)
+for the server compatibility boundary.
 
 ## SSH tunnel checks
 

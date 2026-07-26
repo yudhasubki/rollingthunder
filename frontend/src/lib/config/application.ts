@@ -35,6 +35,7 @@ export type ProviderId = 'postgres' | 'mysql' | 'sqlite' | 'oracle' | 'sqlserver
 export type ConnectionEnvironment = 'unclassified' | 'development' | 'staging' | 'production';
 export type ConnectionAccessMode = 'read-write' | 'read-only';
 export type OracleConnectionMode = 'direct' | 'tns';
+export type TLSMode = 'disable' | 'require' | 'verify-ca' | 'verify-full' | 'strict';
 export type SQLServerAuthMode =
 	| 'sql'
 	| 'integrated'
@@ -121,7 +122,7 @@ export const DATABASE_PROVIDERS: ReadonlyArray<{
 export const CONNECTION_DEFAULTS = Object.freeze({
 	host: '127.0.0.1',
 	sshPort: '22',
-	sslMode: 'disable',
+	sslMode: 'disable' as TLSMode,
 	provider: 'postgres' as ProviderId,
 	oracleConnectionMode: 'direct' as OracleConnectionMode,
 	sqlServerAuthMode: 'sql' as SQLServerAuthMode,
@@ -146,12 +147,32 @@ export const CONNECTION_ACCESS_MODES: ReadonlyArray<{
 	}
 ];
 
-export const SSL_OPTIONS = Object.freeze([
+export const SSL_OPTIONS: ReadonlyArray<{ value: TLSMode; label: string }> = Object.freeze([
 	{ value: 'disable', label: 'Disable' },
 	{ value: 'require', label: 'Require' },
 	{ value: 'verify-ca', label: 'Verify CA' },
-	{ value: 'verify-full', label: 'Verify full' }
+	{ value: 'verify-full', label: 'Verify full' },
+	{ value: 'strict', label: 'Strict (TDS 8.0)' }
 ]);
+
+export function tlsModeAvailableForProvider(mode: TLSMode, provider?: ProviderId | ''): boolean {
+	return mode !== 'strict' || provider === 'sqlserver';
+}
+
+export function normalizeTLSModeForProvider(
+	value: string | undefined,
+	provider?: ProviderId | ''
+): TLSMode {
+	const normalized = value?.trim().toLowerCase();
+	const mode = SSL_OPTIONS.find((option) => option.value === normalized)?.value;
+	if (!mode) return CONNECTION_DEFAULTS.sslMode;
+	if (!tlsModeAvailableForProvider(mode, provider)) return 'verify-full';
+	return mode;
+}
+
+export function tlsModeVerifiesServerCertificate(mode: TLSMode): boolean {
+	return mode === 'verify-ca' || mode === 'verify-full' || mode === 'strict';
+}
 
 export const SSH_AUTH_OPTIONS = Object.freeze([
 	{ value: 'agent', label: 'SSH agent' },

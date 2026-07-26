@@ -276,6 +276,14 @@ func connectionFailure[T any](
 			"The database host actively refused the connection.",
 			"Check that the database server is running and listening on the configured host and port.",
 		)
+	case strings.Contains(lowerDetail, "tds 8.0 strict"):
+		return serviceErrorWithCode[T](
+			http.StatusBadRequest,
+			errorCodeTLSConfiguration,
+			"TDS 8.0 Strict connection failed",
+			connectErr.Error(),
+			"Verify the server certificate and hostname, and confirm the server platform accepts TDS 8.0. SQL Server 2022 Linux requires Verify full (TDS 7.4); use SQL Server 2025+ on Linux for Strict.",
+		)
 	case strings.Contains(lowerDetail, "certificate"),
 		strings.Contains(lowerDetail, "tls"),
 		strings.Contains(lowerDetail, "ssl"):

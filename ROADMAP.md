@@ -39,7 +39,8 @@ is ordered by dependency and user impact. It intentionally does not promise rele
 - [x] Required live PostgreSQL/MySQL/MariaDB TLS conformance with CA and hostname verification,
       negative trust cases, plaintext rejection, and client-certificate authentication
 - [x] Required live SQL Server TLS conformance with server-forced encryption, pinned CA and hostname
-      verification, negative trust cases, and the full driver contract over `verify-full`
+      verification, and negative trust cases on 2022/2025; explicit TDS 8.0 negotiation and the full
+      driver contract over `strict` run on the SQL Server 2025 Linux fixture
 - [x] Strictly verified SSH tunnels with OS-managed secrets
 - [x] Oracle users/roles/grants, activity monitoring, native Data Pump backup/restore, TNS aliases,
       and Wallet-based TCPS
@@ -241,7 +242,8 @@ closes its engine-specific gaps.
 ### Verification and support graduation
 
 - [x] Add shared live conformance entry points for both drivers.
-- [x] Test SQL Server 2022 and 2025 in the regular CI matrix.
+- [x] Test SQL Server 2022 and 2025 in the regular CI matrix, including certificate- and
+      hostname-verified TLS on both and TDS 8.0 Strict connections on SQL Server 2025 Linux.
 - [x] Run Oracle core conformance on pull requests and the default branch using the pinned full
       Oracle Database Free image.
 - [x] Exercise Oracle core workflows through a disposable application user with object-owner

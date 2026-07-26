@@ -39,11 +39,15 @@
 		connectionEnvironmentOption,
 		normalizeConnectionAccessMode,
 		normalizeConnectionEnvironment,
+		normalizeTLSModeForProvider,
+		tlsModeAvailableForProvider,
+		tlsModeVerifiesServerCertificate,
 		type ConnectionAccessMode,
 		type ConnectionEnvironment,
 		type OracleConnectionMode,
 		type ProviderId,
-		type SQLServerAuthMode
+		type SQLServerAuthMode,
+		type TLSMode
 	} from '$lib/config/application';
 	import {
 		AlertCircle,
@@ -162,7 +166,7 @@
 	let username = $state('');
 	let password = $state('');
 	let databaseName = $state('');
-	let sslMode = $state(CONNECTION_DEFAULTS.sslMode);
+	let sslMode = $state<TLSMode>(CONNECTION_DEFAULTS.sslMode);
 	let sslRootCert = $state('');
 	let sslCert = $state('');
 	let sslKey = $state('');
@@ -230,6 +234,7 @@
 	const sslOptions = $derived(
 		SSL_OPTIONS.filter(
 			(option) =>
+				tlsModeAvailableForProvider(option.value, provider) &&
 				(!oracleUsesWallet || option.value !== 'verify-ca') &&
 				!(
 					provider === 'sqlserver' &&
@@ -340,7 +345,7 @@
 		hasStoredPassword = Boolean(profile.hasPassword);
 		clearPasswordConfirm = false;
 		databaseName = config.db || '';
-		sslMode = config.sslMode || CONNECTION_DEFAULTS.sslMode;
+		sslMode = normalizeTLSModeForProvider(config.sslMode, profileProvider);
 		sslRootCert = config.sslRootCert || '';
 		sslCert = config.sslCert || '';
 		sslKey = config.sslKey || '';
@@ -515,6 +520,10 @@
 			showMessage('Choose a database provider first.', 'error');
 			return false;
 		}
+		if (!tlsModeAvailableForProvider(sslMode, provider)) {
+			showMessage('Strict (TDS 8.0) TLS is available only for SQL Server.', 'error');
+			return false;
+		}
 		if (provider === 'sqlite' && !databaseName.trim()) {
 			showMessage('Choose an existing SQLite file or a path for a new database.', 'error');
 			return false;
@@ -611,6 +620,7 @@
 		if (!port || port === currentProvider?.defaultPort) {
 			port = nextProvider.defaultPort;
 		}
+		sslMode = normalizeTLSModeForProvider(sslMode, nextProvider.id);
 		provider = nextProvider.id;
 		if (nextProvider.id !== 'oracle') {
 			oracleConnectionMode = CONNECTION_DEFAULTS.oracleConnectionMode;
@@ -1632,12 +1642,20 @@
 											id="modal-ssl"
 											options={sslOptions}
 											value={sslMode}
-											onChange={(value) => (sslMode = value)}
+											onChange={(value) => (sslMode = normalizeTLSModeForProvider(value, provider))}
 											searchable={false}
 											disabled={action !== null}
 											triggerClass="h-9 px-3 text-xs"
 											placeholder="Select TLS mode"
 										/>
+										{#if provider === 'sqlserver' && sslMode === 'strict'}
+											<p class="text-muted-foreground mt-1.5 text-[8px] leading-relaxed">
+												TDS 8.0 verifies both the server certificate and connection hostname. Use
+												SQL Server 2025+ on Linux; SQL Server 2022 Linux accepts Verify full (TDS
+												7.4), while 2022 Windows and Azure SQL can support Strict. Add a CA path
+												below only when the issuer is not in the system trust store.
+											</p>
+										{/if}
 									</div>
 
 									{#if provider === 'oracle'}
@@ -1759,7 +1777,7 @@
 										</div>
 									{/if}
 
-									{#if !oracleUsesWallet && (sslMode === 'verify-ca' || sslMode === 'verify-full')}
+									{#if !oracleUsesWallet && tlsModeVerifiesServerCertificate(sslMode)}
 										<div class="col-span-2">
 											<label for="modal-root-cert">CA certificate path</label>
 											<input

@@ -10,14 +10,19 @@ import (
 	"rollingthunder/pkg/database"
 )
 
-const sqlServerTLSConnectTimeout = 20 * time.Second
+const (
+	sqlServerTLSConnectTimeout = 20 * time.Second
+	sqlServerTDS74Version      = "74000004"
+	sqlServerTDS80Version      = "08000000"
+)
 
 type sqlServerTLSState struct {
-	Encrypted   string
-	Transport   string
-	Protocol    string
-	AuthScheme  string
-	SessionUser string
+	Encrypted       string
+	Transport       string
+	Protocol        string
+	ProtocolVersion string
+	AuthScheme      string
+	SessionUser     string
 }
 
 func requiredSQLServerTLSEnvironment(t *testing.T, name string) string {
@@ -86,6 +91,11 @@ func readSQLServerTLSState(
 			CONVERT(nvarchar(16), connection_value.encrypt_option),
 			CONVERT(nvarchar(32), connection_value.net_transport),
 			CONVERT(nvarchar(32), connection_value.protocol_type),
+			CONVERT(
+				char(8),
+				CONVERT(varbinary(4), connection_value.protocol_version),
+				2
+			),
 			CONVERT(nvarchar(32), connection_value.auth_scheme),
 			CONVERT(nvarchar(128), SUSER_SNAME())
 		 FROM sys.dm_exec_connections AS connection_value
@@ -94,6 +104,7 @@ func readSQLServerTLSState(
 		&state.Encrypted,
 		&state.Transport,
 		&state.Protocol,
+		&state.ProtocolVersion,
 		&state.AuthScheme,
 		&state.SessionUser,
 	); err != nil {
@@ -103,7 +114,8 @@ func readSQLServerTLSState(
 		t.Fatalf("SQL Server session is not encrypted: %+v", state)
 	}
 	if !strings.EqualFold(strings.TrimSpace(state.Transport), "TCP") ||
-		strings.TrimSpace(state.Protocol) == "" ||
+		!strings.EqualFold(strings.TrimSpace(state.Protocol), "TSQL") ||
+		len(strings.TrimSpace(state.ProtocolVersion)) != 8 ||
 		strings.TrimSpace(state.AuthScheme) == "" ||
 		strings.TrimSpace(state.SessionUser) == "" {
 		t.Fatalf("SQL Server TLS session metadata is incomplete: %+v", state)
@@ -138,6 +150,21 @@ func assertSQLServerTLSConnectionFails(t *testing.T, config Config) {
 	t.Fatal("SQL Server accepted a TLS connection that must be rejected")
 }
 
+func assertSQLServerTDSVersion(
+	t *testing.T,
+	state sqlServerTLSState,
+	want string,
+) {
+	t.Helper()
+	if !strings.EqualFold(strings.TrimSpace(state.ProtocolVersion), want) {
+		t.Fatalf(
+			"connection negotiated TDS protocol %s, want %s",
+			state.ProtocolVersion,
+			want,
+		)
+	}
+}
+
 func TestSQLServerTLSLiveConformance(t *testing.T) {
 	base := sqlServerTLSLiveConfig(t)
 	rootCert := requiredSQLServerTLSEnvironment(
@@ -161,34 +188,69 @@ func TestSQLServerTLSLiveConformance(t *testing.T) {
 	t.Run("require_encrypts_session", func(t *testing.T) {
 		config := base
 		config.SSLMode = "require"
-		assertSQLServerTLSConnection(t, config)
+		state := assertSQLServerTLSConnection(t, config)
+		assertSQLServerTDSVersion(t, state, sqlServerTDS74Version)
 	})
 	t.Run("verify_ca", func(t *testing.T) {
 		config := base
 		config.SSLMode = "verify-ca"
 		config.SSLRootCert = rootCert
 		config.TLSServerName = serverName
-		assertSQLServerTLSConnection(t, config)
+		state := assertSQLServerTLSConnection(t, config)
+		assertSQLServerTDSVersion(t, state, sqlServerTDS74Version)
 	})
 	t.Run("verify_full", func(t *testing.T) {
 		config := base
 		config.SSLMode = "verify-full"
 		config.SSLRootCert = rootCert
 		config.TLSServerName = serverName
-		assertSQLServerTLSConnection(t, config)
+		state := assertSQLServerTLSConnection(t, config)
+		assertSQLServerTDSVersion(t, state, sqlServerTDS74Version)
 	})
-	t.Run("wrong_ca_rejected", func(t *testing.T) {
+	t.Run("verify_full_wrong_ca_rejected", func(t *testing.T) {
 		config := base
 		config.SSLMode = "verify-full"
 		config.SSLRootCert = wrongRootCert
 		config.TLSServerName = serverName
 		assertSQLServerTLSConnectionFails(t, config)
 	})
-	t.Run("wrong_server_name_rejected", func(t *testing.T) {
+	t.Run("verify_full_wrong_server_name_rejected", func(t *testing.T) {
 		config := base
 		config.SSLMode = "verify-full"
 		config.SSLRootCert = rootCert
 		config.TLSServerName = "wrong-host.invalid"
 		assertSQLServerTLSConnectionFails(t, config)
+	})
+	t.Run("strict", func(t *testing.T) {
+		if os.Getenv("ROLLINGTHUNDER_SQLSERVER_TEST_TDS8_STRICT") != "1" {
+			t.Skip(
+				"TDS 8.0 Strict live fixture is not enabled for this SQL Server platform",
+			)
+		}
+
+		// Establishing a valid Strict connection first prevents the negative
+		// cases from passing merely because the server rejects every TDS 8.0
+		// handshake.
+		config := base
+		config.SSLMode = "strict"
+		config.SSLRootCert = rootCert
+		config.TLSServerName = serverName
+		state := assertSQLServerTLSConnection(t, config)
+		assertSQLServerTDSVersion(t, state, sqlServerTDS80Version)
+
+		t.Run("wrong_ca_rejected", func(t *testing.T) {
+			config := base
+			config.SSLMode = "strict"
+			config.SSLRootCert = wrongRootCert
+			config.TLSServerName = serverName
+			assertSQLServerTLSConnectionFails(t, config)
+		})
+		t.Run("wrong_server_name_rejected", func(t *testing.T) {
+			config := base
+			config.SSLMode = "strict"
+			config.SSLRootCert = rootCert
+			config.TLSServerName = "wrong-host.invalid"
+			assertSQLServerTLSConnectionFails(t, config)
+		})
 	})
 }

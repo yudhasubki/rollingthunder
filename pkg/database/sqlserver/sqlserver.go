@@ -27,6 +27,7 @@ const (
 	defaultConnectionLifetime = 5 * time.Minute
 	defaultMaxIdleConnections = 2
 	defaultMaxOpenConnections = 8
+	minimumTLSVersion         = "1.2"
 )
 
 type Config struct {
@@ -180,8 +181,13 @@ func buildConnectionURL(config Config) (string, error) {
 	case "require":
 		query.Set("encrypt", "true")
 		query.Set("TrustServerCertificate", "true")
-	case "verify-ca", "verify-full":
-		query.Set("encrypt", "true")
+	case "verify-ca", "verify-full", "strict":
+		if config.SSLMode == "strict" {
+			query.Set("encrypt", "strict")
+			query.Set("tlsmin", minimumTLSVersion)
+		} else {
+			query.Set("encrypt", "true")
+		}
 		query.Set("TrustServerCertificate", "false")
 		serverName := strings.TrimSpace(config.TLSServerName)
 		if serverName == "" {
@@ -270,6 +276,12 @@ func openSQLServerConnection(
 	connection.SetConnMaxLifetime(defaultConnectionLifetime)
 	if err := connection.PingContext(ctx); err != nil {
 		_ = connection.Close()
+		if config.SSLMode == "strict" {
+			return nil, Config{}, fmt.Errorf(
+				"connect to SQL Server with TDS 8.0 Strict: %w",
+				err,
+			)
+		}
 		return nil, Config{}, fmt.Errorf("connect to SQL Server: %w", err)
 	}
 	return connection, config, nil

@@ -115,6 +115,24 @@ func TestSQLServerConnectionURL(t *testing.T) {
 	if requiredURL.Query().Get("TrustServerCertificate") != "true" {
 		t.Fatalf("require URL = %q", required)
 	}
+	strict, err := buildConnectionURL(Config{
+		Host:          "127.0.0.1",
+		User:          "sa",
+		Db:            "master",
+		SSLMode:       "strict",
+		TLSServerName: "database.internal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	strictURL, _ := url.Parse(strict)
+	if strictURL.Query().Get("encrypt") != "strict" ||
+		strictURL.Query().Get("tlsmin") != "1.2" ||
+		strictURL.Query().Get("TrustServerCertificate") != "false" ||
+		strictURL.Query().Get("hostNameInCertificate") !=
+			"database.internal" {
+		t.Fatalf("strict URL = %q", strict)
+	}
 	if _, err := buildConnectionURL(Config{
 		User: "sa", Db: "master", SSLMode: "disable", SSLCert: "client.pem",
 	}); err == nil {

@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,5 +82,18 @@ func TestSQLServerErrorsReceiveActionableCodes(t *testing.T) {
 	if len(constraint.Errors) != 1 ||
 		constraint.Errors[0].Code != errorCodeQueryConstraint {
 		t.Fatalf("constraint response = %+v", constraint)
+	}
+
+	strictTLS := connectionFailure[bool](
+		testConnectionAttempt(),
+		errors.New(
+			"connect to SQL Server with TDS 8.0 Strict: TLS Handshake failed",
+		),
+	)
+	if len(strictTLS.Errors) != 1 ||
+		strictTLS.Errors[0].Code != errorCodeTLSConfiguration ||
+		strictTLS.Errors[0].Title != "TDS 8.0 Strict connection failed" ||
+		!strings.Contains(strictTLS.Errors[0].Hint, "SQL Server 2022 Linux") {
+		t.Fatalf("strict TLS response = %+v", strictTLS)
 	}
 }

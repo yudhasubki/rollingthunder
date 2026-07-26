@@ -28,7 +28,9 @@ if [[ "$output_directory" != /* ]]; then
 fi
 (
   cd "$repository_root"
-  go run ./scripts/testcert -output "$output_directory"
+  go run ./scripts/testcert \
+    -output "$output_directory" \
+    -server-common-name sqlserver.test
 )
 
 docker exec --user root "$container_id" \

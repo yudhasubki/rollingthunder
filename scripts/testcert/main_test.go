@@ -18,6 +18,7 @@ func TestGenerateFixturesCreatesTrustedServerAndClientCertificates(
 	if err := generateFixtures(fixtureOptions{
 		outputDirectory:  outputDirectory,
 		clientCommonName: "rolling_tls",
+		serverCommonName: "sqlserver.test",
 		now:              now,
 	}); err != nil {
 		t.Fatal(err)
@@ -48,6 +49,29 @@ func TestGenerateFixturesCreatesTrustedServerAndClientCertificates(
 		CurrentTime: now,
 	}); err != nil {
 		t.Fatalf("verify generated server certificate: %v", err)
+	}
+	if _, err := server.Verify(x509.VerifyOptions{
+		Roots:   roots,
+		DNSName: "sqlserver.test",
+		KeyUsages: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageServerAuth,
+		},
+		CurrentTime: now,
+	}); err != nil {
+		t.Fatalf("verify generated server FQDN certificate: %v", err)
+	}
+	if server.Subject.CommonName != "sqlserver.test" {
+		t.Fatalf(
+			"server common name = %q, want sqlserver.test",
+			server.Subject.CommonName,
+		)
+	}
+	if !server.BasicConstraintsValid || server.IsCA {
+		t.Fatalf(
+			"server basic constraints = valid:%t ca:%t, want valid end-entity certificate",
+			server.BasicConstraintsValid,
+			server.IsCA,
+		)
 	}
 	if _, err := server.Verify(x509.VerifyOptions{
 		Roots:   roots,
@@ -109,6 +133,18 @@ func TestGenerateFixturesRejectsUnsafeClientCommonName(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("unsafe client common name was accepted")
+	}
+}
+
+func TestGenerateFixturesRejectsUnsafeServerCommonName(t *testing.T) {
+	t.Parallel()
+	err := generateFixtures(fixtureOptions{
+		outputDirectory:  t.TempDir(),
+		serverCommonName: "sqlserver/test",
+		now:              time.Now(),
+	})
+	if err == nil {
+		t.Fatal("unsafe server common name was accepted")
 	}
 }
 
